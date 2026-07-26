@@ -15,10 +15,16 @@ import {
   addSet as addSetPure,
   removeSetAt as removeSetAtPure,
   undoLastSet as undoLastSetPure,
+  updateSetAt as updateSetAtPure,
+  decrementLast as decrementLastPure,
+  removeExercise as removeExercisePure,
+  purgeExerciseSets as purgeExerciseSetsPure,
   buildBackup,
   validateBackup,
   mergeBackup,
 } from './domain/domain.js';
+
+const DEFAULT_CHIPS = [5, 10, 12];
 
 /* ============================= STATE ============================= */
 const state = {
@@ -105,6 +111,26 @@ async function removeSetHandler(exId, dateStr, index) {
   await persistSets();
   rerender();
 }
+async function updateSetHandler(exId, dateStr, index, value) {
+  state.setsLog = updateSetAtPure(state.setsLog, dateStr, exId, index, value);
+  await persistSets();
+  if (state.modal && state.modal.type === 'logger') state.modal.editIndex = null;
+  renderModal();
+  renderView();
+}
+async function decrementHandler(exId, amount) {
+  const d = todayISO();
+  state.setsLog = decrementLastPure(state.setsLog, d, exId, amount);
+  await persistSets();
+  rerender();
+}
+async function deleteExerciseHandler(id) {
+  state.exercises = removeExercisePure(state.exercises, id);
+  state.setsLog = purgeExerciseSetsPure(state.setsLog, id);
+  await Promise.all([persistExercises(), persistSets()]);
+  closeModal();
+  rerender();
+}
 async function addExercise(data) {
   const now = todayISO();
   const maxOrder = state.exercises.filter((e) => e.active).reduce((m, e) => Math.max(m, e.order || 0), -1);
@@ -117,6 +143,7 @@ async function addExercise(data) {
     archived: false,
     order: maxOrder + 1,
     createdDate: now,
+    chips: data.chips && data.chips.length === 3 ? data.chips : DEFAULT_CHIPS.slice(),
     targetHistory: [{ effectiveDate: now, target: data.target || null }],
   };
   state.exercises.push(ex);
@@ -128,6 +155,7 @@ async function updateExercise(id, data) {
   ex.name = data.name.trim();
   ex.icon = data.icon || ex.icon;
   ex.unit = (data.unit || 'reps').trim();
+  ex.chips = data.chips && data.chips.length === 3 ? data.chips : (ex.chips || DEFAULT_CHIPS.slice());
   const today = todayISO();
   const currentTarget = getEffectiveTarget(ex, today);
   const newTarget = data.target || null;
@@ -381,6 +409,7 @@ function viewPlan() {
           <button class="mini-btn" data-action="reorder" data-dir="1" data-id="${ex.id}" ${i === active.length - 1 ? 'disabled' : ''} aria-label="Move down">${ICONS.down}</button>
           <button class="mini-btn" data-action="open-edit-exercise" data-id="${ex.id}" aria-label="Edit">${ICONS.edit}</button>
           <button class="mini-btn" data-action="archive" data-id="${ex.id}" aria-label="Archive">${ICONS.archive}</button>
+          <button class="mini-btn danger" data-action="delete-exercise" data-id="${ex.id}" data-name="${escapeHtml(ex.name)}" aria-label="Delete permanently">${ICONS.trash}</button>
         </div>
       </div>`;
     });
@@ -397,6 +426,7 @@ function viewPlan() {
           </div>
           <div class="plan-row-actions">
             <button class="mini-btn" data-action="restore" data-id="${ex.id}" aria-label="Restore">${ICONS.restore}</button>
+            <button class="mini-btn danger" data-action="delete-exercise" data-id="${ex.id}" data-name="${escapeHtml(ex.name)}" aria-label="Delete permanently">${ICONS.trash}</button>
           </div>
         </div>`;
       });
@@ -459,6 +489,7 @@ function renderModal() {
   if (m.type === 'logger') root.innerHTML = modalLogger(m.exId);
   else if (m.type === 'exerciseForm') root.innerHTML = modalExerciseForm(m.exId);
   else if (m.type === 'confirmDeleteSet') root.innerHTML = modalConfirm(m);
+  else if (m.type === 'confirmDeleteExercise') root.innerHTML = modalConfirmDeleteExercise(m);
   else if (m.type === 'data') root.innerHTML = modalData();
   else if (m.type === 'importChoice') root.innerHTML = modalImportChoice();
   bindModalEvents();
@@ -473,10 +504,21 @@ function modalLogger(exId) {
   const arr = getSetsFor(exId, today);
   const total = calcTotal(arr);
   const draft = state.loggerDraft;
+  const chips = (ex.chips && ex.chips.length === 3) ? ex.chips : DEFAULT_CHIPS;
+  const editIndex = state.modal && state.modal.editIndex != null ? state.modal.editIndex : null;
   const listItems = arr.map((v, i) => ({ v, i })).reverse().map(({ v, i }) => {
     const isLatest = i === arr.length - 1;
+    if (i === editIndex) {
+      return `<div class="set-row editing" data-stop>
+        <input type="number" id="edit-set-input" class="set-edit-input" value="${v}" step="any" autofocus>
+        <div class="set-edit-actions">
+          <button class="mini-btn" data-action="edit-set-save" data-id="${exId}" data-date="${today}" data-index="${i}" aria-label="Save">${ICONS.check}</button>
+          <button class="mini-btn" data-action="edit-set-cancel" aria-label="Cancel">${ICONS.close}</button>
+        </div>
+      </div>`;
+    }
     return `<div class="set-row">
-      <div class="set-row-left"><span class="set-badge">${v}</span>${isLatest ? '<span class="set-latest-tag">Latest</span>' : ''}</div>
+      <div class="set-row-left"><span class="set-badge" data-editable-set data-index="${i}" title="Double-click to edit">${v}</span>${isLatest ? '<span class="set-latest-tag">Latest</span>' : ''}</div>
       <button class="set-del" data-action="delete-set" data-id="${exId}" data-date="${today}" data-index="${i}" aria-label="Remove set">${ICONS.trash}</button>
     </div>`;
   }).join('');
@@ -495,9 +537,10 @@ function modalLogger(exId) {
       <div class="logger-tally">${tallyMarks(arr.length)}</div>
 
       <div class="chip-row">
-        <button class="chip" data-action="chip-log" data-id="${exId}" data-val="5">+5</button>
-        <button class="chip" data-action="chip-log" data-id="${exId}" data-val="10">+10</button>
-        <button class="chip" data-action="chip-log" data-id="${exId}" data-val="12">+12</button>
+        ${chips.map((c) => `<button class="chip" data-action="chip-log" data-id="${exId}" data-val="${c}">+${c}</button>`).join('')}
+      </div>
+      <div class="chip-row minus-row">
+        ${chips.map((c) => `<button class="chip chip-minus" data-action="chip-minus" data-id="${exId}" data-val="${c}" ${arr.length ? '' : 'disabled'}>−${c}</button>`).join('')}
       </div>
 
       <div class="keypad-display ${draft ? '' : 'placeholder'}">${draft || '0'}</div>
@@ -519,6 +562,7 @@ function modalExerciseForm(exId) {
   const ex = editing ? state.exercises.find((e) => e.id === exId) : null;
   const target = ex ? getEffectiveTarget(ex, todayISO()) : null;
   const chosenIcon = ex ? ex.icon : EMOJI_PRESETS[0];
+  const chips = (ex && ex.chips && ex.chips.length === 3) ? ex.chips : DEFAULT_CHIPS;
   return `<div class="modal-backdrop" data-action="backdrop">
     <div class="modal-sheet" data-stop>
       <div class="sheet-handle"></div>
@@ -542,6 +586,15 @@ function modalExerciseForm(exId) {
         <datalist id="unit-options"><option value="reps"><option value="kg"><option value="lb"><option value="sec"><option value="min"><option value="km"><option value="mi"></datalist>
       </div>
       <div class="field">
+        <label>Quick-add buttons</label>
+        <div class="chip-input-row">
+          <input id="f-chip1" type="number" min="0" step="any" value="${chips[0]}">
+          <input id="f-chip2" type="number" min="0" step="any" value="${chips[1]}">
+          <input id="f-chip3" type="number" min="0" step="any" value="${chips[2]}">
+        </div>
+        <div class="hint">These become the +/− quick buttons when logging a set.</div>
+      </div>
+      <div class="field">
         <label>Daily target (optional)</label>
         <input id="f-target" type="number" min="0" step="any" placeholder="Leave blank for no target" value="${target ? target : ''}">
         <div class="hint">${editing ? 'Changing this only affects today onward — past days keep their original target.' : 'Untargeted exercises still track totals but don’t count toward your streak.'}</div>
@@ -562,6 +615,19 @@ function modalConfirm(m) {
       <div class="form-actions">
         <button class="secondary-btn" data-action="close-modal">Cancel</button>
         <button class="primary-btn" style="background:var(--danger);color:#fff" data-action="confirm-delete-set" data-id="${m.exId || ''}" data-date="${m.date || ''}" data-index="${m.index != null ? m.index : ''}">Remove</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function modalConfirmDeleteExercise(m) {
+  return `<div class="modal-backdrop" data-action="backdrop">
+    <div class="modal-sheet center" data-stop>
+      <h2 style="font-size:16px;margin:0 0 8px">Delete “${escapeHtml(m.name || '')}”?</h2>
+      <p style="font-size:13.5px;color:var(--text-dim);margin:0 0 18px;line-height:1.5">This permanently deletes the exercise and every set ever logged for it. This can't be undone — use Archive instead if you just want it out of the way but recoverable.</p>
+      <div class="form-actions">
+        <button class="secondary-btn" data-action="close-modal">Cancel</button>
+        <button class="primary-btn" style="background:var(--danger);color:#fff" data-action="confirm-delete-exercise" data-id="${m.exId || ''}">Delete forever</button>
       </div>
     </div>
   </div>`;
@@ -654,9 +720,14 @@ document.addEventListener('click', async (e) => {
       const target = targetRaw === '' ? null : Math.max(0, parseFloat(targetRaw));
       const iconEl = document.querySelector('.emoji-chip.selected');
       const icon = iconEl ? iconEl.dataset.emoji : '💪';
+      const chipVals = ['f-chip1', 'f-chip2', 'f-chip3'].map((fid) => {
+        const raw = parseFloat(document.getElementById(fid).value);
+        return raw > 0 ? Math.round(raw * 100) / 100 : null;
+      });
+      const chips = chipVals.every((c) => c != null) ? chipVals : null;
       const id = btn.dataset.id;
-      if (id) await updateExercise(id, { name, unit, target });
-      else await addExercise({ name, unit, target, icon });
+      if (id) await updateExercise(id, { name, unit, target, chips });
+      else await addExercise({ name, unit, target, icon, chips });
       closeModal(); rerender();
       break;
     }
@@ -669,6 +740,10 @@ document.addEventListener('click', async (e) => {
     case 'open-logger': state.loggerDraft = ''; state.modal = { type: 'logger', exId: btn.dataset.id }; renderModal(); break;
     case 'chip-log':
       await logSet(btn.dataset.id, parseFloat(btn.dataset.val));
+      if (state.modal && state.modal.type === 'logger') renderModal();
+      break;
+    case 'chip-minus':
+      await decrementHandler(btn.dataset.id, parseFloat(btn.dataset.val));
       if (state.modal && state.modal.type === 'logger') renderModal();
       break;
     case 'key': {
@@ -702,6 +777,25 @@ document.addEventListener('click', async (e) => {
       renderModal();
       break;
 
+    case 'edit-set-save': {
+      const input = document.getElementById('edit-set-input');
+      const val = parseFloat(input.value);
+      await updateSetHandler(btn.dataset.id, btn.dataset.date, parseInt(btn.dataset.index, 10), val);
+      break;
+    }
+    case 'edit-set-cancel':
+      if (state.modal) state.modal.editIndex = null;
+      renderModal();
+      break;
+
+    case 'delete-exercise':
+      state.modal = { type: 'confirmDeleteExercise', exId: btn.dataset.id, name: btn.dataset.name };
+      renderModal();
+      break;
+    case 'confirm-delete-exercise':
+      await deleteExerciseHandler(btn.dataset.id);
+      break;
+
     case 'toggle-day':
       state.expandedDay = state.expandedDay === btn.dataset.date ? null : btn.dataset.date;
       renderView();
@@ -715,6 +809,29 @@ document.addEventListener('click', async (e) => {
     case 'apply-update':
       if (state.applyUpdate) state.applyUpdate();
       break;
+  }
+});
+
+document.addEventListener('dblclick', (e) => {
+  const badge = e.target.closest('[data-editable-set]');
+  if (!badge) return;
+  if (!state.modal || state.modal.type !== 'logger') return;
+  state.modal.editIndex = parseInt(badge.dataset.index, 10);
+  renderModal();
+  const input = document.getElementById('edit-set-input');
+  if (input) { input.focus(); input.select(); }
+});
+
+document.addEventListener('keydown', (e) => {
+  const input = e.target.closest('#edit-set-input');
+  if (!input) return;
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    document.querySelector('[data-action="edit-set-save"]')?.click();
+  } else if (e.key === 'Escape') {
+    e.preventDefault();
+    if (state.modal) state.modal.editIndex = null;
+    renderModal();
   }
 });
 

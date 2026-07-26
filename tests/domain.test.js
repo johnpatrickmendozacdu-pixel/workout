@@ -10,6 +10,10 @@ import {
   addSet,
   removeSetAt,
   undoLastSet,
+  updateSetAt,
+  decrementLast,
+  removeExercise,
+  purgeExerciseSets,
   validateBackup,
   mergeBackup,
   buildBackup,
@@ -79,6 +83,52 @@ describe('addSet / removeSetAt / undoLastSet', () => {
   it('undo on an exercise with no sets is a no-op', () => {
     const log = undoLastSet({}, TODAY, 'a');
     expect(log).toEqual({});
+  });
+
+  it('updateSetAt overwrites a specific set (fixing a typo)', () => {
+    let log = addSet({}, TODAY, 'a', 12);
+    log = addSet(log, TODAY, 'a', 999); // typo
+    log = updateSetAt(log, TODAY, 'a', 1, 9);
+    expect(log[TODAY].a).toEqual([12, 9]);
+  });
+
+  it('updateSetAt with a value <= 0 removes that set instead', () => {
+    let log = addSet({}, TODAY, 'a', 12);
+    log = addSet(log, TODAY, 'a', 8);
+    log = updateSetAt(log, TODAY, 'a', 0, 0);
+    expect(log[TODAY].a).toEqual([8]);
+  });
+
+  it('decrementLast reduces the most recent set', () => {
+    let log = addSet({}, TODAY, 'a', 12);
+    log = addSet(log, TODAY, 'a', 10);
+    log = decrementLast(log, TODAY, 'a', 4);
+    expect(log[TODAY].a).toEqual([12, 6]);
+  });
+
+  it('decrementLast removes the set entirely if it would drop to zero or below', () => {
+    let log = addSet({}, TODAY, 'a', 12);
+    log = addSet(log, TODAY, 'a', 3);
+    log = decrementLast(log, TODAY, 'a', 5);
+    expect(log[TODAY].a).toEqual([12]);
+  });
+});
+
+describe('removeExercise / purgeExerciseSets', () => {
+  it('removeExercise permanently drops the exercise from the list', () => {
+    const exercises = [makeExercise({ id: 'a' }), makeExercise({ id: 'b' })];
+    const after = removeExercise(exercises, 'a');
+    expect(after.map((e) => e.id)).toEqual(['b']);
+  });
+
+  it('purgeExerciseSets strips one exercise\'s history across every day, leaving others intact', () => {
+    let log = addSet({}, TODAY, 'a', 10);
+    log = addSet(log, TODAY, 'b', 5);
+    log = addSet(log, '2026-07-25', 'a', 7);
+    const after = purgeExerciseSets(log, 'a');
+    expect(after[TODAY].a).toBeUndefined();
+    expect(after[TODAY].b).toEqual([5]);
+    expect(after['2026-07-25'].a).toBeUndefined();
   });
 });
 

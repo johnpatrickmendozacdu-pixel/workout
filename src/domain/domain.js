@@ -205,6 +205,59 @@ export function undoLastSet(setsLog, dateStr, exId) {
   return removeSetAt(setsLog, dateStr, exId, arr.length - 1);
 }
 
+/**
+ * Pure reducer: overwrite the value of one already-logged set (e.g. fixing a
+ * typo). A value of 0 or less removes the set entirely rather than leaving
+ * a zero entry.
+ */
+export function updateSetAt(setsLog, dateStr, exId, index, value) {
+  const dayEntry = setsLog[dateStr];
+  if (!dayEntry || !dayEntry[exId]) return setsLog;
+  const arr = dayEntry[exId].slice();
+  if (index < 0 || index >= arr.length) return setsLog;
+  if (!(value > 0)) {
+    arr.splice(index, 1);
+  } else {
+    arr[index] = clampNum(value);
+  }
+  const next = { ...setsLog };
+  next[dateStr] = { ...dayEntry, [exId]: arr };
+  return next;
+}
+
+/**
+ * Pure reducer: reduce the most recent set by `amount` (a "minus" quick
+ * action to mirror the "+N" chips). If this brings it to zero or below,
+ * the set is removed entirely rather than left at zero.
+ */
+export function decrementLast(setsLog, dateStr, exId, amount) {
+  const dayEntry = setsLog[dateStr];
+  const arr = dayEntry && dayEntry[exId] ? dayEntry[exId].slice() : [];
+  if (!arr.length) return setsLog;
+  const reduced = arr[arr.length - 1] - Math.abs(amount);
+  if (reduced > 0) arr[arr.length - 1] = clampNum(reduced);
+  else arr.pop();
+  const next = { ...setsLog };
+  next[dateStr] = { ...dayEntry, [exId]: arr };
+  return next;
+}
+
+/** Pure: remove an exercise from the exercise list entirely (permanent, not archive). */
+export function removeExercise(exercises, exId) {
+  return exercises.filter((e) => e.id !== exId);
+}
+
+/** Pure: strip all logged sets for an exercise across every day (companion to removeExercise). */
+export function purgeExerciseSets(setsLog, exId) {
+  const next = {};
+  for (const d in setsLog) {
+    const dayEntry = { ...setsLog[d] };
+    delete dayEntry[exId];
+    next[d] = dayEntry;
+  }
+  return next;
+}
+
 export function buildBackup(exercises, setsLog) {
   return {
     version: 1,

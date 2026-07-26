@@ -247,6 +247,13 @@
   .mini-btn:disabled{opacity:0.25;}
   .mini-btn.danger{color:var(--danger);}
   .mini-btn.danger:active{background:var(--danger); color:#fff;}
+  .editable-target{cursor:pointer; border-bottom:1px dashed var(--border-strong); padding-bottom:1px;}
+  .inline-target-edit{display:flex; align-items:center; gap:6px; flex-wrap:wrap;}
+  .target-edit-input{
+    font-family:var(--font-mono); font-weight:700; font-size:13.5px; width:64px; background:var(--bg-card);
+    border:1px solid var(--accent); border-radius:7px; padding:3px 7px; color:var(--text);
+  }
+  .target-edit-unit{font-size:12.5px; color:var(--text-faint); font-family:var(--font-mono);}
   .archived-toggle{width:100%; text-align:left; background:none; border:none; color:var(--text-faint); font-size:13px; font-weight:700; padding:8px 2px; display:flex; align-items:center; gap:6px;}
   .plan-row.archived{opacity:0.55;}
 

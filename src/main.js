@@ -39,6 +39,7 @@ const state = {
   loggerDraft: '',
   expandedDay: null,
   showArchived: false,
+  editingPlanTarget: null,
 };
 
 const EMOJI_PRESETS = ['💪', '🏃', '🦵', '🧘', '🚴', '🏊', '🤸', '🏋️', '⛹️', '🤾', '🧗', '🥊', '🤺', '🚶', '🧎', '⚽'];
@@ -149,6 +150,15 @@ async function addExercise(data) {
   state.exercises.push(ex);
   await persistExercises();
 }
+function applyTargetChange(ex, newTarget) {
+  const today = todayISO();
+  const currentTarget = getEffectiveTarget(ex, today);
+  if (newTarget !== currentTarget) {
+    const todEntry = ex.targetHistory.find((h) => h.effectiveDate === today);
+    if (todEntry) todEntry.target = newTarget;
+    else ex.targetHistory.push({ effectiveDate: today, target: newTarget });
+  }
+}
 async function updateExercise(id, data) {
   const ex = state.exercises.find((e) => e.id === id);
   if (!ex) return;
@@ -156,15 +166,19 @@ async function updateExercise(id, data) {
   ex.icon = data.icon || ex.icon;
   ex.unit = (data.unit || 'reps').trim();
   ex.chips = data.chips && data.chips.length === 3 ? data.chips : (ex.chips || DEFAULT_CHIPS.slice());
-  const today = todayISO();
-  const currentTarget = getEffectiveTarget(ex, today);
-  const newTarget = data.target || null;
-  if (newTarget !== currentTarget) {
-    const todEntry = ex.targetHistory.find((h) => h.effectiveDate === today);
-    if (todEntry) todEntry.target = newTarget;
-    else ex.targetHistory.push({ effectiveDate: today, target: newTarget });
-  }
+  applyTargetChange(ex, data.target || null);
   await persistExercises();
+}
+/** Lightweight target-only edit, used by the inline Plan-row editor (no full form needed). */
+async function updateTargetHandler(id, rawValue) {
+  const ex = state.exercises.find((e) => e.id === id);
+  if (!ex) return;
+  const parsed = rawValue === '' || rawValue == null ? null : parseFloat(rawValue);
+  const value = (parsed == null || isNaN(parsed) || parsed <= 0) ? null : Math.round(parsed * 100) / 100;
+  applyTargetChange(ex, value);
+  await persistExercises();
+  state.editingPlanTarget = null;
+  renderView();
 }
 async function setArchived(id, archived) {
   const ex = state.exercises.find((e) => e.id === id);
@@ -398,11 +412,20 @@ function viewPlan() {
     html += `<div class="section-label">Active</div>`;
     active.forEach((ex, i) => {
       const target = getEffectiveTarget(ex, todayISO());
+      const isEditingTarget = state.editingPlanTarget === ex.id;
+      const targetSub = isEditingTarget
+        ? `<span class="inline-target-edit" data-stop>
+             <input type="number" min="0" step="any" id="plan-target-input-${ex.id}" class="target-edit-input" value="${target || ''}" placeholder="none">
+             <span class="target-edit-unit">${escapeHtml(ex.unit)}/day</span>
+             <button class="mini-btn" data-action="save-target-inline" data-id="${ex.id}" aria-label="Save">${ICONS.check}</button>
+             <button class="mini-btn" data-action="cancel-target-inline" aria-label="Cancel">${ICONS.close}</button>
+           </span>`
+        : `<span class="editable-target" data-editable-target data-id="${ex.id}" title="Tap to edit target">${target ? `${target} ${escapeHtml(ex.unit)}/day` : `no target · ${escapeHtml(ex.unit)}`}</span>`;
       html += `<div class="plan-row">
         <div class="ex-icon-badge">${escapeHtml(ex.icon)}</div>
         <div class="plan-row-body">
           <div class="plan-row-name">${escapeHtml(ex.name)}</div>
-          <div class="plan-row-sub">${target ? `${target} ${escapeHtml(ex.unit)}/day` : `no target · ${escapeHtml(ex.unit)}`}</div>
+          <div class="plan-row-sub">${targetSub}</div>
         </div>
         <div class="plan-row-actions">
           <button class="mini-btn" data-action="reorder" data-dir="-1" data-id="${ex.id}" ${i === 0 ? 'disabled' : ''} aria-label="Move up">${ICONS.up}</button>
@@ -796,6 +819,16 @@ document.addEventListener('click', async (e) => {
       await deleteExerciseHandler(btn.dataset.id);
       break;
 
+    case 'save-target-inline': {
+      const input = document.getElementById(`plan-target-input-${btn.dataset.id}`);
+      await updateTargetHandler(btn.dataset.id, input.value);
+      break;
+    }
+    case 'cancel-target-inline':
+      state.editingPlanTarget = null;
+      renderView();
+      break;
+
     case 'toggle-day':
       state.expandedDay = state.expandedDay === btn.dataset.date ? null : btn.dataset.date;
       renderView();
@@ -814,24 +847,45 @@ document.addEventListener('click', async (e) => {
 
 document.addEventListener('click', (e) => {
   const badge = e.target.closest('[data-editable-set]');
-  if (!badge) return;
-  if (!state.modal || state.modal.type !== 'logger') return;
-  state.modal.editIndex = parseInt(badge.dataset.index, 10);
-  renderModal();
-  const input = document.getElementById('edit-set-input');
-  if (input) { input.focus(); input.select(); }
+  if (badge && state.modal && state.modal.type === 'logger') {
+    state.modal.editIndex = parseInt(badge.dataset.index, 10);
+    renderModal();
+    const input = document.getElementById('edit-set-input');
+    if (input) { input.focus(); input.select(); }
+    return;
+  }
+  const targetEl = e.target.closest('[data-editable-target]');
+  if (targetEl) {
+    state.editingPlanTarget = targetEl.dataset.id;
+    renderView();
+    const input = document.getElementById(`plan-target-input-${targetEl.dataset.id}`);
+    if (input) { input.focus(); input.select(); }
+  }
 });
 
 document.addEventListener('keydown', (e) => {
-  const input = e.target.closest('#edit-set-input');
-  if (!input) return;
-  if (e.key === 'Enter') {
-    e.preventDefault();
-    document.querySelector('[data-action="edit-set-save"]')?.click();
-  } else if (e.key === 'Escape') {
-    e.preventDefault();
-    if (state.modal) state.modal.editIndex = null;
-    renderModal();
+  const setInput = e.target.closest('#edit-set-input');
+  if (setInput) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      document.querySelector('[data-action="edit-set-save"]')?.click();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      if (state.modal) state.modal.editIndex = null;
+      renderModal();
+    }
+    return;
+  }
+  const targetInput = e.target.closest('.target-edit-input');
+  if (targetInput) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      document.querySelector('[data-action="save-target-inline"]')?.click();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      state.editingPlanTarget = null;
+      renderView();
+    }
   }
 });
 

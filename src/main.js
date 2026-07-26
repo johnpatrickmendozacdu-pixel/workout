@@ -518,7 +518,7 @@ function modalLogger(exId) {
       </div>`;
     }
     return `<div class="set-row">
-      <div class="set-row-left"><span class="set-badge" data-editable-set data-index="${i}" title="Double-click to edit">${v}</span>${isLatest ? '<span class="set-latest-tag">Latest</span>' : ''}</div>
+      <div class="set-row-left"><span class="set-badge" data-editable-set data-index="${i}" title="Tap to edit">${v}</span>${isLatest ? '<span class="set-latest-tag">Latest</span>' : ''}</div>
       <button class="set-del" data-action="delete-set" data-id="${exId}" data-date="${today}" data-index="${i}" aria-label="Remove set">${ICONS.trash}</button>
     </div>`;
   }).join('');
@@ -812,7 +812,7 @@ document.addEventListener('click', async (e) => {
   }
 });
 
-document.addEventListener('dblclick', (e) => {
+document.addEventListener('click', (e) => {
   const badge = e.target.closest('[data-editable-set]');
   if (!badge) return;
   if (!state.modal || state.modal.type !== 'logger') return;

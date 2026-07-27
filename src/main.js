@@ -32,6 +32,7 @@ import {
   validateBackup,
   mergeBackup,
 } from './domain/domain.js';
+import * as gsync from './sync/googleSync.js';
 
 const DEFAULT_CHIPS = [5, 10, 12];
 
@@ -43,6 +44,7 @@ const state = {
   timersLog: {},
   meta: { lastExportAt: null },
   profile: { username: '', weight: null, height: null },
+  sync: { status: 'signed-out', email: null, error: null },
   storageError: false,
   updateAvailable: false,
   applyUpdate: null,
@@ -86,10 +88,19 @@ async function loadAll() {
   state.timersLog = timersLog || {};
   state.profile = profile || { username: '', weight: null, height: null };
 }
+/** Called by every persist* that changes real data. Bumps a timestamp (used to
+ * decide who "wins" during Drive sync) and, if signed in, schedules a push. */
+function markDirty() {
+  state.meta.updatedAt = Date.now();
+  db.setItem('app-meta', state.meta).catch(() => {});
+  scheduleSyncPush();
+}
+
 async function persistExercises() {
   try {
     await db.setItem('exercises', state.exercises);
     if (state.storageError) { state.storageError = false; renderBanner(); }
+    markDirty();
     return true;
   } catch (e) {
     state.storageError = true; renderBanner();
@@ -100,6 +111,7 @@ async function persistSets() {
   try {
     await db.setItem('sets-log', state.setsLog);
     if (state.storageError) { state.storageError = false; renderBanner(); }
+    markDirty();
     return true;
   } catch (e) {
     state.storageError = true; renderBanner();
@@ -117,6 +129,7 @@ async function persistMeta() {
 async function persistTimers() {
   try {
     await db.setItem('timers-log', state.timersLog);
+    markDirty();
     return true;
   } catch (e) {
     return false;
@@ -125,9 +138,121 @@ async function persistTimers() {
 async function persistProfile() {
   try {
     await db.setItem('profile', state.profile);
+    markDirty();
     return true;
   } catch (e) {
     return false;
+  }
+}
+
+/* ============================= GOOGLE DRIVE SYNC ============================= */
+let applyingRemote = false;
+let syncPushTimer = null;
+
+function buildSyncSnapshot() {
+  return {
+    version: 1,
+    updatedAt: state.meta.updatedAt || Date.now(),
+    exercises: state.exercises,
+    setsLog: state.setsLog,
+    timersLog: state.timersLog,
+    profile: state.profile,
+  };
+}
+
+async function applyRemoteSnapshot(remote) {
+  applyingRemote = true;
+  state.exercises = remote.exercises || [];
+  state.setsLog = remote.setsLog || {};
+  state.timersLog = remote.timersLog || {};
+  state.profile = remote.profile || { username: '', weight: null, height: null };
+  state.meta.updatedAt = remote.updatedAt || Date.now();
+  await Promise.all([
+    db.setItem('exercises', state.exercises),
+    db.setItem('sets-log', state.setsLog),
+    db.setItem('timers-log', state.timersLog),
+    db.setItem('profile', state.profile),
+    db.setItem('app-meta', state.meta),
+  ]);
+  applyingRemote = false;
+  rerender();
+}
+
+function scheduleSyncPush() {
+  if (applyingRemote || !gsync.isSignedIn()) return;
+  clearTimeout(syncPushTimer);
+  syncPushTimer = setTimeout(() => { pushToDrive(); }, 2500);
+}
+
+function renderSyncUI() {
+  if (state.modal && state.modal.type === 'data') renderModal();
+}
+
+async function pushToDrive() {
+  if (!gsync.isSignedIn()) return;
+  try {
+    state.sync.status = 'syncing'; renderSyncUI();
+    await gsync.uploadBackup(buildSyncSnapshot());
+    state.sync.status = 'synced'; state.sync.error = null;
+  } catch (e) {
+    state.sync.status = 'error'; state.sync.error = 'Could not reach Google Drive.';
+  }
+  renderSyncUI();
+}
+
+async function pullAndMerge() {
+  if (!gsync.isSignedIn()) return;
+  try {
+    state.sync.status = 'syncing'; renderSyncUI();
+    const remote = await gsync.downloadBackup();
+    if (!remote) {
+      await pushToDrive(); // nothing synced yet from any device — seed the cloud copy
+      return;
+    }
+    if ((remote.updatedAt || 0) > (state.meta.updatedAt || 0)) {
+      await applyRemoteSnapshot(remote);
+    } else if ((remote.updatedAt || 0) < (state.meta.updatedAt || 0)) {
+      await pushToDrive();
+      return;
+    }
+    state.sync.status = 'synced'; state.sync.error = null;
+  } catch (e) {
+    state.sync.status = 'error'; state.sync.error = 'Could not reach Google Drive.';
+  }
+  renderSyncUI();
+}
+
+async function googleSignInHandler() {
+  state.sync.status = 'syncing'; state.sync.error = null; renderModal();
+  const ok = await gsync.signIn();
+  if (ok) {
+    state.sync.email = gsync.getSignedInEmail();
+    await db.setItem('sync-account', state.sync.email).catch(() => {});
+    await pullAndMerge();
+  } else {
+    state.sync.status = 'error';
+    state.sync.error = 'Sign-in didn\u2019t go through — try again.';
+    renderModal();
+  }
+}
+async function googleSignOutHandler() {
+  gsync.signOut();
+  state.sync = { status: 'signed-out', email: null, error: null };
+  await db.setItem('sync-account', null).catch(() => {});
+  renderModal();
+}
+async function googleSyncNowHandler() {
+  await pullAndMerge();
+}
+/** Attempted once on app load — reconnects silently (no popup) if this browser
+ * signed in before and still has an active Google session. */
+async function tryResumeSync() {
+  const savedEmail = await db.getItem('sync-account').catch(() => null);
+  if (!savedEmail) return;
+  const ok = await gsync.trySilentSignIn(savedEmail);
+  if (ok) {
+    state.sync.email = gsync.getSignedInEmail() || savedEmail;
+    await pullAndMerge();
   }
 }
 async function saveProfile() {
@@ -360,6 +485,7 @@ const ICONS = {
   pause: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M8 5.5h3v13H8v-13zM13 5.5h3v13h-3v-13z" fill="currentColor"/></svg>`,
   flag: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M6 3v18M6 4h11l-2.5 3.5L17 11H6" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>`,
   trophy: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M7 4h10v4a5 5 0 01-10 0V4z" stroke="currentColor" stroke-width="1.6"/><path d="M7 5H4a3 3 0 003 3M17 5h3a3 3 0 01-3 3M12 13v3m-3 4h6m-3-4v0" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>`,
+  google: `<svg width="16" height="16" viewBox="0 0 24 24"><path fill="#4285F4" d="M23.5 12.3c0-.9-.1-1.5-.2-2.2H12v4.2h6.5c-.1 1.1-.9 2.7-2.5 3.8l4 3.1c2.4-2.2 3.5-5.4 3.5-8.9z"/><path fill="#34A853" d="M12 24c3.2 0 5.9-1.1 7.9-2.8l-4-3.1c-1.1.7-2.5 1.2-3.9 1.2-3 0-5.6-2-6.5-4.8l-4.1 3.2C3.4 21.5 7.4 24 12 24z"/><path fill="#FBBC05" d="M5.5 14.5c-.2-.7-.4-1.4-.4-2.5s.1-1.7.4-2.5L1.4 6.3C.5 8 0 9.9 0 12s.5 4 1.4 5.7l4.1-3.2z"/><path fill="#EA4335" d="M12 4.8c1.8 0 3 .8 3.7 1.4l3.5-3.4C17.4 1 14.8 0 12 0 7.4 0 3.4 2.5 1.4 6.3l4.1 3.2C6.4 6.8 9 4.8 12 4.8z"/></svg>`,
 };
 function ring(percent, size, stroke, complete, iconHtml) {
   const r = (size - stroke) / 2, c = 2 * Math.PI * r, off = c - Math.min(Math.max(percent, 0), 1) * c;
@@ -849,10 +975,33 @@ function modalConfirmDeleteExercise(m) {
 function modalData() {
   const last = state.meta.lastExportAt;
   const p = state.profile || {};
+  const sync = state.sync || { status: 'signed-out' };
+  const syncHtml = (() => {
+    if (sync.status === 'signed-out') {
+      return `<button class="secondary-btn" style="width:100%" data-action="google-sign-in">${ICONS.google || ''} Sign in with Google</button>
+        <div class="hint">Syncs your data to a private, hidden spot in your own Google Drive — free, and readable only by this app.</div>`;
+    }
+    if (sync.status === 'syncing') {
+      return `<div class="sync-status syncing">Syncing…</div>`;
+    }
+    const statusLine = sync.status === 'error'
+      ? `<div class="sync-status error">${escapeHtml(sync.error || 'Sync error')}</div>`
+      : `<div class="sync-status ok">${ICONS.check} Synced${sync.email ? ` · ${escapeHtml(sync.email)}` : ''}</div>`;
+    return `${statusLine}
+      <div class="sync-actions">
+        <button class="secondary-btn" data-action="google-sync-now">Sync now</button>
+        <button class="secondary-btn" data-action="google-sign-out">Sign out</button>
+      </div>`;
+  })();
   return `<div class="modal-backdrop" data-action="backdrop">
     <div class="modal-sheet" data-stop>
       <div class="sheet-handle"></div>
       <div class="sheet-head"><h2>Profile & data</h2><button class="sheet-close" data-action="close-modal">${ICONS.close}</button></div>
+
+      <div class="field">
+        <label>Cross-device sync</label>
+        ${syncHtml}
+      </div>
 
       <div class="field">
         <label>Username</label>
@@ -1078,6 +1227,16 @@ document.addEventListener('click', async (e) => {
       await saveProfile();
       break;
 
+    case 'google-sign-in':
+      await googleSignInHandler();
+      break;
+    case 'google-sign-out':
+      await googleSignOutHandler();
+      break;
+    case 'google-sync-now':
+      await googleSyncNowHandler();
+      break;
+
     case 'toggle-day':
       state.expandedDay = state.expandedDay === btn.dataset.date ? null : btn.dataset.date;
       renderView();
@@ -1195,5 +1354,9 @@ async function init() {
   await loadAll();
   db.requestPersistence();
   render();
+  tryResumeSync().catch(() => {});
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && gsync.isSignedIn()) pullAndMerge();
+  });
 }
 init();

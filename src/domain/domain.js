@@ -331,6 +331,17 @@ export function finishTimer(timersLog, dateStr, exId, nowMs, outcome) {
   return setTimerRecord(timersLog, dateStr, exId, { status: outcome, elapsedMs, runStartedAt: null });
 }
 
+/** Clears today's timer entirely (any status) so the next logged set starts a fresh one from 0:00.
+ * Since Progress reads timers live from timersLog, the reset is reflected there automatically. */
+export function resetTimer(timersLog, dateStr, exId) {
+  if (!getTimer(timersLog, dateStr, exId)) return timersLog;
+  const next = { ...timersLog };
+  const dayEntry = { ...(next[dateStr] || {}) };
+  delete dayEntry[exId];
+  next[dateStr] = dayEntry;
+  return next;
+}
+
 /**
  * If today's total newly beats today's effective target, raise the target
  * to match (a "you just set a new PR, so that's the new bar" auto-bump).

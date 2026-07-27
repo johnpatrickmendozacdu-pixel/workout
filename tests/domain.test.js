@@ -21,6 +21,7 @@ import {
   pauseTimer,
   resumeTimer,
   finishTimer,
+  resetTimer,
   bumpTargetIfPR,
   validateBackup,
   mergeBackup,
@@ -142,6 +143,21 @@ describe('workout timer', () => {
     expect(timers[TODAY].a).toEqual({ status: 'paused', elapsedMs: 5000, runStartedAt: null });
     // further "now" values shouldn't change a paused timer's elapsed time
     expect(timerElapsedMs(timers[TODAY].a, 999999)).toBe(5000);
+  });
+
+  it('resetTimer clears the day\'s timer entirely so the next set starts fresh', () => {
+    let timers = startTimer({}, TODAY, 'a', 1000);
+    timers = pauseTimer(timers, TODAY, 'a', 6000);
+    timers = resetTimer(timers, TODAY, 'a');
+    expect(timers[TODAY].a).toBeUndefined();
+    // starting again afterward begins a brand-new record from 0
+    timers = startTimer(timers, TODAY, 'a', 9000);
+    expect(timers[TODAY].a).toEqual({ status: 'running', elapsedMs: 0, runStartedAt: 9000 });
+  });
+
+  it('resetTimer is a no-op when there is nothing to reset', () => {
+    const timers = resetTimer({}, TODAY, 'a');
+    expect(timers).toEqual({});
   });
 
   it('resumeTimer picks back up from the frozen elapsed baseline', () => {

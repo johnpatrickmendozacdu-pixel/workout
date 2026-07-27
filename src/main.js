@@ -26,6 +26,7 @@ import {
   pauseTimer as pauseTimerPure,
   resumeTimer as resumeTimerPure,
   finishTimer as finishTimerPure,
+  resetTimer as resetTimerPure,
   bumpTargetIfPR as bumpTargetIfPRPure,
   buildBackup,
   validateBackup,
@@ -223,6 +224,12 @@ async function resumeTimerHandler(exId) {
 }
 async function giveUpTimerHandler(exId) {
   state.timersLog = finishTimerPure(state.timersLog, todayISO(), exId, Date.now(), 'gaveup');
+  await persistTimers();
+  renderModal();
+  renderView();
+}
+async function resetTimerHandler(exId) {
+  state.timersLog = resetTimerPure(state.timersLog, todayISO(), exId);
   await persistTimers();
   renderModal();
   renderView();
@@ -709,20 +716,21 @@ function modalLogger(exId) {
   const timerHtml = timer ? (() => {
     const elapsed = formatElapsed(timerElapsedMs(timer, Date.now()));
     const statusLabel = { running: 'In progress', paused: 'Paused', completed: 'Target hit', gaveup: 'Ended early' }[timer.status];
-    const controls = (timer.status === 'running' || timer.status === 'paused')
-      ? `<div class="timer-controls">
-           ${timer.status === 'running'
-             ? `<button class="timer-btn" data-action="pause-timer" data-id="${exId}">${ICONS.pause}Pause</button>`
-             : `<button class="timer-btn" data-action="resume-timer" data-id="${exId}">${ICONS.play}Resume</button>`}
-           <button class="timer-btn giveup" data-action="giveup-timer" data-id="${exId}">${ICONS.flag}Give up</button>
-         </div>`
+    const activeControls = (timer.status === 'running' || timer.status === 'paused')
+      ? `${timer.status === 'running'
+           ? `<button class="timer-btn" data-action="pause-timer" data-id="${exId}">${ICONS.pause}Pause</button>`
+           : `<button class="timer-btn" data-action="resume-timer" data-id="${exId}">${ICONS.play}Resume</button>`}
+         <button class="timer-btn giveup" data-action="giveup-timer" data-id="${exId}">${ICONS.flag}Give up</button>`
       : '';
     return `<div class="timer-block status-${timer.status}">
       <div class="timer-top">
         <span class="timer-clock" id="timer-display" data-status="${timer.status}">${elapsed}</span>
         <span class="timer-status">${timer.status === 'completed' ? ICONS.trophy : ''}${statusLabel}</span>
       </div>
-      ${controls}
+      <div class="timer-controls">
+        ${activeControls}
+        <button class="timer-btn reset" data-action="reset-timer" data-id="${exId}">${ICONS.restore}Reset</button>
+      </div>
     </div>`;
   })() : '';
 
@@ -1058,6 +1066,11 @@ document.addEventListener('click', async (e) => {
     case 'giveup-timer':
       if (confirm('Give up on today’s target for this exercise? The timer will stop and today won’t count as complete.')) {
         await giveUpTimerHandler(btn.dataset.id);
+      }
+      break;
+    case 'reset-timer':
+      if (confirm('Reset today’s timer back to 0:00? This only clears the clock, not your logged reps.')) {
+        await resetTimerHandler(btn.dataset.id);
       }
       break;
 

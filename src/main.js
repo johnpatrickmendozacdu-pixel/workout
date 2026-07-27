@@ -19,6 +19,14 @@ import {
   decrementLast as decrementLastPure,
   removeExercise as removeExercisePure,
   purgeExerciseSets as purgeExerciseSetsPure,
+  setDayTotal as setDayTotalPure,
+  getTimer as getTimerPure,
+  timerElapsedMs,
+  startTimer as startTimerPure,
+  pauseTimer as pauseTimerPure,
+  resumeTimer as resumeTimerPure,
+  finishTimer as finishTimerPure,
+  bumpTargetIfPR as bumpTargetIfPRPure,
   buildBackup,
   validateBackup,
   mergeBackup,
@@ -31,7 +39,9 @@ const state = {
   view: db.prefs.get('view', 'today'),
   exercises: [],
   setsLog: {},
+  timersLog: {},
   meta: { lastExportAt: null },
+  profile: { username: '', weight: null, height: null },
   storageError: false,
   updateAvailable: false,
   applyUpdate: null,
@@ -40,10 +50,19 @@ const state = {
   expandedDay: null,
   showArchived: false,
   editingPlanTarget: null,
+  editingTodayTotal: null,
 };
 
 const EMOJI_PRESETS = ['💪', '🏃', '🦵', '🧘', '🚴', '🏊', '🤸', '🏋️', '⛹️', '🤾', '🧗', '🥊', '🤺', '🚶', '🧎', '⚽'];
 
+function formatElapsed(ms) {
+  const totalSec = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  const pad = (n) => String(n).padStart(2, '0');
+  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
+}
 function escapeHtml(s) {
   return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
@@ -53,14 +72,18 @@ function getSetsFor(exId, dateStr) {
 
 /* ============================= STORAGE ============================= */
 async function loadAll() {
-  const [exercises, setsLog, meta] = await Promise.all([
+  const [exercises, setsLog, meta, timersLog, profile] = await Promise.all([
     db.getItem('exercises'),
     db.getItem('sets-log'),
     db.getItem('app-meta'),
+    db.getItem('timers-log'),
+    db.getItem('profile'),
   ]);
   state.exercises = exercises || [];
   state.setsLog = setsLog || {};
   state.meta = meta || { lastExportAt: null };
+  state.timersLog = timersLog || {};
+  state.profile = profile || { username: '', weight: null, height: null };
 }
 async function persistExercises() {
   try {
@@ -90,15 +113,66 @@ async function persistMeta() {
     return false;
   }
 }
+async function persistTimers() {
+  try {
+    await db.setItem('timers-log', state.timersLog);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+async function persistProfile() {
+  try {
+    await db.setItem('profile', state.profile);
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+async function saveProfile() {
+  const username = (document.getElementById('f-username').value || '').trim().slice(0, 24);
+  const weightRaw = document.getElementById('f-weight').value;
+  const heightRaw = document.getElementById('f-height').value;
+  const weight = weightRaw === '' ? null : Math.max(0, parseFloat(weightRaw));
+  const height = heightRaw === '' ? null : Math.max(0, parseFloat(heightRaw));
+  state.profile = { username, weight: isNaN(weight) ? null : weight, height: isNaN(height) ? null : height };
+  await persistProfile();
+  renderTopbar();
+  showToast('Profile saved');
+}
 
 /* ============================= MUTATIONS ============================= */
 async function logSet(exId, value) {
   if (!(value > 0)) return;
   const d = todayISO();
   state.setsLog = addSetPure(state.setsLog, d, exId, value);
-  await persistSets();
   const ex = state.exercises.find((e) => e.id === exId);
-  showToast(`Logged ${value}${ex && ex.unit ? ' ' + ex.unit : ''}`, () => undoLastSetHandler(exId));
+  const total = calcTotal(getSetsFor(exId, d));
+  const now = Date.now();
+
+  // First logged set of the day for this exercise auto-starts its timer.
+  state.timersLog = startTimerPure(state.timersLog, d, exId, now);
+
+  let newPR = false;
+  if (ex) {
+    const bumped = bumpTargetIfPRPure(ex, d, total);
+    if (bumped !== ex) {
+      state.exercises = state.exercises.map((e) => (e.id === exId ? bumped : e));
+      newPR = true;
+    }
+  }
+
+  const liveEx = state.exercises.find((e) => e.id === exId);
+  const targetNow = liveEx ? getEffectiveTarget(liveEx, d) : null;
+  if (targetNow && total >= targetNow) {
+    state.timersLog = finishTimerPure(state.timersLog, d, exId, now, 'completed');
+  }
+
+  await Promise.all([persistSets(), persistTimers(), newPR ? persistExercises() : Promise.resolve()]);
+
+  const unit = ex && ex.unit ? ' ' + ex.unit : '';
+  const msg = newPR ? `🏆 New PR! Target raised to ${total}${unit}` : `Logged ${value}${unit}`;
+  showToast(msg, () => undoLastSetHandler(exId));
   rerender();
 }
 async function undoLastSetHandler(exId) {
@@ -124,6 +198,34 @@ async function decrementHandler(exId, amount) {
   state.setsLog = decrementLastPure(state.setsLog, d, exId, amount);
   await persistSets();
   rerender();
+}
+async function setTotalHandler(exId, dateStr, rawValue) {
+  const parsed = rawValue === '' || rawValue == null ? null : parseFloat(rawValue);
+  const value = (parsed == null || isNaN(parsed) || parsed <= 0) ? null : Math.round(parsed * 100) / 100;
+  state.setsLog = setDayTotalPure(state.setsLog, dateStr, exId, value);
+  await persistSets();
+  state.editingTodayTotal = null;
+  if (state.modal && state.modal.type === 'logger') state.modal.editingTotal = false;
+  renderView();
+  if (state.modal && state.modal.type === 'logger') renderModal();
+}
+async function pauseTimerHandler(exId) {
+  state.timersLog = pauseTimerPure(state.timersLog, todayISO(), exId, Date.now());
+  await persistTimers();
+  renderModal();
+  renderView();
+}
+async function resumeTimerHandler(exId) {
+  state.timersLog = resumeTimerPure(state.timersLog, todayISO(), exId, Date.now());
+  await persistTimers();
+  renderModal();
+  renderView();
+}
+async function giveUpTimerHandler(exId) {
+  state.timersLog = finishTimerPure(state.timersLog, todayISO(), exId, Date.now(), 'gaveup');
+  await persistTimers();
+  renderModal();
+  renderView();
 }
 async function deleteExerciseHandler(id) {
   state.exercises = removeExercisePure(state.exercises, id);
@@ -247,6 +349,10 @@ const ICONS = {
   restore: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M4 8a8 8 0 111.6 6.4M4 4v4h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
   check: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="var(--success)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
   gear: `<svg viewBox="0 0 24 24" fill="none"><path d="M12 15a3 3 0 100-6 3 3 0 000 6z" stroke="currentColor" stroke-width="1.7"/><path d="M19.4 13.5a1.7 1.7 0 000-3l-1-.2a6.6 6.6 0 00-.7-1.6l.6-.9a1.7 1.7 0 00-2.4-2.4l-.9.6a6.6 6.6 0 00-1.6-.7l-.2-1a1.7 1.7 0 00-3 0l-.2 1a6.6 6.6 0 00-1.6.7l-.9-.6a1.7 1.7 0 00-2.4 2.4l.6.9a6.6 6.6 0 00-.7 1.6l-1 .2a1.7 1.7 0 000 3l1 .2a6.6 6.6 0 00.7 1.6l-.6.9a1.7 1.7 0 002.4 2.4l.9-.6a6.6 6.6 0 001.6.7l.2 1a1.7 1.7 0 003 0l.2-1a6.6 6.6 0 001.6-.7l.9.6a1.7 1.7 0 002.4-2.4l-.6-.9a6.6 6.6 0 00.7-1.6l1-.2z" stroke="currentColor" stroke-width="1.3"/></svg>`,
+  play: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M7 5.5v13l11-6.5-11-6.5z" fill="currentColor"/></svg>`,
+  pause: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M8 5.5h3v13H8v-13zM13 5.5h3v13h-3v-13z" fill="currentColor"/></svg>`,
+  flag: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M6 3v18M6 4h11l-2.5 3.5L17 11H6" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>`,
+  trophy: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M7 4h10v4a5 5 0 01-10 0V4z" stroke="currentColor" stroke-width="1.6"/><path d="M7 5H4a3 3 0 003 3M17 5h3a3 3 0 01-3 3M12 13v3m-3 4h6m-3-4v0" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>`,
 };
 function ring(percent, size, stroke, complete, iconHtml) {
   const r = (size - stroke) / 2, c = 2 * Math.PI * r, off = c - Math.min(Math.max(percent, 0), 1) * c;
@@ -335,10 +441,11 @@ function renderTopbar() {
   if (!el) return;
   if (state.view === 'today') {
     const streak = calcStreakInfo(state.exercises, state.setsLog).current;
+    const uname = state.profile && state.profile.username;
     el.innerHTML = `
       <div class="topbar-row">
         <div>
-          <div class="app-title">Sets</div>
+          <div class="app-title">${uname ? `Hey, ${escapeHtml(uname)}` : 'Sets'}</div>
           <div class="date-heading">${formatDisplayDate(todayISO())}</div>
         </div>
         <div class="streak-pill">${ICONS.flame}${streak}</div>
@@ -385,18 +492,33 @@ function viewToday() {
     const hasTarget = !!target && target > 0;
     const pct = hasTarget ? total / target : (total > 0 ? 1 : 0);
     const complete = hasTarget && total >= target;
-    return `<button class="ex-card ${complete ? 'complete' : ''}" data-action="open-logger" data-id="${ex.id}">
-      ${ring(hasTarget ? pct : (total > 0 ? 1 : 0), 52, 4, complete, escapeHtml(ex.icon))}
-      <div class="ex-body">
-        <div class="ex-name">${escapeHtml(ex.name)}</div>
-        ${hasTarget ? `<div class="ex-bar-track"><div class="ex-bar-fill ${complete ? 'complete' : ''}" style="width:${Math.min(pct, 1) * 100}%"></div></div>` : `<div class="ex-untargeted">No daily target</div>`}
-      </div>
-      <div class="ex-totals">
-        <div class="ex-total-num">${total}</div>
+    const isEditingTotal = state.editingTodayTotal === ex.id;
+    const totalDisplay = isEditingTotal
+      ? `<span class="inline-total-edit" data-stop>
+           <input type="number" min="0" step="any" id="today-total-input-${ex.id}" class="total-edit-input" value="${total || ''}" placeholder="0">
+           <button class="mini-btn" data-action="save-today-total-inline" data-id="${ex.id}" data-date="${today}" aria-label="Save">${ICONS.check}</button>
+           <button class="mini-btn" data-action="cancel-today-total-inline" aria-label="Cancel">${ICONS.close}</button>
+         </span>`
+      : `<span class="ex-total-num editable-target" data-editable-today-total data-id="${ex.id}" title="Tap to edit total">${total}</span>`;
+    const timer = getTimerPure(state.timersLog, today, ex.id);
+    const timeBadge = timer
+      ? `<div class="ex-time-badge status-${timer.status}">${timer.status === 'running' ? ICONS.play : timer.status === 'paused' ? ICONS.pause : timer.status === 'completed' ? ICONS.trophy : ICONS.flag}${formatElapsed(timerElapsedMs(timer, Date.now()))}</div>`
+      : '';
+    return `<div class="ex-card ${complete ? 'complete' : ''}">
+      <button class="ex-card-main" data-action="open-logger" data-id="${ex.id}">
+        ${ring(hasTarget ? pct : (total > 0 ? 1 : 0), 52, 4, complete, escapeHtml(ex.icon))}
+        <div class="ex-body">
+          <div class="ex-name">${escapeHtml(ex.name)}</div>
+          ${hasTarget ? `<div class="ex-bar-track"><div class="ex-bar-fill ${complete ? 'complete' : ''}" style="width:${Math.min(pct, 1) * 100}%"></div></div>` : `<div class="ex-untargeted">No daily target</div>`}
+        </div>
+      </button>
+      <div class="ex-totals" data-stop>
+        ${totalDisplay}
         ${hasTarget ? `<div class="ex-total-target">/ ${target} ${escapeHtml(ex.unit)}</div>` : `<div class="ex-total-target">${escapeHtml(ex.unit)}</div>`}
+        ${timeBadge}
       </div>
-      <div class="chevron">${ICONS.chevron}</div>
-    </button>`;
+      <button class="chevron-btn" data-action="open-logger" data-id="${ex.id}" aria-label="Open logger">${ICONS.chevron}</button>
+    </div>`;
   }).join('');
   return `<div>${rows}</div>`;
 }
@@ -495,7 +617,11 @@ function viewProgress() {
       </button>
       ${expanded ? `<div class="day-detail">${
         stats.details.length === 0 ? '<div>No exercises logged.</div>' :
-        stats.details.map((dt) => `<div><span>${escapeHtml(dt.ex.icon)} ${escapeHtml(dt.ex.name)}</span><span>${dt.total}${dt.hasTarget ? ` / ${dt.target}` : ''} ${escapeHtml(dt.ex.unit)}</span></div>`).join('')
+        stats.details.map((dt) => {
+          const t = getTimerPure(state.timersLog, d, dt.ex.id);
+          const timeStr = t ? ` · ${formatElapsed(timerElapsedMs(t, Date.now()))}` : '';
+          return `<div><span>${escapeHtml(dt.ex.icon)} ${escapeHtml(dt.ex.name)}</span><span>${dt.total}${dt.hasTarget ? ` / ${dt.target}` : ''} ${escapeHtml(dt.ex.unit)}${timeStr}</span></div>`;
+        }).join('')
       }</div>` : ''}
     </div>`;
   }
@@ -503,11 +629,35 @@ function viewProgress() {
 }
 
 /* ============================= MODALS ============================= */
+let timerTickHandle = null;
+function ensureTimerTick() {
+  if (timerTickHandle) { clearInterval(timerTickHandle); timerTickHandle = null; }
+  if (!state.modal || state.modal.type !== 'logger') return;
+  const exId = state.modal.exId;
+  const timer = getTimerPure(state.timersLog, todayISO(), exId);
+  if (!timer || timer.status !== 'running') return;
+  timerTickHandle = setInterval(() => {
+    const el = document.getElementById('timer-display');
+    if (!el || !state.modal || state.modal.type !== 'logger' || state.modal.exId !== exId) {
+      clearInterval(timerTickHandle);
+      timerTickHandle = null;
+      return;
+    }
+    const t = getTimerPure(state.timersLog, todayISO(), exId);
+    if (!t || t.status !== 'running') {
+      clearInterval(timerTickHandle);
+      timerTickHandle = null;
+      return;
+    }
+    el.textContent = formatElapsed(timerElapsedMs(t, Date.now()));
+  }, 1000);
+}
+
 function closeModal() { state.modal = null; renderModal(); }
 function renderModal() {
   const root = document.getElementById('modal-root');
   if (!root) return;
-  if (!state.modal) { root.innerHTML = ''; return; }
+  if (!state.modal) { root.innerHTML = ''; ensureTimerTick(); return; }
   const m = state.modal;
   if (m.type === 'logger') root.innerHTML = modalLogger(m.exId);
   else if (m.type === 'exerciseForm') root.innerHTML = modalExerciseForm(m.exId);
@@ -516,6 +666,7 @@ function renderModal() {
   else if (m.type === 'data') root.innerHTML = modalData();
   else if (m.type === 'importChoice') root.innerHTML = modalImportChoice();
   bindModalEvents();
+  ensureTimerTick();
 }
 
 function modalLogger(exId) {
@@ -545,6 +696,36 @@ function modalLogger(exId) {
       <button class="set-del" data-action="delete-set" data-id="${exId}" data-date="${today}" data-index="${i}" aria-label="Remove set">${ICONS.trash}</button>
     </div>`;
   }).join('');
+  const editingTotal = !!(state.modal && state.modal.editingTotal);
+  const totalDisplay = editingTotal
+    ? `<span class="inline-total-edit" data-stop>
+         <input type="number" min="0" step="any" id="logger-total-input" class="total-edit-input large" value="${total || ''}" placeholder="0" autofocus>
+         <button class="mini-btn" data-action="save-logger-total-inline" data-id="${exId}" data-date="${today}" aria-label="Save">${ICONS.check}</button>
+         <button class="mini-btn" data-action="cancel-logger-total-inline" aria-label="Cancel">${ICONS.close}</button>
+       </span>`
+    : `<div class="logger-total editable-target" data-editable-logger-total data-id="${exId}" title="Tap to edit total">${total}</div>`;
+
+  const timer = getTimerPure(state.timersLog, today, exId);
+  const timerHtml = timer ? (() => {
+    const elapsed = formatElapsed(timerElapsedMs(timer, Date.now()));
+    const statusLabel = { running: 'In progress', paused: 'Paused', completed: 'Target hit', gaveup: 'Ended early' }[timer.status];
+    const controls = (timer.status === 'running' || timer.status === 'paused')
+      ? `<div class="timer-controls">
+           ${timer.status === 'running'
+             ? `<button class="timer-btn" data-action="pause-timer" data-id="${exId}">${ICONS.pause}Pause</button>`
+             : `<button class="timer-btn" data-action="resume-timer" data-id="${exId}">${ICONS.play}Resume</button>`}
+           <button class="timer-btn giveup" data-action="giveup-timer" data-id="${exId}">${ICONS.flag}Give up</button>
+         </div>`
+      : '';
+    return `<div class="timer-block status-${timer.status}">
+      <div class="timer-top">
+        <span class="timer-clock" id="timer-display" data-status="${timer.status}">${elapsed}</span>
+        <span class="timer-status">${timer.status === 'completed' ? ICONS.trophy : ''}${statusLabel}</span>
+      </div>
+      ${controls}
+    </div>`;
+  })() : '';
+
   return `<div class="modal-backdrop" data-action="backdrop">
     <div class="modal-sheet" data-stop>
       <div class="sheet-handle"></div>
@@ -553,10 +734,11 @@ function modalLogger(exId) {
         <button class="sheet-close" data-action="close-modal">${ICONS.close}</button>
       </div>
       <div class="logger-total-row">
-        <div class="logger-total">${total}</div>
+        ${totalDisplay}
         ${hasTarget ? `<div class="logger-target">/ ${target}</div>` : ''}
       </div>
       <div class="logger-unit">${escapeHtml(ex.unit)} logged today</div>
+      ${timerHtml}
       <div class="logger-tally">${tallyMarks(arr.length)}</div>
 
       <div class="chip-row">
@@ -658,10 +840,28 @@ function modalConfirmDeleteExercise(m) {
 
 function modalData() {
   const last = state.meta.lastExportAt;
+  const p = state.profile || {};
   return `<div class="modal-backdrop" data-action="backdrop">
     <div class="modal-sheet" data-stop>
       <div class="sheet-handle"></div>
-      <div class="sheet-head"><h2>Backup & data</h2><button class="sheet-close" data-action="close-modal">${ICONS.close}</button></div>
+      <div class="sheet-head"><h2>Profile & data</h2><button class="sheet-close" data-action="close-modal">${ICONS.close}</button></div>
+
+      <div class="field">
+        <label>Username</label>
+        <input id="f-username" type="text" maxlength="24" placeholder="Your name" value="${escapeHtml(p.username || '')}">
+      </div>
+      <div class="profile-row">
+        <div class="field">
+          <label>Weight (kg)</label>
+          <input id="f-weight" type="number" min="0" step="any" placeholder="—" value="${p.weight != null ? p.weight : ''}">
+        </div>
+        <div class="field">
+          <label>Height (cm)</label>
+          <input id="f-height" type="number" min="0" step="any" placeholder="—" value="${p.height != null ? p.height : ''}">
+        </div>
+      </div>
+      <button class="secondary-btn" style="width:100%;margin-bottom:22px" data-action="save-profile">Save profile</button>
+
       <p style="font-size:13.5px;color:var(--text-dim);line-height:1.5;margin-top:0">Your data lives in this browser's storage and stays on this device. Export a JSON backup any time — it's the only way to move data to another device, and iOS Safari can clear site data if you don't open the app for about a week.</p>
       <div class="hint" style="margin-bottom:18px">${last ? `Last export: ${new Date(last).toLocaleString()}` : 'No export yet.'}</div>
       <button class="primary-btn" style="width:100%;margin-bottom:10px" data-action="export">Export backup (.json)</button>
@@ -829,6 +1029,42 @@ document.addEventListener('click', async (e) => {
       renderView();
       break;
 
+    case 'save-today-total-inline': {
+      const input = document.getElementById(`today-total-input-${btn.dataset.id}`);
+      await setTotalHandler(btn.dataset.id, btn.dataset.date, input.value);
+      break;
+    }
+    case 'cancel-today-total-inline':
+      state.editingTodayTotal = null;
+      renderView();
+      break;
+
+    case 'save-logger-total-inline': {
+      const input = document.getElementById('logger-total-input');
+      await setTotalHandler(btn.dataset.id, btn.dataset.date, input.value);
+      break;
+    }
+    case 'cancel-logger-total-inline':
+      if (state.modal) state.modal.editingTotal = false;
+      renderModal();
+      break;
+
+    case 'pause-timer':
+      await pauseTimerHandler(btn.dataset.id);
+      break;
+    case 'resume-timer':
+      await resumeTimerHandler(btn.dataset.id);
+      break;
+    case 'giveup-timer':
+      if (confirm('Give up on today’s target for this exercise? The timer will stop and today won’t count as complete.')) {
+        await giveUpTimerHandler(btn.dataset.id);
+      }
+      break;
+
+    case 'save-profile':
+      await saveProfile();
+      break;
+
     case 'toggle-day':
       state.expandedDay = state.expandedDay === btn.dataset.date ? null : btn.dataset.date;
       renderView();
@@ -860,6 +1096,22 @@ document.addEventListener('click', (e) => {
     renderView();
     const input = document.getElementById(`plan-target-input-${targetEl.dataset.id}`);
     if (input) { input.focus(); input.select(); }
+    return;
+  }
+  const todayTotalEl = e.target.closest('[data-editable-today-total]');
+  if (todayTotalEl) {
+    state.editingTodayTotal = todayTotalEl.dataset.id;
+    renderView();
+    const input = document.getElementById(`today-total-input-${todayTotalEl.dataset.id}`);
+    if (input) { input.focus(); input.select(); }
+    return;
+  }
+  const loggerTotalEl = e.target.closest('[data-editable-logger-total]');
+  if (loggerTotalEl && state.modal && state.modal.type === 'logger') {
+    state.modal.editingTotal = true;
+    renderModal();
+    const input = document.getElementById('logger-total-input');
+    if (input) { input.focus(); input.select(); }
   }
 });
 
@@ -885,6 +1137,30 @@ document.addEventListener('keydown', (e) => {
       e.preventDefault();
       state.editingPlanTarget = null;
       renderView();
+    }
+    return;
+  }
+  const todayTotalInput = e.target.closest('#today-total-input-' + (state.editingTodayTotal || '\0'));
+  if (todayTotalInput) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      document.querySelector('[data-action="save-today-total-inline"]')?.click();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      state.editingTodayTotal = null;
+      renderView();
+    }
+    return;
+  }
+  const loggerTotalInput = e.target.closest('#logger-total-input');
+  if (loggerTotalInput) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      document.querySelector('[data-action="save-logger-total-inline"]')?.click();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      if (state.modal) state.modal.editingTotal = false;
+      renderModal();
     }
   }
 });

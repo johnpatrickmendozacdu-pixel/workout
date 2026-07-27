@@ -14,6 +14,14 @@ import {
   decrementLast,
   removeExercise,
   purgeExerciseSets,
+  setDayTotal,
+  getTimer,
+  timerElapsedMs,
+  startTimer,
+  pauseTimer,
+  resumeTimer,
+  finishTimer,
+  bumpTargetIfPR,
   validateBackup,
   mergeBackup,
   buildBackup,
@@ -111,6 +119,114 @@ describe('addSet / removeSetAt / undoLastSet', () => {
     log = addSet(log, TODAY, 'a', 3);
     log = decrementLast(log, TODAY, 'a', 5);
     expect(log[TODAY].a).toEqual([12]);
+  });
+});
+
+describe('workout timer', () => {
+  it('startTimer creates a running record, and is a no-op if one already exists', () => {
+    let timers = startTimer({}, TODAY, 'a', 1000);
+    expect(timers[TODAY].a).toEqual({ status: 'running', elapsedMs: 0, runStartedAt: 1000 });
+    timers = startTimer(timers, TODAY, 'a', 5000); // should NOT reset
+    expect(timers[TODAY].a.runStartedAt).toBe(1000);
+  });
+
+  it('timerElapsedMs adds live running time to the stored baseline', () => {
+    const timers = startTimer({}, TODAY, 'a', 1000);
+    const elapsed = timerElapsedMs(timers[TODAY].a, 4000);
+    expect(elapsed).toBe(3000);
+  });
+
+  it('pauseTimer freezes elapsed time and stops the running clock', () => {
+    let timers = startTimer({}, TODAY, 'a', 1000);
+    timers = pauseTimer(timers, TODAY, 'a', 6000);
+    expect(timers[TODAY].a).toEqual({ status: 'paused', elapsedMs: 5000, runStartedAt: null });
+    // further "now" values shouldn't change a paused timer's elapsed time
+    expect(timerElapsedMs(timers[TODAY].a, 999999)).toBe(5000);
+  });
+
+  it('resumeTimer picks back up from the frozen elapsed baseline', () => {
+    let timers = startTimer({}, TODAY, 'a', 1000);
+    timers = pauseTimer(timers, TODAY, 'a', 6000); // elapsedMs=5000
+    timers = resumeTimer(timers, TODAY, 'a', 10000);
+    expect(timers[TODAY].a).toEqual({ status: 'running', elapsedMs: 5000, runStartedAt: 10000 });
+    expect(timerElapsedMs(timers[TODAY].a, 12000)).toBe(7000);
+  });
+
+  it('finishTimer("completed") locks in the final elapsed time', () => {
+    let timers = startTimer({}, TODAY, 'a', 1000);
+    timers = finishTimer(timers, TODAY, 'a', 21000, 'completed');
+    expect(timers[TODAY].a).toEqual({ status: 'completed', elapsedMs: 20000, runStartedAt: null });
+  });
+
+  it('finishTimer("gaveup") also works while paused', () => {
+    let timers = startTimer({}, TODAY, 'a', 1000);
+    timers = pauseTimer(timers, TODAY, 'a', 6000); // elapsedMs=5000
+    timers = finishTimer(timers, TODAY, 'a', 99999, 'gaveup');
+    expect(timers[TODAY].a).toEqual({ status: 'gaveup', elapsedMs: 5000, runStartedAt: null });
+  });
+
+  it('a finished timer cannot be paused, resumed, or re-finished', () => {
+    let timers = startTimer({}, TODAY, 'a', 1000);
+    timers = finishTimer(timers, TODAY, 'a', 5000, 'completed');
+    const afterPause = pauseTimer(timers, TODAY, 'a', 9000);
+    const afterResume = resumeTimer(timers, TODAY, 'a', 9000);
+    expect(afterPause).toBe(timers);
+    expect(afterResume).toBe(timers);
+  });
+
+  it('getTimer returns null when nothing has been logged yet', () => {
+    expect(getTimer({}, TODAY, 'a')).toBeNull();
+  });
+});
+
+describe('bumpTargetIfPR', () => {
+  it('raises today\'s target when the total beats it, and returns a new object', () => {
+    const ex = makeExercise({ targetHistory: [{ effectiveDate: '2026-07-20', target: 100 }] });
+    const updated = bumpTargetIfPR(ex, TODAY, 105);
+    expect(updated).not.toBe(ex);
+    expect(getEffectiveTarget(updated, TODAY)).toBe(105);
+  });
+
+  it('leaves the exercise untouched (same reference) if the total does not beat the target', () => {
+    const ex = makeExercise({ targetHistory: [{ effectiveDate: '2026-07-20', target: 100 }] });
+    const updated = bumpTargetIfPR(ex, TODAY, 90);
+    expect(updated).toBe(ex);
+  });
+
+  it('is a no-op for an untargeted exercise', () => {
+    const ex = makeExercise({ targetHistory: [{ effectiveDate: '2026-07-20', target: null }] });
+    const updated = bumpTargetIfPR(ex, TODAY, 999);
+    expect(updated).toBe(ex);
+  });
+
+  it('a second, later PR carries forward as the new baseline for the next day', () => {
+    const ex = makeExercise({ targetHistory: [{ effectiveDate: '2026-07-20', target: 100 }] });
+    const afterToday = bumpTargetIfPR(ex, TODAY, 105);
+    const tomorrow = addDays(TODAY, 1);
+    expect(getEffectiveTarget(afterToday, tomorrow)).toBe(105);
+    const afterTomorrow = bumpTargetIfPR(afterToday, tomorrow, 110);
+    expect(getEffectiveTarget(afterTomorrow, tomorrow)).toBe(110);
+  });
+});
+
+describe('setDayTotal', () => {
+  it('collapses existing sets into one set equal to the new total', () => {
+    let log = addSet({}, TODAY, 'a', 12);
+    log = addSet(log, TODAY, 'a', 10);
+    log = setDayTotal(log, TODAY, 'a', 50);
+    expect(log[TODAY].a).toEqual([50]);
+    expect(calcTotal(log[TODAY].a)).toBe(50);
+  });
+
+  it('clears the day entirely for a value <= 0', () => {
+    let log = addSet({}, TODAY, 'a', 12);
+    log = setDayTotal(log, TODAY, 'a', 0);
+    expect(log[TODAY].a).toBeUndefined();
+  });
+
+  it('can set a total on a day with no prior sets', () => {
+    const log = setDayTotal({}, TODAY, 'a', 30);
+    expect(log[TODAY].a).toEqual([30]);
   });
 });
 

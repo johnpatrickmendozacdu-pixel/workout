@@ -258,6 +258,95 @@ export function purgeExerciseSets(setsLog, exId) {
   return next;
 }
 
+/**
+ * Pure reducer: directly set a day's running total for an exercise. This
+ * collapses that day's individual sets into one set equal to the new total
+ * (or clears the day entirely if value <= 0) — a quick correction path for
+ * when the person just wants "today's number" to read correctly, as an
+ * alternative to editing/removing individual sets one at a time.
+ */
+export function setDayTotal(setsLog, dateStr, exId, value) {
+  const next = { ...setsLog };
+  const dayEntry = { ...(next[dateStr] || {}) };
+  if (!(value > 0)) {
+    delete dayEntry[exId];
+  } else {
+    dayEntry[exId] = [clampNum(value)];
+  }
+  next[dateStr] = dayEntry;
+  return next;
+}
+
+/**
+ * ===================== WORKOUT TIMER =====================
+ * One timer per (date, exercise). Shape: { status, elapsedMs, runStartedAt }.
+ * status: 'running' | 'paused' | 'completed' (hit target) | 'gaveup'.
+ * elapsedMs accumulates time while NOT running; while running, live elapsed
+ * is elapsedMs + (now - runStartedAt), computed by timerElapsedMs so the
+ * stored record only needs writing on state transitions (start/pause/
+ * resume/finish) — not every tick, which keeps this lag-free.
+ */
+export function getTimer(timersLog, dateStr, exId) {
+  return (timersLog[dateStr] && timersLog[dateStr][exId]) || null;
+}
+
+function setTimerRecord(timersLog, dateStr, exId, record) {
+  const next = { ...timersLog };
+  next[dateStr] = { ...(next[dateStr] || {}), [exId]: record };
+  return next;
+}
+
+export function timerElapsedMs(timer, nowMs) {
+  if (!timer) return 0;
+  const runningBit = timer.status === 'running' ? Math.max(0, nowMs - timer.runStartedAt) : 0;
+  return timer.elapsedMs + runningBit;
+}
+
+/** Starts a fresh timer for this exercise today. No-op if one already exists
+ * (so logging more sets later in the day never resets progress). */
+export function startTimer(timersLog, dateStr, exId, nowMs) {
+  if (getTimer(timersLog, dateStr, exId)) return timersLog;
+  return setTimerRecord(timersLog, dateStr, exId, { status: 'running', elapsedMs: 0, runStartedAt: nowMs });
+}
+
+export function pauseTimer(timersLog, dateStr, exId, nowMs) {
+  const t = getTimer(timersLog, dateStr, exId);
+  if (!t || t.status !== 'running') return timersLog;
+  return setTimerRecord(timersLog, dateStr, exId, {
+    status: 'paused', elapsedMs: t.elapsedMs + Math.max(0, nowMs - t.runStartedAt), runStartedAt: null,
+  });
+}
+
+export function resumeTimer(timersLog, dateStr, exId, nowMs) {
+  const t = getTimer(timersLog, dateStr, exId);
+  if (!t || t.status !== 'paused') return timersLog;
+  return setTimerRecord(timersLog, dateStr, exId, { status: 'running', elapsedMs: t.elapsedMs, runStartedAt: nowMs });
+}
+
+/** Ends the timer for the day. outcome is 'completed' (target hit) or 'gaveup'. */
+export function finishTimer(timersLog, dateStr, exId, nowMs, outcome) {
+  const t = getTimer(timersLog, dateStr, exId);
+  if (!t || (t.status !== 'running' && t.status !== 'paused')) return timersLog;
+  const elapsedMs = t.status === 'running' ? t.elapsedMs + Math.max(0, nowMs - t.runStartedAt) : t.elapsedMs;
+  return setTimerRecord(timersLog, dateStr, exId, { status: outcome, elapsedMs, runStartedAt: null });
+}
+
+/**
+ * If today's total newly beats today's effective target, raise the target
+ * to match (a "you just set a new PR, so that's the new bar" auto-bump).
+ * Returns the same exercise reference if nothing changed, so callers can
+ * cheaply check `updated !== ex` to know whether a PR just happened.
+ */
+export function bumpTargetIfPR(exercise, dateStr, total) {
+  const current = getEffectiveTarget(exercise, dateStr);
+  if (!current || total <= current) return exercise;
+  const history = exercise.targetHistory.slice();
+  const idx = history.findIndex((h) => h.effectiveDate === dateStr);
+  if (idx >= 0) history[idx] = { ...history[idx], target: total };
+  else history.push({ effectiveDate: dateStr, target: total });
+  return { ...exercise, targetHistory: history };
+}
+
 export function buildBackup(exercises, setsLog) {
   return {
     version: 1,

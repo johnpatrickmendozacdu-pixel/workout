@@ -1116,7 +1116,12 @@ function modalProfile() {
         <div class="hint">Syncs your data to a private, hidden spot in your own Google Drive — free, and readable only by this app.</div>`;
     }
     if (sync.status === 'syncing') {
-      return `<div class="sync-status syncing">Syncing…</div>`;
+      // Keep the account and an escape hatch on screen — a bare spinner with no
+      // way out is what made a slow handshake feel like a hang.
+      return `<div class="sync-status syncing">Syncing…${sync.email ? ` · ${escapeHtml(sync.email)}` : ''}</div>
+        <div class="sync-actions">
+          <button class="secondary-btn" data-action="google-sign-out">Sign out</button>
+        </div>`;
     }
     // Signed in as far as this app is concerned, but Google wouldn't renew the
     // token without a prompt. Everything still works locally; one tap resumes.

@@ -21,6 +21,10 @@ let signedInEmail = null;
  *  renew it, so a Drive call never races the expiry boundary. */
 const TOKEN_REFRESH_MARGIN_MS = 5 * 60 * 1000;
 const GIS_WAIT_TIMEOUT_MS = 10000;
+/** Silent auth is a background round-trip — fail fast so the UI never lingers.
+ *  Interactive auth waits on a human in a popup, so it gets much longer. */
+const SILENT_AUTH_TIMEOUT_MS = 6000;
+const INTERACTIVE_AUTH_TIMEOUT_MS = 120000;
 
 let lastEmailHint = null;
 
@@ -47,8 +51,24 @@ function whenGisReady() {
   });
 }
 
+/**
+ * The token client is created once and reused, but each auth attempt needs its
+ * own completion callback. Holding the current one in a module-level slot that
+ * the (permanent) client callback reads is what makes the 2nd and later
+ * attempts resolve — attaching onToken at construction time would strand every
+ * attempt after the first, leaving the UI stuck on "Syncing…" forever.
+ */
+let pendingResolve = null;
+
+function settle(ok) {
+  const resolve = pendingResolve;
+  pendingResolve = null;
+  if (resolve) resolve(ok);
+}
+
 function ensureTokenClient(onToken) {
   if (!gisReady()) return null;
+  pendingResolve = onToken;
   if (!tokenClient) {
     tokenClient = window.google.accounts.oauth2.initTokenClient({
       client_id: CLIENT_ID,
@@ -57,15 +77,28 @@ function ensureTokenClient(onToken) {
         if (resp && resp.access_token) {
           accessToken = resp.access_token;
           tokenExpiresAt = Date.now() + (resp.expires_in ? resp.expires_in * 1000 : 3500 * 1000);
-          fetchEmail().finally(() => onToken && onToken(true));
+          // Deliberately not awaited: the address is only used for display, so
+          // holding sync behind an extra round-trip just makes it feel slow.
+          fetchEmail();
+          settle(true);
         } else {
-          onToken && onToken(false);
+          settle(false);
         }
       },
-      error_callback: () => onToken && onToken(false),
+      error_callback: () => settle(false),
     });
   }
   return tokenClient;
+}
+
+/** Never let an auth attempt hang the UI: if Google neither calls back nor
+ *  errors, treat it as a failure so the app can fall through to 'reconnect'. */
+function withTimeout(promise, ms) {
+  return new Promise((resolve) => {
+    let done = false;
+    const timer = setTimeout(() => { if (!done) { done = true; pendingResolve = null; resolve(false); } }, ms);
+    promise.then((v) => { if (!done) { done = true; clearTimeout(timer); resolve(v); } });
+  });
 }
 
 async function fetchEmail() {
@@ -95,11 +128,11 @@ export function getSignedInEmail() {
 export async function signIn() {
   const ready = await whenGisReady();
   if (!ready) return false;
-  return new Promise((resolve) => {
+  return withTimeout(new Promise((resolve) => {
     const client = ensureTokenClient((ok) => resolve(ok));
     if (!client) { resolve(false); return; }
     client.requestAccessToken({ prompt: isSignedIn() ? '' : 'consent' });
-  });
+  }), INTERACTIVE_AUTH_TIMEOUT_MS);
 }
 
 /** Tries to silently refresh the token (no popup) — used on app open, given a
@@ -108,7 +141,7 @@ export async function trySilentSignIn(emailHint) {
   if (emailHint) lastEmailHint = emailHint;
   const ready = await whenGisReady();
   if (!ready) return false;
-  return new Promise((resolve) => {
+  return withTimeout(new Promise((resolve) => {
     const client = ensureTokenClient((ok) => resolve(ok));
     if (!client) { resolve(false); return; }
     try {
@@ -116,7 +149,7 @@ export async function trySilentSignIn(emailHint) {
     } catch (e) {
       resolve(false);
     }
-  });
+  }), SILENT_AUTH_TIMEOUT_MS);
 }
 
 /**
@@ -132,6 +165,7 @@ export async function ensureFreshToken() {
 
 export function signOut() {
   lastEmailHint = null;
+  pendingResolve = null;
   if (accessToken && gisReady() && window.google.accounts.oauth2.revoke) {
     window.google.accounts.oauth2.revoke(accessToken, () => {});
   }

@@ -202,7 +202,11 @@ async function applyRemoteSnapshot(remote) {
  *  be silently renewable, so sync work is gated on the account, not the token.
  *  The token is refreshed lazily inside the sync calls themselves. */
 function hasSyncAccount() {
-  return !!(state.sync.email && state.sync.status !== 'signed-out');
+  if (state.sync.status === 'signed-out') return false;
+  // Never gate on the email: it comes from a background userinfo lookup and is
+  // display-only, so requiring it stalled sync for the first seconds after
+  // sign-in — the window in which sync actually matters most.
+  return gsync.isSignedIn() || !!state.sync.connected || !!state.sync.email;
 }
 
 /** Token trouble means "reconnect", anything else means the network/Drive is
@@ -255,7 +259,7 @@ function renderSyncUI() {
 }
 
 async function pushToDrive() {
-  if (!hasSyncAccount()) return;
+  if (!hasSyncAccount()) { endSyncing(state.sync.connected ? 'reconnect' : 'signed-out'); renderSyncUI(); return; }
   try {
     beginSyncing(); renderSyncUI();
     await gsync.uploadBackup(buildSyncSnapshot());
@@ -267,7 +271,7 @@ async function pushToDrive() {
 }
 
 async function pullAndMerge() {
-  if (!hasSyncAccount()) return;
+  if (!hasSyncAccount()) { endSyncing(state.sync.connected ? 'reconnect' : 'signed-out'); renderSyncUI(); return; }
   try {
     beginSyncing(); renderSyncUI();
     const remote = await gsync.downloadBackup();
@@ -292,11 +296,20 @@ async function googleSignInHandler() {
   beginSyncing(); state.sync.error = null; renderModal();
   const ok = await gsync.signIn();
   if (ok) {
-    // getSignedInEmail() can be null if the userinfo lookup failed; keep the
-    // remembered address in that case rather than dropping the account.
+    // The email may not have arrived yet (background lookup) — record the
+    // connection itself, which is what sync and resume actually depend on.
+    state.sync.connected = true;
+    await db.setItem('sync-enabled', true).catch(() => {});
     state.sync.email = gsync.getSignedInEmail() || state.sync.email;
-    await db.setItem('sync-account', state.sync.email).catch(() => {});
+    if (state.sync.email) await db.setItem('sync-account', state.sync.email).catch(() => {});
     await pullAndMerge();
+    // Pick up the address once the background lookup lands, for display + hint.
+    const late = gsync.getSignedInEmail();
+    if (late && late !== state.sync.email) {
+      state.sync.email = late;
+      db.setItem('sync-account', late).catch(() => {});
+      renderSyncUI();
+    }
   } else {
     // Falling back to 'reconnect' (not 'error') keeps the retry affordance on
     // screen for someone who was already signed in.
@@ -308,8 +321,11 @@ async function googleSignInHandler() {
 async function googleSignOutHandler() {
   gsync.signOut();
   clearTimeout(syncWatchdog);
-  state.sync = { status: 'signed-out', email: null, error: null };
-  await db.setItem('sync-account', null).catch(() => {});
+  state.sync = { status: 'signed-out', email: null, error: null, connected: false };
+  await Promise.all([
+    db.setItem('sync-account', null).catch(() => {}),
+    db.setItem('sync-enabled', false).catch(() => {}),
+  ]);
   renderModal();
   renderTopbar();
 }
@@ -319,18 +335,26 @@ async function googleSyncNowHandler() {
 /** Attempted once on app load — reconnects silently (no popup) if this browser
  * signed in before and still has an active Google session. */
 async function tryResumeSync() {
-  const savedEmail = await db.getItem('sync-account').catch(() => null);
-  if (!savedEmail) return;
+  const [savedEmail, enabled] = await Promise.all([
+    db.getItem('sync-account').catch(() => null),
+    db.getItem('sync-enabled').catch(() => null),
+  ]);
+  // Resume on either signal: the email may never have been captured (the
+  // userinfo lookup can fail while sync itself works fine), so the connection
+  // flag is the authoritative one.
+  if (!savedEmail && !enabled) return;
 
   // Show the account immediately, before the handshake — the person never
   // signed out, so the app shouldn't flash a signed-out avatar on every load.
-  state.sync.email = savedEmail;
+  state.sync.email = savedEmail || null;
+  state.sync.connected = true;
   beginSyncing();
   renderSyncUI();
 
   const ok = await gsync.trySilentSignIn(savedEmail);
   if (ok) {
-    state.sync.email = gsync.getSignedInEmail() || savedEmail;
+    state.sync.email = gsync.getSignedInEmail() || savedEmail || null;
+    if (state.sync.email) db.setItem('sync-account', state.sync.email).catch(() => {});
     await pullAndMerge();
   } else {
     // Google wouldn't renew silently (signed out of Google, or third-party

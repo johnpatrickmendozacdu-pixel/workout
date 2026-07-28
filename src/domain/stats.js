@@ -5,7 +5,7 @@
 // change, and no possibility of stats drifting out of step with the logs they
 // describe: editing a past day recomputes the truth for free.
 
-import { calcTotal, getTimer, getEffectiveTarget, addDays, todayISO } from './domain.js';
+import { calcTotal, getTimer, getEffectiveTarget, addDays, todayISO, isScheduledOn } from './domain.js';
 
 /** Days (sorted) on which this exercise has any logged set. */
 export function workoutDates(exId, setsLog) {
@@ -54,7 +54,7 @@ export function streakInfo(ex, setsLog, todayOverride) {
 
   while (cursor <= today && guard < 20000) {
     const target = getEffectiveTarget(ex, cursor);
-    if (target && target > 0) {
+    if (target && target > 0 && isScheduledOn(ex, cursor)) {
       tracked++;
       const total = calcTotal((setsLog[cursor] && setsLog[cursor][ex.id]) || []);
       if (total >= target) {
@@ -141,6 +141,12 @@ export function allStats(exercises, setsLog, timersLog, todayOverride) {
     out[ex.id] = exerciseStats(ex, setsLog, timersLog, todayOverride);
   });
   return out;
+}
+
+/** Time of day a session was completed, e.g. "6:42 AM" — the clock log. */
+export function formatClock(ts) {
+  if (!ts) return null;
+  return new Date(ts).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
 }
 
 export function formatDuration(ms) {

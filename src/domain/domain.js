@@ -37,6 +37,30 @@ export function clampNum(n) {
  * Historic days keep the target that was active at the time, even if it
  * has since been changed — this is what makes streak calculations stable.
  */
+/**
+ * Which weekdays an exercise is scheduled for. `schedule` is either the string
+ * 'daily' (or absent, for everything created before scheduling existed) or an
+ * array of weekday numbers, 0=Sunday .. 6=Saturday.
+ */
+export function isScheduledOn(exercise, dateStr) {
+  const sched = exercise.schedule;
+  if (!sched || sched === 'daily') return true;
+  if (!Array.isArray(sched) || !sched.length) return true;
+  const day = new Date(dateStr + 'T00:00:00').getDay();
+  return sched.includes(day);
+}
+
+export function scheduleLabel(exercise) {
+  const sched = exercise.schedule;
+  if (!sched || sched === 'daily' || !Array.isArray(sched) || sched.length === 7) return 'Every day';
+  if (!sched.length) return 'Every day';
+  const NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const ordered = [1, 2, 3, 4, 5, 6, 0].filter((d) => sched.includes(d));
+  if (ordered.length === 5 && [1,2,3,4,5].every((d) => sched.includes(d))) return 'Weekdays';
+  if (ordered.length === 2 && sched.includes(0) && sched.includes(6)) return 'Weekends';
+  return ordered.map((d) => NAMES[d]).join(' ');
+}
+
 export function getEffectiveTarget(exercise, dateStr) {
   let target = null;
   const hist = (exercise.targetHistory || [])
@@ -75,6 +99,7 @@ export function calcDayStats(exercises, setsLog, dateStr, overrides) {
     if (!ex.active) continue;
     if (ex.createdDate && ex.createdDate > dateStr) continue; // didn't exist yet
 
+    if (!isScheduledOn(ex, dateStr)) continue; // rest day — nothing was due
     const target = getEffectiveTarget(ex, dateStr);
     const arr = (setsLog[dateStr] && setsLog[dateStr][ex.id]) || [];
     const total = calcTotal(arr);
@@ -286,10 +311,34 @@ export function purgeExerciseSets(setsLog, exId) {
 export function setDayTotal(setsLog, dateStr, exId, value) {
   const next = { ...setsLog };
   const dayEntry = { ...(next[dateStr] || {}) };
+  const current = (dayEntry[exId] || []).slice();
+  const target = clampNum(value);
+
   if (!(value > 0)) {
     delete dayEntry[exId];
+    next[dateStr] = dayEntry;
+    return next;
+  }
+
+  // Adjust the existing sets to reach the new total rather than collapsing the
+  // day into one enormous "set" — that fabricated set used to masquerade as a
+  // single-effort record and corrupt Top Set.
+  const sum = current.reduce((a, b) => a + b, 0);
+  if (!current.length) {
+    dayEntry[exId] = [target];
+  } else if (target > sum) {
+    current.push(clampNum(target - sum));
+    dayEntry[exId] = current;
+  } else if (target < sum) {
+    let remaining = sum - target;
+    while (remaining > 0 && current.length) {
+      const last = current[current.length - 1];
+      if (last > remaining) { current[current.length - 1] = clampNum(last - remaining); remaining = 0; }
+      else { remaining = clampNum(remaining - last); current.pop(); }
+    }
+    dayEntry[exId] = current;
   } else {
-    dayEntry[exId] = [clampNum(value)];
+    dayEntry[exId] = current;
   }
   next[dateStr] = dayEntry;
   return next;
@@ -346,7 +395,7 @@ export function finishTimer(timersLog, dateStr, exId, nowMs, outcome) {
   const t = getTimer(timersLog, dateStr, exId);
   if (!t || (t.status !== 'running' && t.status !== 'paused')) return timersLog;
   const elapsedMs = t.status === 'running' ? t.elapsedMs + Math.max(0, nowMs - t.runStartedAt) : t.elapsedMs;
-  return setTimerRecord(timersLog, dateStr, exId, { status: outcome, elapsedMs, runStartedAt: null });
+  return setTimerRecord(timersLog, dateStr, exId, { status: outcome, elapsedMs, runStartedAt: null, finishedAt: nowMs });
 }
 
 /** Clears today's timer entirely (any status) so the next logged set starts a fresh one from 0:00.

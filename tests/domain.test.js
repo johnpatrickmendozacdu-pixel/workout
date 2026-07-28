@@ -24,6 +24,8 @@ import {
   resetTimer,
   bumpTargetIfPR,
   setTargetForDay,
+  isScheduledOn,
+  scheduleLabel,
   versionStatus,
   validateBackup,
   mergeBackup,
@@ -173,14 +175,15 @@ describe('workout timer', () => {
   it('finishTimer("completed") locks in the final elapsed time', () => {
     let timers = startTimer({}, TODAY, 'a', 1000);
     timers = finishTimer(timers, TODAY, 'a', 21000, 'completed');
-    expect(timers[TODAY].a).toEqual({ status: 'completed', elapsedMs: 20000, runStartedAt: null });
+    expect(timers[TODAY].a).toMatchObject({ status: 'completed', elapsedMs: 20000, runStartedAt: null });
+    expect(timers[TODAY].a.finishedAt).toBe(21000); // clock log: when it was finished
   });
 
   it('finishTimer("gaveup") also works while paused', () => {
     let timers = startTimer({}, TODAY, 'a', 1000);
     timers = pauseTimer(timers, TODAY, 'a', 6000); // elapsedMs=5000
     timers = finishTimer(timers, TODAY, 'a', 99999, 'gaveup');
-    expect(timers[TODAY].a).toEqual({ status: 'gaveup', elapsedMs: 5000, runStartedAt: null });
+    expect(timers[TODAY].a).toMatchObject({ status: 'gaveup', elapsedMs: 5000, runStartedAt: null });
   });
 
   it('a finished timer cannot be paused, resumed, or re-finished', () => {
@@ -194,6 +197,33 @@ describe('workout timer', () => {
 
   it('getTimer returns null when nothing has been logged yet', () => {
     expect(getTimer({}, TODAY, 'a')).toBeNull();
+  });
+});
+
+describe('scheduling', () => {
+  it('treats a missing or daily schedule as every day', () => {
+    expect(isScheduledOn(makeExercise(), '2026-07-26')).toBe(true);
+    expect(isScheduledOn(makeExercise({ schedule: 'daily' }), '2026-07-26')).toBe(true);
+  });
+
+  it('only counts the chosen weekdays', () => {
+    const monWedFri = makeExercise({ schedule: [1, 3, 5] });
+    expect(isScheduledOn(monWedFri, '2026-07-27')).toBe(true);  // Monday
+    expect(isScheduledOn(monWedFri, '2026-07-28')).toBe(false); // Tuesday
+  });
+
+  it('a rest day is not a missed day', () => {
+    const monOnly = makeExercise({ createdDate: '2026-07-20', schedule: [1] });
+    const stats = calcDayStats([monOnly], {}, '2026-07-28'); // a Tuesday
+    expect(stats.targetedCount).toBe(0);
+    expect(stats.countsForStreak).toBe(false);
+  });
+
+  it('names common patterns plainly', () => {
+    expect(scheduleLabel(makeExercise())).toBe('Every day');
+    expect(scheduleLabel(makeExercise({ schedule: [1, 2, 3, 4, 5] }))).toBe('Weekdays');
+    expect(scheduleLabel(makeExercise({ schedule: [0, 6] }))).toBe('Weekends');
+    expect(scheduleLabel(makeExercise({ schedule: [1, 3] }))).toBe('Mon Wed');
   });
 });
 
@@ -341,12 +371,30 @@ describe('versionStatus', () => {
 });
 
 describe('setDayTotal', () => {
-  it('collapses existing sets into one set equal to the new total', () => {
+  it('reaches a higher total by adding the difference, keeping real sets intact', () => {
     let log = addSet({}, TODAY, 'a', 12);
     log = addSet(log, TODAY, 'a', 10);
     log = setDayTotal(log, TODAY, 'a', 50);
-    expect(log[TODAY].a).toEqual([50]);
+    expect(log[TODAY].a).toEqual([12, 10, 28]);
     expect(calcTotal(log[TODAY].a)).toBe(50);
+  });
+
+  it('reaches a lower total by trimming from the end, never inventing a giant set', () => {
+    let log = addSet({}, TODAY, 'a', 20);
+    log = addSet(log, TODAY, 'a', 20);
+    log = addSet(log, TODAY, 'a', 20);
+    log = setDayTotal(log, TODAY, 'a', 25);
+    expect(calcTotal(log[TODAY].a)).toBe(25);
+    expect(Math.max(...log[TODAY].a)).toBeLessThanOrEqual(20);
+  });
+
+  it('does not corrupt Top Set when a day total is edited', () => {
+    // The old behaviour collapsed the day into one set, so a 105-rep DAY
+    // masqueraded as a 105-rep single set and became the Top Set.
+    let log = addSet({}, TODAY, 'a', 20);
+    log = addSet(log, TODAY, 'a', 20);
+    log = setDayTotal(log, TODAY, 'a', 105);
+    expect(Math.max(...log[TODAY].a)).toBeLessThan(105);
   });
 
   it('clears the day entirely for a value <= 0', () => {

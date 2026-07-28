@@ -7,6 +7,8 @@ import {
   formatDisplayDate,
   uid,
   getEffectiveTarget,
+  isScheduledOn,
+  scheduleLabel,
   calcTotal,
   calcDayStats,
   calcStreakInfo,
@@ -35,9 +37,12 @@ import {
   mergeBackup,
 } from './domain/domain.js';
 import * as gsync from './sync/googleSync.js';
-import { allStats, formatDuration, formatCount } from './domain/stats.js';
+import { allStats, formatDuration, formatCount, formatClock } from './domain/stats.js';
 
 const DEFAULT_CHIPS = [5, 10, 12];
+// Every number is on screen — no hunting, no typing. One tap applies it in
+// whichever direction the lever is set to.
+const REP_PAD = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 20, 25, 30, 50];
 
 /* ============================= STATE ============================= */
 const state = {
@@ -58,11 +63,33 @@ const state = {
   editingPlanTarget: null,
   editingTodayTotal: null,
   editingDayTarget: null,
+  repMode: 'add',   // 'add' | 'sub' — the pad lever
   version: { local: typeof __BUILD_ID__ === 'string' ? __BUILD_ID__ : 'dev', status: 'unknown' },
   panel: null,          // 'stats' — mobile drawer only
 };
 
-const EMOJI_PRESETS = ['💪', '🏃', '🦵', '🧘', '🚴', '🏊', '🤸', '🏋️', '⛹️', '🤾', '🧗', '🥊', '🤺', '🚶', '🧎', '⚽'];
+// Chosen to read as the movement itself at a glance, not generic "sport".
+// Every glyph here is Emoji 5.0 or older, so it renders on every iOS/Android
+// version in use — the newer additions (chair, rope) simply have no glyph on
+// older phones, which is why icons were showing up blank.
+const EMOJI_PRESETS = [
+  '🤸', // push ups
+  '🦵', // squats / legs
+  '🧗', // pull ups
+  '💪', // arms / curls
+  '🏋️', // dips / weights
+  '🤾', // burpees
+  '🏃', // cardio / run
+  '🚴', // cycling
+  '🏊', // swimming
+  '🧘', // mobility / stretch
+  '🥊', // boxing
+  '⛹️', // athletic / general
+  '🚶', // walking
+  '🤺', // lunges
+  '⏱', // timed hold / plank
+  '🔥', // finisher
+];
 
 function formatElapsed(ms) {
   const totalSec = Math.max(0, Math.floor(ms / 1000));
@@ -535,6 +562,7 @@ async function addExercise(data) {
     order: maxOrder + 1,
     createdDate: now,
     chips: data.chips && data.chips.length === 3 ? data.chips : DEFAULT_CHIPS.slice(),
+    schedule: data.schedule || 'daily',
     targetHistory: [{ effectiveDate: now, target: data.target || null }],
   };
   state.exercises.push(ex);
@@ -556,6 +584,7 @@ async function updateExercise(id, data) {
   ex.icon = data.icon || ex.icon;
   ex.unit = (data.unit || 'reps').trim();
   ex.chips = data.chips && data.chips.length === 3 ? data.chips : (ex.chips || DEFAULT_CHIPS.slice());
+  ex.schedule = data.schedule || 'daily';
   applyTargetChange(ex, data.target || null);
   await persistExercises();
 }
@@ -745,7 +774,7 @@ function renderDashboard() {
         </div>
         <div class="headline-stat">
           <b>${s.maxReps ?? '—'}</b>
-          <span>Max reps<em>biggest day</em></span>
+          <span>Max<em>biggest day</em></span>
         </div>
       </div>
       <dl class="stat-list">
@@ -893,7 +922,10 @@ function renderView() {
 
 /* ============================= VIEW: TODAY ============================= */
 function viewToday() {
-  const active = state.exercises.filter((e) => e.active).sort((a, b) => a.order - b.order);
+  const all = state.exercises.filter((e) => e.active).sort((a, b) => a.order - b.order);
+  const todayStr = todayISO();
+  const active = all.filter((e) => isScheduledOn(e, todayStr));
+  const resting = all.filter((e) => !isScheduledOn(e, todayStr));
   if (active.length === 0) {
     return `<div class="empty-card">
       <div class="glyph">🗓️</div>
@@ -938,7 +970,18 @@ function viewToday() {
       <button class="chevron-btn" data-action="open-logger" data-id="${ex.id}" aria-label="Open logger">${ICONS.chevron}</button>
     </div>`;
   }).join('');
-  return `<div>${rows}</div>`;
+
+  // Anything not scheduled today is shown as resting rather than hidden, so
+  // it's obvious the app knows about it and isn't counting it against you.
+  const restHtml = resting.length
+    ? `<div class="section-label">Resting today</div>` + resting.map((ex) => `<div class="rest-row">
+        <span class="rest-icon">${escapeHtml(ex.icon)}</span>
+        <span class="rest-name">${escapeHtml(ex.name)}</span>
+        <span class="rest-when">${escapeHtml(scheduleLabel(ex))}</span>
+      </div>`).join('')
+    : '';
+
+  return `<div>${rows}${restHtml}</div>`;
 }
 
 /* ============================= VIEW: PLAN ============================= */
@@ -952,25 +995,19 @@ function viewPlan() {
     html += `<div class="section-label">Active</div>`;
     active.forEach((ex, i) => {
       const target = getEffectiveTarget(ex, todayISO());
-      const isEditingTarget = state.editingPlanTarget === ex.id;
-      const targetSub = isEditingTarget
-        ? `<span class="inline-target-edit" data-stop>
-             <input type="number" min="0" step="any" id="plan-target-input-${ex.id}" class="target-edit-input" value="${target || ''}" placeholder="none">
-             <span class="target-edit-unit">${escapeHtml(ex.unit)}/day</span>
-             <button class="mini-btn" data-action="save-target-inline" data-id="${ex.id}" aria-label="Save">${ICONS.check}</button>
-             <button class="mini-btn" data-action="cancel-target-inline" aria-label="Cancel">${ICONS.close}</button>
-           </span>`
-        : `<span class="editable-target" data-editable-target data-id="${ex.id}" title="Tap to edit target">${target ? `${target} ${escapeHtml(ex.unit)}/day` : `no target · ${escapeHtml(ex.unit)}`}</span>`;
+      const targetSub = target ? `${target} ${escapeHtml(ex.unit)}/day` : `no target · ${escapeHtml(ex.unit)}`;
       html += `<div class="plan-row">
+        <button class="plan-row-open" data-action="open-edit-exercise" data-id="${ex.id}" aria-label="Edit ${escapeHtml(ex.name)}">
         <div class="ex-icon-badge">${escapeHtml(ex.icon)}</div>
         <div class="plan-row-body">
           <div class="plan-row-name">${escapeHtml(ex.name)}</div>
           <div class="plan-row-sub">${targetSub}</div>
+          <div class="plan-row-schedule">${escapeHtml(scheduleLabel(ex))}</div>
         </div>
+        </button>
         <div class="plan-row-actions">
           <button class="mini-btn" data-action="reorder" data-dir="-1" data-id="${ex.id}" ${i === 0 ? 'disabled' : ''} aria-label="Move up">${ICONS.up}</button>
           <button class="mini-btn" data-action="reorder" data-dir="1" data-id="${ex.id}" ${i === active.length - 1 ? 'disabled' : ''} aria-label="Move down">${ICONS.down}</button>
-          <button class="mini-btn" data-action="open-edit-exercise" data-id="${ex.id}" aria-label="Edit">${ICONS.edit}</button>
           <button class="mini-btn" data-action="archive" data-id="${ex.id}" aria-label="Archive">${ICONS.archive}</button>
           <button class="mini-btn danger" data-action="delete-exercise" data-id="${ex.id}" data-name="${escapeHtml(ex.name)}" aria-label="Delete permanently">${ICONS.trash}</button>
         </div>
@@ -1172,6 +1209,7 @@ function modalLogger(exId) {
   const timerHtml = timer ? (() => {
     const elapsed = formatElapsed(timerElapsedMs(timer, Date.now()));
     const statusLabel = { running: 'In progress', paused: 'Paused', completed: 'Target hit', gaveup: 'Ended early' }[timer.status];
+    const finishedClock = formatClock(timer.finishedAt);
     const activeControls = (timer.status === 'running' || timer.status === 'paused')
       ? `${timer.status === 'running'
            ? `<button class="timer-btn" data-action="pause-timer" data-id="${exId}">${ICONS.pause}Pause</button>`
@@ -1181,7 +1219,7 @@ function modalLogger(exId) {
     return `<div class="timer-block status-${timer.status}">
       <div class="timer-top">
         <span class="timer-clock" id="timer-display" data-elapsed="${exId}" data-status="${timer.status}">${elapsed}</span>
-        <span class="timer-status">${timer.status === 'completed' ? ICONS.trophy : ''}${statusLabel}</span>
+        <span class="timer-status">${timer.status === 'completed' ? ICONS.trophy : ''}${statusLabel}${finishedClock ? ` · ${escapeHtml(finishedClock)}` : ''}</span>
       </div>
       <div class="timer-controls">
         ${activeControls}
@@ -1205,11 +1243,12 @@ function modalLogger(exId) {
       ${timerHtml}
       <div class="tally-rail logger-tally">${tallyMarks(arr.length)}</div>
 
-      <div class="chip-row">
-        ${chips.map((c) => `<button class="chip" data-action="chip-log" data-id="${exId}" data-val="${c}">+${c}</button>`).join('')}
+      <div class="rep-lever" role="group" aria-label="Add or subtract reps">
+        <button class="lever-opt ${state.repMode === 'add' ? 'on' : ''}" data-action="rep-mode" data-mode="add">Add</button>
+        <button class="lever-opt sub ${state.repMode === 'sub' ? 'on' : ''}" data-action="rep-mode" data-mode="sub">Subtract</button>
       </div>
-      <div class="chip-row minus-row">
-        ${chips.map((c) => `<button class="chip chip-minus" data-action="chip-minus" data-id="${exId}" data-val="${c}" ${arr.length ? '' : 'disabled'}>−${c}</button>`).join('')}
+      <div class="rep-pad ${state.repMode === 'sub' ? 'subtracting' : ''}">
+        ${REP_PAD.map((n) => `<button class="rep-key" data-action="rep-tap" data-id="${exId}" data-val="${n}" ${state.repMode === 'sub' && !arr.length ? 'disabled' : ''}>${state.repMode === 'sub' ? '−' : '+'}${n}</button>`).join('')}
       </div>
 
       <div class="set-list">
@@ -1226,6 +1265,13 @@ function modalExerciseForm(exId) {
   const target = ex ? getEffectiveTarget(ex, todayISO()) : null;
   const chosenIcon = ex ? ex.icon : EMOJI_PRESETS[0];
   const chips = (ex && ex.chips && ex.chips.length === 3) ? ex.chips : DEFAULT_CHIPS;
+  // Draft lives in modal state so toggling days re-renders without saving.
+  if (state.modal && state.modal.sched === undefined) {
+    state.modal.sched = ex && Array.isArray(ex.schedule) ? ex.schedule.slice() : 'daily';
+  }
+  const draftSched = state.modal ? state.modal.sched : 'daily';
+  const schedIsDaily = draftSched === 'daily';
+  const schedDays = Array.isArray(draftSched) ? draftSched : [];
   return `<div class="modal-backdrop" data-action="backdrop">
     <div class="modal-sheet" data-stop>
       <div class="sheet-handle"></div>
@@ -1256,6 +1302,17 @@ function modalExerciseForm(exId) {
           <input id="f-chip3" type="number" min="0" step="any" value="${chips[2]}">
         </div>
         <div class="hint">These become the +/− quick buttons when logging a set.</div>
+      </div>
+      <div class="field">
+        <label>Schedule</label>
+        <div class="sched-modes">
+          <button type="button" class="sched-mode ${schedIsDaily ? 'on' : ''}" data-action="sched-daily">Every day</button>
+          <button type="button" class="sched-mode ${schedIsDaily ? '' : 'on'}" data-action="sched-custom">Chosen days</button>
+        </div>
+        <div class="sched-days ${schedIsDaily ? 'disabled' : ''}">
+          ${['S','M','T','W','T','F','S'].map((d, i) => `<button type="button" class="sched-day ${(!schedIsDaily && schedDays.includes(i)) ? 'on' : ''}" data-action="sched-toggle" data-day="${i}" aria-label="${['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][i]}" aria-pressed="${!schedIsDaily && schedDays.includes(i)}">${d}</button>`).join('')}
+        </div>
+        <div class="hint">Days you don't train aren't counted as missed, so a rest day never breaks a streak.</div>
       </div>
       <div class="field">
         <label>Daily target (optional)</label>
@@ -1456,8 +1513,9 @@ document.addEventListener('click', async (e) => {
       });
       const chips = chipVals.every((c) => c != null) ? chipVals : null;
       const id = btn.dataset.id;
-      if (id) await updateExercise(id, { name, unit, target, chips });
-      else await addExercise({ name, unit, target, icon, chips });
+      const schedule = state.modal && state.modal.sched ? state.modal.sched : 'daily';
+      if (id) await updateExercise(id, { name, unit, target, chips, schedule });
+      else await addExercise({ name, unit, target, icon, chips, schedule });
       closeModal(); rerender();
       break;
     }
@@ -1468,6 +1526,36 @@ document.addEventListener('click', async (e) => {
     case 'toggle-archived': state.showArchived = !state.showArchived; renderView(); break;
 
     case 'open-logger': state.modal = { type: 'logger', exId: btn.dataset.id }; renderModal(); break;
+    case 'sched-daily':
+      if (state.modal) { state.modal.sched = 'daily'; renderModal(); }
+      break;
+    case 'sched-custom':
+      if (state.modal && state.modal.sched === 'daily') {
+        state.modal.sched = [new Date().getDay()]; // seed with today
+        renderModal();
+      }
+      break;
+    case 'sched-toggle': {
+      if (!state.modal) break;
+      const day = parseInt(btn.dataset.day, 10);
+      const cur = Array.isArray(state.modal.sched) ? state.modal.sched.slice() : [];
+      const idx = cur.indexOf(day);
+      if (idx >= 0) cur.splice(idx, 1); else cur.push(day);
+      state.modal.sched = cur.length ? cur : 'daily'; // no days chosen means every day
+      renderModal();
+      break;
+    }
+    case 'rep-mode':
+      state.repMode = btn.dataset.mode;
+      renderModal();
+      break;
+    case 'rep-tap': {
+      const n = parseFloat(btn.dataset.val);
+      if (state.repMode === 'sub') await decrementHandler(btn.dataset.id, n);
+      else await logSet(btn.dataset.id, n);
+      if (state.modal && state.modal.type === 'logger') renderModal();
+      break;
+    }
     case 'chip-log':
       await logSet(btn.dataset.id, parseFloat(btn.dataset.val));
       if (state.modal && state.modal.type === 'logger') renderModal();

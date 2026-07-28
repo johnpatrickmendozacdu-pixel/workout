@@ -177,13 +177,14 @@
     animation:fadeIn .18s ease;
   }
   @keyframes fadeIn{from{opacity:0} to{opacity:1}}
-  @keyframes slideUp{from{transform:translateY(24px); opacity:.6} to{transform:translateY(0); opacity:1}}
+  @keyframes slideUp{from{transform:translateY(24px)} to{transform:translateY(0)}}
   .modal-sheet{
     width:100%; max-width:460px; background:var(--bg-elevated); border-radius:24px 24px 0 0;
     max-height:92dvh; overflow-y:auto; overscroll-behavior:contain; -webkit-overflow-scrolling:touch;
     padding:16px 20px calc(24px + var(--safe-bottom));
-    animation:slideUp .22s cubic-bezier(.2,.8,.2,1); border-top:1px solid var(--border-strong);
+    border-top:1px solid var(--border-strong);
   }
+  .modal-sheet.entering{animation:slideUp .22s cubic-bezier(.2,.8,.2,1);}
   .modal-sheet.center{border-radius:22px; max-width:340px; margin:0 20px 40px;}
   .sheet-handle{width:36px; height:4px; background:var(--border-strong); border-radius:99px; margin:0 auto 14px;}
   .sheet-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;}
@@ -600,3 +601,8 @@
   /* momentum scrolling inside the sheet itself */
   .modal-sheet{-webkit-overflow-scrolling:touch; touch-action:pan-y;}
   .rail{touch-action:pan-y;}
+
+  /* The rail button's SVG carries no width/height of its own, so without this
+     it collapses to zero and the button renders empty. */
+  .rail-btn svg{width:18px; height:18px;}
+  .rail-btn{color:var(--text);}

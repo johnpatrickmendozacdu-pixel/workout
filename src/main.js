@@ -1228,10 +1228,11 @@ function setBodyScrollLock(locked) {
 }
 
 function closeModal() { state.modal = null; renderModal(); }
+let lastModalKey = null;
 function renderModal() {
   const root = document.getElementById('modal-root');
   if (!root) return;
-  if (!state.modal) { root.innerHTML = ''; setBodyScrollLock(false); ensureGlobalTick(); return; }
+  if (!state.modal) { root.innerHTML = ''; lastModalKey = null; setBodyScrollLock(false); ensureGlobalTick(); return; }
   const m = state.modal;
   if (m.type === 'complete') root.innerHTML = modalComplete();
   else if (m.type === 'logger') root.innerHTML = modalLogger(m.exId);
@@ -1241,6 +1242,12 @@ function renderModal() {
   else if (m.type === 'data') root.innerHTML = modalData();
   else if (m.type === 'profile') root.innerHTML = modalProfile();
   else if (m.type === 'importChoice') root.innerHTML = modalImportChoice();
+  const key = `${m.type}:${m.exId || ''}`;
+  if (key !== lastModalKey) {
+    const sheet = root.querySelector('.modal-sheet');
+    if (sheet) sheet.classList.add('entering');
+    lastModalKey = key;
+  }
   bindModalEvents();
   setBodyScrollLock(true);
   ensureGlobalTick();

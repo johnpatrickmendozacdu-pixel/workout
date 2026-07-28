@@ -45,6 +45,7 @@ const state = {
   meta: { lastExportAt: null },
   profile: { username: '', weight: null, height: null },
   sync: { status: 'signed-out', email: null, error: null },
+  streakOverrides: {},
   storageError: false,
   updateAvailable: false,
   applyUpdate: null,
@@ -75,18 +76,20 @@ function getSetsFor(exId, dateStr) {
 
 /* ============================= STORAGE ============================= */
 async function loadAll() {
-  const [exercises, setsLog, meta, timersLog, profile] = await Promise.all([
+  const [exercises, setsLog, meta, timersLog, profile, streakOverrides] = await Promise.all([
     db.getItem('exercises'),
     db.getItem('sets-log'),
     db.getItem('app-meta'),
     db.getItem('timers-log'),
     db.getItem('profile'),
+    db.getItem('streak-overrides'),
   ]);
   state.exercises = exercises || [];
   state.setsLog = setsLog || {};
   state.meta = meta || { lastExportAt: null };
   state.timersLog = timersLog || {};
   state.profile = profile || { username: '', weight: null, height: null };
+  state.streakOverrides = streakOverrides || {};
 }
 /** Called by every persist* that changes real data. Bumps a timestamp (used to
  * decide who "wins" during Drive sync) and, if signed in, schedules a push. */
@@ -144,6 +147,15 @@ async function persistProfile() {
     return false;
   }
 }
+async function persistStreakOverrides() {
+  try {
+    await db.setItem('streak-overrides', state.streakOverrides);
+    markDirty();
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
 
 /* ============================= GOOGLE DRIVE SYNC ============================= */
 let applyingRemote = false;
@@ -157,6 +169,7 @@ function buildSyncSnapshot() {
     setsLog: state.setsLog,
     timersLog: state.timersLog,
     profile: state.profile,
+    streakOverrides: state.streakOverrides,
   };
 }
 
@@ -166,12 +179,14 @@ async function applyRemoteSnapshot(remote) {
   state.setsLog = remote.setsLog || {};
   state.timersLog = remote.timersLog || {};
   state.profile = remote.profile || { username: '', weight: null, height: null };
+  state.streakOverrides = remote.streakOverrides || {};
   state.meta.updatedAt = remote.updatedAt || Date.now();
   await Promise.all([
     db.setItem('exercises', state.exercises),
     db.setItem('sets-log', state.setsLog),
     db.setItem('timers-log', state.timersLog),
     db.setItem('profile', state.profile),
+    db.setItem('streak-overrides', state.streakOverrides),
     db.setItem('app-meta', state.meta),
   ]);
   applyingRemote = false;
@@ -360,6 +375,16 @@ async function resetTimerHandler(exId) {
   await persistTimers();
   renderModal();
   renderView();
+}
+async function toggleDayOverrideHandler(dateStr) {
+  const cur = state.streakOverrides[dateStr];
+  const next = cur === undefined ? true : (cur === true ? false : undefined);
+  const updated = { ...state.streakOverrides };
+  if (next === undefined) delete updated[dateStr];
+  else updated[dateStr] = next;
+  state.streakOverrides = updated;
+  await persistStreakOverrides();
+  rerender();
 }
 async function deleteExerciseHandler(id) {
   state.exercises = removeExercisePure(state.exercises, id);
@@ -587,7 +612,7 @@ function renderTopbar() {
   const el = document.getElementById('topbar');
   if (!el) return;
   if (state.view === 'today') {
-    const streak = calcStreakInfo(state.exercises, state.setsLog).current;
+    const streak = calcStreakInfo(state.exercises, state.setsLog, null, state.streakOverrides).current;
     const uname = state.profile && state.profile.username;
     el.innerHTML = `
       <div class="topbar-row">
@@ -738,8 +763,8 @@ function viewPlan() {
 
 /* ============================= VIEW: PROGRESS ============================= */
 function viewProgress() {
-  const { current, longest } = calcStreakInfo(state.exercises, state.setsLog);
-  const weekly = calcWeeklyCompletion(state.exercises, state.setsLog);
+  const { current, longest } = calcStreakInfo(state.exercises, state.setsLog, null, state.streakOverrides);
+  const weekly = calcWeeklyCompletion(state.exercises, state.setsLog, null, state.streakOverrides);
   let html = `<div class="stat-grid three">
     <div class="stat-card"><div class="stat-num">${current}</div><div class="stat-label">Current streak</div></div>
     <div class="stat-card"><div class="stat-num">${longest}</div><div class="stat-label">Longest streak</div></div>
@@ -762,15 +787,19 @@ function viewProgress() {
   const today = todayISO();
   for (let i = 0; i < 14; i++) {
     const d = addDays(today, -i);
-    const stats = calcDayStats(state.exercises, state.setsLog, d);
-    const dotClass = stats.targetedCount === 0 ? 'none' : (stats.allComplete ? 'complete' : 'incomplete');
+    const stats = calcDayStats(state.exercises, state.setsLog, d, state.streakOverrides);
+    const dotClass = stats.targetedCount === 0 && !stats.overridden ? 'none' : (stats.allComplete ? 'complete' : 'incomplete');
     const expanded = state.expandedDay === d;
     html += `<div class="day-row">
-      <button class="day-row-head" data-action="toggle-day" data-date="${d}">
-        <span class="day-dot ${dotClass}"></span>
-        <span class="day-label">${i === 0 ? 'Today' : formatDisplayDate(d)}</span>
-        <span class="day-frac">${stats.targetedCount > 0 ? `${stats.completedCount}/${stats.targetedCount}` : '—'}</span>
-      </button>
+      <div class="day-row-head">
+        <button class="day-dot-btn" data-action="toggle-day-override" data-date="${d}" aria-label="Toggle streak day" title="Tap to mark this day as counting (or not) toward your streak">
+          <span class="day-dot ${dotClass} ${stats.overridden ? 'overridden' : ''}"></span>
+        </button>
+        <button class="day-row-main" data-action="toggle-day" data-date="${d}">
+          <span class="day-label">${i === 0 ? 'Today' : formatDisplayDate(d)}</span>
+          <span class="day-frac">${stats.targetedCount > 0 ? `${stats.completedCount}/${stats.targetedCount}` : '—'}</span>
+        </button>
+      </div>
       ${expanded ? `<div class="day-detail">${
         stats.details.length === 0 ? '<div>No exercises logged.</div>' :
         stats.details.map((dt) => {
@@ -1256,6 +1285,10 @@ document.addEventListener('click', async (e) => {
       if (confirm('Reset today’s timer back to 0:00? This only clears the clock, not your logged reps.')) {
         await resetTimerHandler(btn.dataset.id);
       }
+      break;
+
+    case 'toggle-day-override':
+      await toggleDayOverrideHandler(btn.dataset.date);
       break;
 
     case 'save-profile':

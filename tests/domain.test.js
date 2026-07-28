@@ -307,6 +307,34 @@ describe('calcDayStats (daily completion)', () => {
     const stats = calcDayStats([ex], setsLog, TODAY);
     expect(stats.allComplete).toBe(false);
   });
+
+  it('a manual override forces a day to count as complete regardless of real totals', () => {
+    const ex = makeExercise();
+    const setsLog = { [TODAY]: { a: [5] } }; // way under target
+    const stats = calcDayStats([ex], setsLog, TODAY, { [TODAY]: true });
+    expect(stats.allComplete).toBe(true);
+    expect(stats.overridden).toBe(true);
+    // the real numbers are still reported accurately, only completion is overridden
+    expect(stats.completedCount).toBe(0);
+    expect(stats.targetedCount).toBe(1);
+  });
+
+  it('a manual override can also force an otherwise-complete day to not count', () => {
+    const ex = makeExercise();
+    const setsLog = { [TODAY]: { a: [20] } }; // meets target
+    const stats = calcDayStats([ex], setsLog, TODAY, { [TODAY]: false });
+    expect(stats.allComplete).toBe(false);
+    expect(stats.overridden).toBe(true);
+  });
+
+  it('a day with zero targeted exercises only counts for streak purposes if manually overridden', () => {
+    const untargeted = makeExercise({ targetHistory: [{ effectiveDate: '2026-07-20', target: null }] });
+    const noOverride = calcDayStats([untargeted], {}, TODAY);
+    expect(noOverride.countsForStreak).toBe(false);
+    const withOverride = calcDayStats([untargeted], {}, TODAY, { [TODAY]: true });
+    expect(withOverride.countsForStreak).toBe(true);
+    expect(withOverride.allComplete).toBe(true);
+  });
 });
 
 describe('calcStreakInfo', () => {
@@ -337,6 +365,19 @@ describe('calcStreakInfo', () => {
     const setsLog = { [TODAY]: { a: [10] } };
     const { current } = calcStreakInfo([ex], setsLog, TODAY);
     expect(current).toBe(1);
+  });
+
+  it('overriding a missed day to "complete" repairs an otherwise-broken streak', () => {
+    const ex = makeExercise();
+    const setsLog = {
+      '2026-07-24': { a: [5] },  // missed, would break the streak
+      '2026-07-25': { a: [20] },
+      '2026-07-26': { a: [20] }, // today
+    };
+    const withoutOverride = calcStreakInfo([ex], setsLog, TODAY);
+    expect(withoutOverride.current).toBe(2); // 25, 26 only
+    const withOverride = calcStreakInfo([ex], setsLog, TODAY, { '2026-07-24': true });
+    expect(withOverride.current).toBe(3); // 24 now counts too
   });
 });
 

@@ -35,6 +35,7 @@ import {
   mergeBackup,
 } from './domain/domain.js';
 import * as gsync from './sync/googleSync.js';
+import { allStats, exerciseStats, achievementsFor, formatDuration, describeLastWorkout } from './domain/stats.js';
 
 const DEFAULT_CHIPS = [5, 10, 12];
 
@@ -59,7 +60,16 @@ const state = {
   editingTodayTotal: null,
   editingDayTarget: null,
   version: { local: typeof __BUILD_ID__ === 'string' ? __BUILD_ID__ : 'dev', status: 'unknown' },
+  // High-water marks per exercise. Persisted so a record announced once is
+  // never re-announced, and survives reloads and device switches.
+  records: {},
+  achievements: [],     // newest first, capped
+  liveToasts: [],       // subset currently animating in the right rail
+  panel: null,          // 'stats' | 'alerts' — mobile drawers only
+  statsDirty: false,    // drives the subtle "Refresh available" prompt
 };
+
+const MAX_ACHIEVEMENTS = 200;
 
 const EMOJI_PRESETS = ['💪', '🏃', '🦵', '🧘', '🚴', '🏊', '🤸', '🏋️', '⛹️', '🤾', '🧗', '🥊', '🤺', '🚶', '🧎', '⚽'];
 
@@ -88,6 +98,13 @@ async function loadAll() {
     db.getItem('profile'),
     db.getItem('streak-overrides'),
   ]);
+  const [records, achievements] = await Promise.all([
+    db.getItem('records').catch(() => null),
+    db.getItem('achievements').catch(() => null),
+  ]);
+  state.records = records || {};
+  state.achievements = achievements || [];
+  state.needsRecordBaseline = !records;
   state.exercises = exercises || [];
   state.setsLog = setsLog || {};
   state.meta = meta || { lastExportAt: null };
@@ -145,6 +162,15 @@ async function persistTimers() {
 async function persistProfile() {
   try {
     await db.setItem('profile', state.profile);
+    markDirty();
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+async function persistRecords() {
+  try {
+    await Promise.all([db.setItem('records', state.records), db.setItem('achievements', state.achievements)]);
     markDirty();
     return true;
   } catch (e) {
@@ -376,10 +402,76 @@ async function saveProfile() {
   showToast('Profile saved');
 }
 
+/* ============================= RECORDS & ACHIEVEMENTS ============================= */
+/**
+ * Compares live derived stats against the persisted high-water marks and
+ * announces anything newly beaten. Driven by stored records rather than a
+ * before/after snapshot, so it is correct no matter which mutation ran, and a
+ * record announced once is never announced twice — even across reloads.
+ * Returns the achievements raised (possibly none).
+ */
+async function syncRecords(silent = false) {
+  const stats = allStats(state.exercises, state.setsLog, state.timersLog, null, state.streakOverrides);
+  const raised = [];
+  let changed = false;
+
+  state.exercises.forEach((ex) => {
+    const next = stats[ex.id];
+    const prev = state.records[ex.id] || { topSet: null, bestTime: null, longestStreak: 0, totalReps: 0 };
+    const found = achievementsFor(prev, next, ex);
+    if (found.length) raised.push(...found);
+    // Advance the marks regardless, so growth without a record still counts
+    // toward the next milestone.
+    const advanced = {
+      topSet: Math.max(prev.topSet || 0, next.topSet || 0) || null,
+      bestTime: next.bestTime != null ? Math.min(prev.bestTime == null ? Infinity : prev.bestTime, next.bestTime) : prev.bestTime,
+      longestStreak: Math.max(prev.longestStreak || 0, next.longestStreak || 0),
+      totalReps: Math.max(prev.totalReps || 0, next.totalReps || 0),
+    };
+    if (advanced.bestTime === Infinity) advanced.bestTime = null;
+    if (JSON.stringify(advanced) !== JSON.stringify(prev)) { state.records[ex.id] = advanced; changed = true; }
+  });
+
+  // Silent mode establishes the baseline from existing history. Without it,
+  // first run announces every pre-existing personal best at once, which is
+  // noise: those aren't things you just did.
+  if (raised.length && !silent) {
+    const stamped = raised.map((a) => ({ ...a, id: uid('ach'), ts: Date.now() }));
+    state.achievements = [...stamped, ...state.achievements].slice(0, MAX_ACHIEVEMENTS);
+    state.liveToasts = [...stamped.map((a) => a.id), ...state.liveToasts].slice(0, 4);
+    changed = true;
+    stamped.forEach((a) => setTimeout(() => dismissToast(a.id), 6000));
+  }
+  if (changed) await persistRecords();
+  if (raised.length && !silent) renderAlerts();
+  return silent ? [] : raised;
+}
+
+function dismissToast(id) {
+  if (!state.liveToasts.includes(id)) return;
+  state.liveToasts = state.liveToasts.filter((x) => x !== id);
+  renderAlerts();
+}
+
+/** Announces a finished workout (not a record — just the completion itself). */
+async function announceCompletion(ex, total, elapsedMs) {
+  const entry = {
+    id: uid('ach'), ts: Date.now(), type: 'workout', icon: '✅',
+    title: 'Workout complete',
+    detail: `${ex.name} · ${total} ${ex.unit} · ${formatDuration(elapsedMs)}`,
+  };
+  state.achievements = [entry, ...state.achievements].slice(0, MAX_ACHIEVEMENTS);
+  state.liveToasts = [entry.id, ...state.liveToasts].slice(0, 4);
+  setTimeout(() => dismissToast(entry.id), 6000);
+  await persistRecords();
+  renderAlerts();
+}
+
 /* ============================= MUTATIONS ============================= */
 async function logSet(exId, value) {
   if (!(value > 0)) return;
   const d = todayISO();
+  const prevTotal = calcTotal(getSetsFor(exId, d));
   state.setsLog = addSetPure(state.setsLog, d, exId, value);
   const ex = state.exercises.find((e) => e.id === exId);
   const total = calcTotal(getSetsFor(exId, d));
@@ -399,16 +491,52 @@ async function logSet(exId, value) {
 
   const liveEx = state.exercises.find((e) => e.id === exId);
   const targetNow = liveEx ? getEffectiveTarget(liveEx, d) : null;
-  if (targetNow && total >= targetNow) {
-    state.timersLog = finishTimerPure(state.timersLog, d, exId, now, 'completed');
+  // Prompt only on the crossing — the set that takes the total from below the
+  // target to at or above it. Stateless, so it can't double-prompt while
+  // someone keeps going, and it re-arms correctly if sets are removed later.
+  const crossed = targetNow && prevTotal < targetNow && total >= targetNow;
+  if (crossed) {
+    state.timersLog = pauseTimerPure(state.timersLog, d, exId, now);
   }
 
   await Promise.all([persistSets(), persistTimers(), newPR ? persistExercises() : Promise.resolve()]);
 
   const unit = ex && ex.unit ? ' ' + ex.unit : '';
-  const msg = newPR ? `🏆 New PR! Target raised to ${total}${unit}` : `Logged ${value}${unit}`;
-  showToast(msg, () => undoLastSetHandler(exId));
+  if (crossed) {
+    const t = getTimerPure(state.timersLog, d, exId);
+    state.modal = { type: 'complete', exId, total, elapsedMs: t ? t.elapsedMs : 0 };
+    renderModal();
+  } else {
+    const msg = newPR ? `🏆 New PR! Target raised to ${total}${unit}` : `Logged ${value}${unit}`;
+    showToast(msg, () => undoLastSetHandler(exId));
+  }
   rerender();
+  syncRecords();
+}
+
+/** "Take the win" — bank the workout and stop the clock. */
+async function takeTheWinHandler(exId) {
+  const d = todayISO();
+  const ex = state.exercises.find((e) => e.id === exId);
+  state.timersLog = finishTimerPure(state.timersLog, d, exId, Date.now(), 'completed');
+  await persistTimers();
+  const t = getTimerPure(state.timersLog, d, exId);
+  closeModal();
+  rerender();
+  await syncRecords();
+  if (ex) await announceCompletion(ex, calcTotal(getSetsFor(exId, d)), t ? t.elapsedMs : 0);
+}
+
+/** "Keep going" — clock resumes, everything keeps counting. */
+async function keepGoingHandler(exId) {
+  state.timersLog = resumeTimerPure(state.timersLog, todayISO(), exId, Date.now());
+  await persistTimers();
+  // Straight back into the logger — "keep going" means keep logging, so
+  // bouncing out to the day view would be the wrong place to land.
+  state.modal = { type: 'logger', exId };
+  renderModal();
+  rerender();
+  ensureGlobalTick();
 }
 async function undoLastSetHandler(exId) {
   const d = todayISO();
@@ -685,12 +813,88 @@ function renderBanner() {
 }
 
 /* ============================= RENDER: SHELL ============================= */
+/* ============================= SIDE PANELS ============================= */
+/**
+ * Lifetime dashboard. Stats are derived on render from the logs, so they are
+ * always current — the "refresh" prompt exists only to avoid re-laying out the
+ * panel under someone's finger mid-workout, not because the data goes stale.
+ */
+function renderDashboard() {
+  const el = document.getElementById('rail-stats');
+  if (!el) return;
+  const today = todayISO();
+  const stats = allStats(state.exercises, state.setsLog, state.timersLog, null, state.streakOverrides);
+  const active = state.exercises.filter((e) => e.active && !e.archived);
+
+  const cards = active.map((ex) => {
+    const s = stats[ex.id];
+    const row = (label, value) => `<div class="stat-row"><span>${label}</span><b>${value}</b></div>`;
+    return `<section class="dash-card">
+      <header class="dash-head"><span class="dash-icon">${escapeHtml(ex.icon)}</span><h3>${escapeHtml(ex.name)}</h3></header>
+      ${row('Top set', s.topSet ? `${s.topSet} ${escapeHtml(ex.unit)}` : '—')}
+      ${row('Best time', formatDuration(s.bestTime))}
+      ${row('Average time', formatDuration(s.avgTime))}
+      ${row('Current streak', `${s.currentStreak} ${s.currentStreak === 1 ? 'day' : 'days'}`)}
+      ${row('Longest streak', `${s.longestStreak} ${s.longestStreak === 1 ? 'day' : 'days'}`)}
+      ${row('Workouts', s.totalWorkouts)}
+      ${row('Total sets', s.totalSets)}
+      ${row('Total reps', s.totalReps.toLocaleString())}
+      ${row('Last workout', describeLastWorkout(s.lastWorkout, today))}
+    </section>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div class="rail-head">
+      <h2>Performance</h2>
+      ${state.statsDirty ? `<button class="refresh-chip" data-action="refresh-stats">Refresh available</button>` : ''}
+    </div>
+    ${active.length ? cards : `<p class="rail-empty">Add an exercise to start building lifetime stats.</p>`}`;
+}
+
+/** Achievement rail: live toasts on top, full history beneath. */
+function renderAlerts() {
+  const el = document.getElementById('rail-alerts');
+  if (!el) return;
+  const live = state.achievements.filter((a) => state.liveToasts.includes(a.id));
+  const history = state.achievements.filter((a) => !state.liveToasts.includes(a.id));
+
+  const card = (a, isLive) => `<article class="alert-card ${isLive ? 'live' : ''} ${a.type}">
+    <span class="alert-icon">${a.icon}</span>
+    <div class="alert-body">
+      <div class="alert-title">${escapeHtml(a.title)}</div>
+      <div class="alert-detail">${escapeHtml(a.detail)}</div>
+    </div>
+    ${isLive ? `<button class="alert-x" data-action="dismiss-alert" data-id="${a.id}" aria-label="Dismiss">${ICONS.close}</button>` : ''}
+  </article>`;
+
+  el.innerHTML = `
+    <div class="rail-head">
+      <h2>Achievements</h2>
+      ${state.achievements.length ? `<button class="refresh-chip" data-action="clear-alerts">Clear</button>` : ''}
+    </div>
+    <div class="alert-live">${live.map((a) => card(a, true)).join('')}</div>
+    ${history.length
+      ? `<div class="alert-history">${history.slice(0, 40).map((a) => card(a, false)).join('')}</div>`
+      : (live.length ? '' : `<p class="rail-empty">Records, milestones and completed workouts land here.</p>`)}`;
+}
+
+function renderPanels() {
+  const shell = document.getElementById('shell');
+  if (shell) shell.dataset.panel = state.panel || '';
+  renderDashboard();
+  renderAlerts();
+}
+
 function render() {
   const app = document.getElementById('app');
   app.innerHTML = `
     <div id="banner-area"></div>
     <header id="topbar"></header>
-    <main id="view-container"></main>
+    <div id="shell" data-panel="">
+      <aside id="rail-stats" class="rail rail-left"></aside>
+      <main id="view-container"></main>
+      <aside id="rail-alerts" class="rail rail-right"></aside>
+    </div>
     <nav id="bottom-nav">
       <div class="nav-inner">
         <button class="nav-btn ${state.view === 'today' ? 'active' : ''}" data-action="nav" data-view="today">${ICONS.today}<span>Today</span></button>
@@ -702,8 +906,10 @@ function render() {
   renderTopbar();
   renderBanner();
   renderView();
+  renderPanels();
 }
 function rerender() {
+  renderPanels();
   renderTopbar();
   renderBanner();
   renderView();
@@ -726,6 +932,13 @@ async function checkVersion() {
     state.version.status = 'unknown'; // offline — say nothing rather than guess
   }
   renderTopbar();
+}
+
+/** Rail toggles — phone only; at desktop width the rails are always visible. */
+function railButtonsHtml() {
+  const unseen = state.liveToasts.length;
+  return `<button class="rail-btn" data-action="toggle-panel" data-panel="stats" aria-label="Performance dashboard">📊</button>
+    <button class="rail-btn" data-action="toggle-panel" data-panel="alerts" aria-label="Achievements">🏅${unseen ? `<span class="badge">${unseen}</span>` : ''}</button>`;
 }
 
 function versionChipHtml() {
@@ -760,6 +973,7 @@ function renderTopbar() {
         </div>
         <div class="topbar-right">
           <div class="streak-pill">${ICONS.flame}${streak}</div>
+          ${railButtonsHtml()}
           ${versionChipHtml()}
           ${avatarChipHtml()}
         </div>
@@ -770,6 +984,7 @@ function renderTopbar() {
         <div class="screen-title">Plan</div>
         <div class="topbar-right">
           <button class="add-btn" data-action="open-add-exercise">${ICONS.plus} Add</button>
+          ${railButtonsHtml()}
           ${versionChipHtml()}
           ${avatarChipHtml()}
         </div>
@@ -780,6 +995,7 @@ function renderTopbar() {
         <div class="screen-title">Progress</div>
         <div class="topbar-right">
           <button class="icon-btn" data-action="open-data">${ICONS.gear}</button>
+          ${railButtonsHtml()}
           ${versionChipHtml()}
           ${avatarChipHtml()}
         </div>
@@ -824,7 +1040,7 @@ function viewToday() {
       : `<span class="ex-total-num editable-target" data-editable-today-total data-id="${ex.id}" title="Tap to edit total">${total}</span>`;
     const timer = getTimerPure(state.timersLog, today, ex.id);
     const timeBadge = timer
-      ? `<div class="ex-time-badge status-${timer.status}">${timer.status === 'running' ? ICONS.play : timer.status === 'paused' ? ICONS.pause : timer.status === 'completed' ? ICONS.trophy : ICONS.flag}${formatElapsed(timerElapsedMs(timer, Date.now()))}</div>`
+      ? `<div class="ex-time-badge status-${timer.status}">${timer.status === 'running' ? ICONS.play : timer.status === 'paused' ? ICONS.pause : timer.status === 'completed' ? ICONS.trophy : ICONS.flag}<span data-elapsed="${ex.id}">${formatElapsed(timerElapsedMs(timer, Date.now()))}</span></div>`
       : '';
     return `<div class="ex-card ${complete ? 'complete' : ''}">
       <button class="ex-card-main" data-action="open-logger" data-id="${ex.id}">
@@ -974,37 +1190,59 @@ function viewProgress() {
 }
 
 /* ============================= MODALS ============================= */
-let timerTickHandle = null;
-function ensureTimerTick() {
-  if (timerTickHandle) { clearInterval(timerTickHandle); timerTickHandle = null; }
-  if (!state.modal || state.modal.type !== 'logger') return;
-  const exId = state.modal.exId;
-  const timer = getTimerPure(state.timersLog, todayISO(), exId);
-  if (!timer || timer.status !== 'running') return;
-  timerTickHandle = setInterval(() => {
-    const el = document.getElementById('timer-display');
-    if (!el || !state.modal || state.modal.type !== 'logger' || state.modal.exId !== exId) {
-      clearInterval(timerTickHandle);
-      timerTickHandle = null;
-      return;
-    }
-    const t = getTimerPure(state.timersLog, todayISO(), exId);
-    if (!t || t.status !== 'running') {
-      clearInterval(timerTickHandle);
-      timerTickHandle = null;
-      return;
-    }
-    el.textContent = formatElapsed(timerElapsedMs(t, Date.now()));
+let globalTickHandle = null;
+/**
+ * One interval for the whole app. Any running timer keeps ticking while you
+ * move between Today, Plan, Progress or any modal — the clock belongs to the
+ * workout, not to the screen you happen to be looking at. Updates only the
+ * text inside [data-elapsed] nodes rather than re-rendering, so a running
+ * timer costs nothing in interaction latency.
+ */
+function ensureGlobalTick() {
+  if (globalTickHandle) { clearInterval(globalTickHandle); globalTickHandle = null; }
+  const anyRunning = () => {
+    const day = state.timersLog[todayISO()] || {};
+    return Object.keys(day).some((id) => day[id] && day[id].status === 'running');
+  };
+  if (!anyRunning()) return;
+  globalTickHandle = setInterval(() => {
+    if (!anyRunning()) { clearInterval(globalTickHandle); globalTickHandle = null; return; }
+    const now = Date.now();
+    document.querySelectorAll('[data-elapsed]').forEach((el) => {
+      const t = getTimerPure(state.timersLog, todayISO(), el.dataset.elapsed);
+      if (t) el.textContent = formatElapsed(timerElapsedMs(t, now));
+    });
   }, 1000);
+}
+
+/** Target reached: bank it, or push past it. Timer is already paused. */
+function modalComplete() {
+  const m = state.modal;
+  const ex = state.exercises.find((e) => e.id === m.exId);
+  if (!ex) return '';
+  return `<div class="modal-backdrop">
+    <div class="modal-sheet center celebrate" data-stop>
+      <div class="celebrate-glyph">${escapeHtml(ex.icon)}</div>
+      <h2>Target reached</h2>
+      <div class="celebrate-line">${escapeHtml(ex.name)}</div>
+      <div class="celebrate-stat">${m.total} ${escapeHtml(ex.unit)} <span>•</span> ${formatDuration(m.elapsedMs)}</div>
+      <div class="celebrate-actions">
+        <button class="primary-btn" data-action="take-the-win" data-id="${m.exId}">Take the win</button>
+        <button class="secondary-btn" data-action="keep-going" data-id="${m.exId}">Keep going</button>
+      </div>
+      <div class="hint">Keep going resumes the clock and carries on counting reps, sets and time.</div>
+    </div>
+  </div>`;
 }
 
 function closeModal() { state.modal = null; renderModal(); }
 function renderModal() {
   const root = document.getElementById('modal-root');
   if (!root) return;
-  if (!state.modal) { root.innerHTML = ''; ensureTimerTick(); return; }
+  if (!state.modal) { root.innerHTML = ''; ensureGlobalTick(); return; }
   const m = state.modal;
-  if (m.type === 'logger') root.innerHTML = modalLogger(m.exId);
+  if (m.type === 'complete') root.innerHTML = modalComplete();
+  else if (m.type === 'logger') root.innerHTML = modalLogger(m.exId);
   else if (m.type === 'exerciseForm') root.innerHTML = modalExerciseForm(m.exId);
   else if (m.type === 'confirmDeleteSet') root.innerHTML = modalConfirm(m);
   else if (m.type === 'confirmDeleteExercise') root.innerHTML = modalConfirmDeleteExercise(m);
@@ -1012,7 +1250,7 @@ function renderModal() {
   else if (m.type === 'profile') root.innerHTML = modalProfile();
   else if (m.type === 'importChoice') root.innerHTML = modalImportChoice();
   bindModalEvents();
-  ensureTimerTick();
+  ensureGlobalTick();
 }
 
 function modalLogger(exId) {
@@ -1063,7 +1301,7 @@ function modalLogger(exId) {
       : '';
     return `<div class="timer-block status-${timer.status}">
       <div class="timer-top">
-        <span class="timer-clock" id="timer-display" data-status="${timer.status}">${elapsed}</span>
+        <span class="timer-clock" id="timer-display" data-elapsed="${exId}" data-status="${timer.status}">${elapsed}</span>
         <span class="timer-status">${timer.status === 'completed' ? ICONS.trophy : ''}${statusLabel}</span>
       </div>
       <div class="timer-controls">
@@ -1455,6 +1693,30 @@ document.addEventListener('click', async (e) => {
       renderModal();
       break;
 
+    case 'take-the-win':
+      await takeTheWinHandler(btn.dataset.id);
+      break;
+    case 'keep-going':
+      await keepGoingHandler(btn.dataset.id);
+      break;
+    case 'toggle-panel':
+      state.panel = state.panel === btn.dataset.panel ? null : btn.dataset.panel;
+      renderPanels();
+      break;
+    case 'dismiss-alert':
+      dismissToast(btn.dataset.id);
+      break;
+    case 'clear-alerts':
+      state.achievements = [];
+      state.liveToasts = [];
+      await persistRecords();
+      renderAlerts();
+      break;
+    case 'refresh-stats':
+      state.statsDirty = false;
+      renderDashboard();
+      break;
+
     case 'pause-timer':
       await pauseTimerHandler(btn.dataset.id);
       break;
@@ -1512,6 +1774,10 @@ document.addEventListener('click', async (e) => {
 });
 
 document.addEventListener('click', (e) => {
+  if (state.panel && !e.target.closest('.rail') && !e.target.closest('[data-action="toggle-panel"]')) {
+    state.panel = null;
+    renderPanels();
+  }
   const badge = e.target.closest('[data-editable-set]');
   if (badge && state.modal && state.modal.type === 'logger') {
     state.modal.editIndex = parseInt(badge.dataset.index, 10);
@@ -1632,6 +1898,10 @@ async function init() {
   await loadAll();
   db.requestPersistence();
   render();
+  // First run on a device with existing history: adopt current bests as the
+  // starting line rather than announcing them.
+  await syncRecords(state.needsRecordBaseline);
+  state.needsRecordBaseline = false;
   tryResumeSync().catch(() => {});
   checkVersion();
   document.addEventListener('visibilitychange', () => {

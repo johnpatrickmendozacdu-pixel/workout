@@ -24,6 +24,7 @@ import {
   resetTimer,
   bumpTargetIfPR,
   setTargetForDay,
+  versionStatus,
   validateBackup,
   mergeBackup,
   buildBackup,
@@ -328,6 +329,14 @@ describe('setTargetForDay', () => {
     expect(calcStreakInfo([ex], setsLog, TODAY).current).toBe(2);
     const updated = setTargetForDay(ex, '2026-07-24', 100);
     expect(calcStreakInfo([updated], setsLog, TODAY).current).toBe(3);
+  });
+});
+
+describe('versionStatus', () => {
+  it('reports latest, stale, and unknown', () => {
+    expect(versionStatus('abc', 'abc')).toBe('latest');
+    expect(versionStatus('abc', 'def')).toBe('stale');
+    expect(versionStatus('abc', null)).toBe('unknown');
   });
 });
 

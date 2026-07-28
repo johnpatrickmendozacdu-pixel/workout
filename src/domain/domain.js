@@ -416,6 +416,13 @@ export function setTargetForDay(exercise, dateStr, newTarget) {
   return { ...exercise, targetHistory: history };
 }
 
+/** 'latest' | 'stale' | 'unknown' — unknown when the server copy is unreachable
+ *  (offline), which must not be shown as either reassurance or alarm. */
+export function versionStatus(localBuild, remoteBuild) {
+  if (!remoteBuild || !localBuild) return 'unknown';
+  return localBuild === remoteBuild ? 'latest' : 'stale';
+}
+
 export function buildBackup(exercises, setsLog) {
   return {
     version: 1,

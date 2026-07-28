@@ -28,6 +28,7 @@ import {
   finishTimer as finishTimerPure,
   resetTimer as resetTimerPure,
   bumpTargetIfPR as bumpTargetIfPRPure,
+  versionStatus,
   setTargetForDay as setTargetForDayPure,
   buildBackup,
   validateBackup,
@@ -57,6 +58,7 @@ const state = {
   editingPlanTarget: null,
   editingTodayTotal: null,
   editingDayTarget: null,
+  version: { local: typeof __BUILD_ID__ === 'string' ? __BUILD_ID__ : 'dev', status: 'unknown' },
 };
 
 const EMOJI_PRESETS = ['💪', '🏃', '🦵', '🧘', '🚴', '🏊', '🤸', '🏋️', '⛹️', '🤾', '🧗', '🥊', '🤺', '🚶', '🧎', '⚽'];
@@ -684,6 +686,31 @@ function rerender() {
   renderModal();
 }
 
+/**
+ * Answers "am I running the newest build?" by comparing the id compiled into
+ * this bundle against version.json on the server. version.json is excluded
+ * from the precache globs, so this always reaches the network rather than the
+ * service worker's copy — which is the whole point.
+ */
+async function checkVersion() {
+  try {
+    const res = await fetch('./version.json', { cache: 'no-store' });
+    if (!res.ok) return;
+    const { build } = await res.json();
+    state.version.status = versionStatus(state.version.local, build);
+  } catch (e) {
+    state.version.status = 'unknown'; // offline — say nothing rather than guess
+  }
+  renderTopbar();
+}
+
+function versionChipHtml() {
+  const { local, status } = state.version;
+  const label = { latest: 'Up to date', stale: 'Update ready — tap to reload', unknown: 'Version unknown (offline?)' }[status];
+  return `<button class="version-chip ${status}" data-action="${status === 'stale' ? 'apply-update' : 'check-version'}"
+    title="Build ${escapeHtml(local)} · ${label}" aria-label="${label}">${status === 'latest' ? '\u2713' : status === 'stale' ? '\u21bb' : '?'}</button>`;
+}
+
 function avatarChipHtml() {
   const p = state.profile || {};
   const sync = state.sync || { status: 'signed-out' };
@@ -709,6 +736,7 @@ function renderTopbar() {
         </div>
         <div class="topbar-right">
           <div class="streak-pill">${ICONS.flame}${streak}</div>
+          ${versionChipHtml()}
           ${avatarChipHtml()}
         </div>
       </div>`;
@@ -718,6 +746,7 @@ function renderTopbar() {
         <div class="screen-title">Plan</div>
         <div class="topbar-right">
           <button class="add-btn" data-action="open-add-exercise">${ICONS.plus} Add</button>
+          ${versionChipHtml()}
           ${avatarChipHtml()}
         </div>
       </div>`;
@@ -727,6 +756,7 @@ function renderTopbar() {
         <div class="screen-title">Progress</div>
         <div class="topbar-right">
           <button class="icon-btn" data-action="open-data">${ICONS.gear}</button>
+          ${versionChipHtml()}
           ${avatarChipHtml()}
         </div>
       </div>`;
@@ -1449,6 +1479,10 @@ document.addEventListener('click', async (e) => {
       break;
     case 'apply-update':
       if (state.applyUpdate) state.applyUpdate();
+      else location.reload();
+      break;
+    case 'check-version':
+      await checkVersion();
       break;
   }
 });
@@ -1575,8 +1609,11 @@ async function init() {
   db.requestPersistence();
   render();
   tryResumeSync().catch(() => {});
+  checkVersion();
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && hasSyncAccount()) pullAndMerge();
+    if (document.visibilityState !== 'visible') return;
+    checkVersion();
+    if (hasSyncAccount()) pullAndMerge();
   });
 }
 init();

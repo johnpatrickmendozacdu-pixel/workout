@@ -28,6 +28,7 @@ import {
   finishTimer as finishTimerPure,
   resetTimer as resetTimerPure,
   bumpTargetIfPR as bumpTargetIfPRPure,
+  setTargetForDay as setTargetForDayPure,
   buildBackup,
   validateBackup,
   mergeBackup,
@@ -55,6 +56,7 @@ const state = {
   showArchived: false,
   editingPlanTarget: null,
   editingTodayTotal: null,
+  editingDayTarget: null,
 };
 
 const EMOJI_PRESETS = ['💪', '🏃', '🦵', '🧘', '🚴', '🏊', '🤸', '🏋️', '⛹️', '🤾', '🧗', '🥊', '🤺', '🚶', '🧎', '⚽'];
@@ -193,8 +195,29 @@ async function applyRemoteSnapshot(remote) {
   rerender();
 }
 
+/** True when this browser has a remembered Google account. Deliberately looser
+ *  than gsync.isSignedIn(): the access token may be stale right now and still
+ *  be silently renewable, so sync work is gated on the account, not the token.
+ *  The token is refreshed lazily inside the sync calls themselves. */
+function hasSyncAccount() {
+  return !!(state.sync.email && state.sync.status !== 'signed-out');
+}
+
+/** Token trouble means "reconnect", anything else means the network/Drive is
+ *  unhappy — two different messages, because only one is actionable. */
+function noteSyncFailure(err) {
+  const code = err && err.message;
+  if (code === 'token-expired' || code === 'not-signed-in') {
+    state.sync.status = 'reconnect';
+    state.sync.error = null;
+  } else {
+    state.sync.status = 'error';
+    state.sync.error = 'Could not reach Google Drive.';
+  }
+}
+
 function scheduleSyncPush() {
-  if (applyingRemote || !gsync.isSignedIn()) return;
+  if (applyingRemote || !hasSyncAccount()) return;
   clearTimeout(syncPushTimer);
   syncPushTimer = setTimeout(() => { pushToDrive(); }, 2500);
 }
@@ -205,19 +228,19 @@ function renderSyncUI() {
 }
 
 async function pushToDrive() {
-  if (!gsync.isSignedIn()) return;
+  if (!hasSyncAccount()) return;
   try {
     state.sync.status = 'syncing'; renderSyncUI();
     await gsync.uploadBackup(buildSyncSnapshot());
     state.sync.status = 'synced'; state.sync.error = null;
   } catch (e) {
-    state.sync.status = 'error'; state.sync.error = 'Could not reach Google Drive.';
+    noteSyncFailure(e);
   }
   renderSyncUI();
 }
 
 async function pullAndMerge() {
-  if (!gsync.isSignedIn()) return;
+  if (!hasSyncAccount()) return;
   try {
     state.sync.status = 'syncing'; renderSyncUI();
     const remote = await gsync.downloadBackup();
@@ -233,7 +256,7 @@ async function pullAndMerge() {
     }
     state.sync.status = 'synced'; state.sync.error = null;
   } catch (e) {
-    state.sync.status = 'error'; state.sync.error = 'Could not reach Google Drive.';
+    noteSyncFailure(e);
   }
   renderSyncUI();
 }
@@ -242,13 +265,17 @@ async function googleSignInHandler() {
   state.sync.status = 'syncing'; state.sync.error = null; renderModal();
   const ok = await gsync.signIn();
   if (ok) {
-    state.sync.email = gsync.getSignedInEmail();
+    // getSignedInEmail() can be null if the userinfo lookup failed; keep the
+    // remembered address in that case rather than dropping the account.
+    state.sync.email = gsync.getSignedInEmail() || state.sync.email;
     await db.setItem('sync-account', state.sync.email).catch(() => {});
     await pullAndMerge();
   } else {
-    state.sync.status = 'error';
-    state.sync.error = 'Sign-in didn\u2019t go through — try again.';
-    renderModal();
+    // Falling back to 'reconnect' (not 'error') keeps the retry affordance on
+    // screen for someone who was already signed in.
+    state.sync.status = state.sync.email ? 'reconnect' : 'signed-out';
+    state.sync.error = state.sync.email ? null : 'Sign-in didn\u2019t go through — try again.';
+    renderSyncUI();
   }
 }
 async function googleSignOutHandler() {
@@ -266,10 +293,24 @@ async function googleSyncNowHandler() {
 async function tryResumeSync() {
   const savedEmail = await db.getItem('sync-account').catch(() => null);
   if (!savedEmail) return;
+
+  // Show the account immediately, before the handshake — the person never
+  // signed out, so the app shouldn't flash a signed-out avatar on every load.
+  state.sync.email = savedEmail;
+  state.sync.status = 'syncing';
+  renderSyncUI();
+
   const ok = await gsync.trySilentSignIn(savedEmail);
   if (ok) {
     state.sync.email = gsync.getSignedInEmail() || savedEmail;
     await pullAndMerge();
+  } else {
+    // Google wouldn't renew silently (signed out of Google, or third-party
+    // cookies blocked). Keep the account visible and offer a one-tap reconnect
+    // rather than pretending we've forgotten them.
+    state.sync.status = 'reconnect';
+    state.sync.error = null;
+    renderSyncUI();
   }
 }
 async function saveProfile() {
@@ -440,6 +481,27 @@ async function updateTargetHandler(id, rawValue) {
   await persistExercises();
   state.editingPlanTarget = null;
   renderView();
+}
+/** Corrects the target for one past day (from Progress). Scoped to that day —
+ *  later days keep the target they already had. */
+async function setDayTargetHandler(exId, dateStr, rawValue) {
+  const ex = state.exercises.find((e) => e.id === exId);
+  state.editingDayTarget = null;
+  if (!ex) { renderView(); return; }
+
+  const updated = setTargetForDayPure(ex, dateStr, rawValue === '' ? null : parseFloat(rawValue));
+  if (updated === ex) { renderView(); return; }
+
+  const wasComplete = calcDayStats(state.exercises, state.setsLog, dateStr, state.streakOverrides).allComplete;
+  state.exercises = state.exercises.map((e) => (e.id === exId ? updated : e));
+  await persistExercises();
+  renderView();
+
+  const nowComplete = calcDayStats(state.exercises, state.setsLog, dateStr, state.streakOverrides).allComplete;
+  const label = formatDisplayDate(dateStr, { month: 'short', day: 'numeric' });
+  const newTarget = getEffectiveTarget(updated, dateStr);
+  const base = newTarget ? `${label} target set to ${newTarget} ${ex.unit}` : `${label} target cleared`;
+  showToast(!wasComplete && nowComplete ? `${base} · day now counts` : base);
 }
 async function setArchived(id, archived) {
   const ex = state.exercises.find((e) => e.id === id);
@@ -762,6 +824,25 @@ function viewPlan() {
 }
 
 /* ============================= VIEW: PROGRESS ============================= */
+/**
+ * The "/ 200" half of a "105 / 200 reps" line in an expanded day. On past days
+ * this is tappable: correcting it rewrites that day's target only, and the
+ * streak/dot/fraction above recompute on the next render. Today stays
+ * read-only — today's target belongs to the Plan screen, so there's exactly
+ * one editor for the standing value.
+ */
+function renderDayTargetPart(dt, dateStr, isToday) {
+  if (isToday) return dt.hasTarget ? ` / ${dt.target}` : '';
+  if (state.editingDayTarget === `${dateStr}|${dt.ex.id}`) {
+    return ` / <span class="inline-target-edit" data-stop>
+      <input type="number" min="0" step="any" id="day-target-input-${dt.ex.id}" class="target-edit-input" value="${dt.hasTarget ? dt.target : ''}" placeholder="none">
+      <button class="mini-btn" data-action="save-day-target-inline" data-id="${dt.ex.id}" data-date="${dateStr}" aria-label="Save">${ICONS.check}</button>
+      <button class="mini-btn" data-action="cancel-day-target-inline" aria-label="Cancel">${ICONS.close}</button>
+    </span>`;
+  }
+  return ` / <span class="editable-target" data-editable-day-target data-id="${dt.ex.id}" data-date="${dateStr}" title="Tap to edit this day’s target">${dt.hasTarget ? dt.target : '—'}</span>`;
+}
+
 function viewProgress() {
   const { current, longest } = calcStreakInfo(state.exercises, state.setsLog, null, state.streakOverrides);
   const weekly = calcWeeklyCompletion(state.exercises, state.setsLog, null, state.streakOverrides);
@@ -805,7 +886,7 @@ function viewProgress() {
         stats.details.map((dt) => {
           const t = getTimerPure(state.timersLog, d, dt.ex.id);
           const timeStr = t ? ` · ${formatElapsed(timerElapsedMs(t, Date.now()))}` : '';
-          return `<div><span>${escapeHtml(dt.ex.icon)} ${escapeHtml(dt.ex.name)}</span><span>${dt.total}${dt.hasTarget ? ` / ${dt.target}` : ''} ${escapeHtml(dt.ex.unit)}${timeStr}</span></div>`;
+          return `<div><span>${escapeHtml(dt.ex.icon)} ${escapeHtml(dt.ex.name)}</span><span>${dt.total}${renderDayTargetPart(dt, d, i === 0)} ${escapeHtml(dt.ex.unit)}${timeStr}</span></div>`;
         }).join('')
       }</div>` : ''}
     </div>`;
@@ -1037,6 +1118,16 @@ function modalProfile() {
     if (sync.status === 'syncing') {
       return `<div class="sync-status syncing">Syncing…</div>`;
     }
+    // Signed in as far as this app is concerned, but Google wouldn't renew the
+    // token without a prompt. Everything still works locally; one tap resumes.
+    if (sync.status === 'reconnect') {
+      return `<div class="sync-status error">Sync paused${sync.email ? ` · ${escapeHtml(sync.email)}` : ''}</div>
+        <div class="sync-actions">
+          <button class="secondary-btn" data-action="google-sign-in">Reconnect to sync</button>
+          <button class="secondary-btn" data-action="google-sign-out">Sign out</button>
+        </div>
+        <div class="hint">Your workouts are all here and safe on this device. Google just needs you to confirm it's you again before syncing resumes.</div>`;
+    }
     const statusLine = sync.status === 'error'
       ? `<div class="sync-status error">${escapeHtml(sync.error || 'Sync error')}</div>`
       : `<div class="sync-status ok">${ICONS.check} Synced${sync.email ? ` · ${escapeHtml(sync.email)}` : ''}</div>`;
@@ -1250,6 +1341,16 @@ document.addEventListener('click', async (e) => {
       renderView();
       break;
 
+    case 'save-day-target-inline': {
+      const input = document.getElementById(`day-target-input-${btn.dataset.id}`);
+      await setDayTargetHandler(btn.dataset.id, btn.dataset.date, input.value);
+      break;
+    }
+    case 'cancel-day-target-inline':
+      state.editingDayTarget = null;
+      renderView();
+      break;
+
     case 'save-today-total-inline': {
       const input = document.getElementById(`today-total-input-${btn.dataset.id}`);
       await setTotalHandler(btn.dataset.id, btn.dataset.date, input.value);
@@ -1339,6 +1440,14 @@ document.addEventListener('click', (e) => {
     if (input) { input.focus(); input.select(); }
     return;
   }
+  const dayTargetEl = e.target.closest('[data-editable-day-target]');
+  if (dayTargetEl) {
+    state.editingDayTarget = `${dayTargetEl.dataset.date}|${dayTargetEl.dataset.id}`;
+    renderView();
+    const input = document.getElementById(`day-target-input-${dayTargetEl.dataset.id}`);
+    if (input) { input.focus(); input.select(); }
+    return;
+  }
   const todayTotalEl = e.target.closest('[data-editable-today-total]');
   if (todayTotalEl) {
     state.editingTodayTotal = todayTotalEl.dataset.id;
@@ -1366,6 +1475,18 @@ document.addEventListener('keydown', (e) => {
       e.preventDefault();
       if (state.modal) state.modal.editIndex = null;
       renderModal();
+    }
+    return;
+  }
+  const dayTargetInput = e.target.closest('[id^="day-target-input-"]');
+  if (dayTargetInput) {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      document.querySelector('[data-action="save-day-target-inline"]')?.click();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      state.editingDayTarget = null;
+      renderView();
     }
     return;
   }
@@ -1425,7 +1546,7 @@ async function init() {
   render();
   tryResumeSync().catch(() => {});
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && gsync.isSignedIn()) pullAndMerge();
+    if (document.visibilityState === 'visible' && hasSyncAccount()) pullAndMerge();
   });
 }
 init();

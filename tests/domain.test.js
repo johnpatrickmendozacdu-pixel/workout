@@ -23,6 +23,7 @@ import {
   finishTimer,
   resetTimer,
   bumpTargetIfPR,
+  setTargetForDay,
   validateBackup,
   mergeBackup,
   buildBackup,
@@ -222,6 +223,111 @@ describe('bumpTargetIfPR', () => {
     expect(getEffectiveTarget(afterToday, tomorrow)).toBe(105);
     const afterTomorrow = bumpTargetIfPR(afterToday, tomorrow, 110);
     expect(getEffectiveTarget(afterTomorrow, tomorrow)).toBe(110);
+  });
+});
+
+describe('setTargetForDay', () => {
+  it('changes only the named day, leaving later days on the original target', () => {
+    const ex = makeExercise({ targetHistory: [{ effectiveDate: '2026-07-20', target: 200 }] });
+    const updated = setTargetForDay(ex, '2026-07-22', 100);
+    expect(getEffectiveTarget(updated, '2026-07-22')).toBe(100);
+    expect(getEffectiveTarget(updated, '2026-07-23')).toBe(200);
+    expect(getEffectiveTarget(updated, '2026-07-26')).toBe(200);
+    expect(getEffectiveTarget(updated, '2026-07-21')).toBe(200);
+  });
+
+  it('does not mutate the original exercise', () => {
+    const ex = makeExercise({ targetHistory: [{ effectiveDate: '2026-07-20', target: 200 }] });
+    const before = JSON.stringify(ex);
+    setTargetForDay(ex, '2026-07-22', 100);
+    expect(JSON.stringify(ex)).toBe(before);
+  });
+
+  it('preserves a later explicit target change instead of writing a redundant restore entry', () => {
+    const ex = makeExercise({
+      targetHistory: [
+        { effectiveDate: '2026-07-20', target: 200 },
+        { effectiveDate: '2026-07-23', target: 300 },
+      ],
+    });
+    const updated = setTargetForDay(ex, '2026-07-22', 100);
+    expect(getEffectiveTarget(updated, '2026-07-22')).toBe(100);
+    expect(getEffectiveTarget(updated, '2026-07-23')).toBe(300);
+    expect(getEffectiveTarget(updated, '2026-07-24')).toBe(300);
+  });
+
+  it('restores the carried value when the edited day sits directly before an untouched stretch', () => {
+    const ex = makeExercise({ targetHistory: [{ effectiveDate: '2026-07-20', target: 200 }] });
+    const updated = setTargetForDay(ex, '2026-07-25', 50);
+    const restore = updated.targetHistory.find((h) => h.effectiveDate === '2026-07-26');
+    expect(restore).toBeTruthy();
+    expect(restore.target).toBe(200);
+  });
+
+  it('replaces rather than duplicates when the same day is edited twice', () => {
+    const ex = makeExercise({ targetHistory: [{ effectiveDate: '2026-07-20', target: 200 }] });
+    const once = setTargetForDay(ex, '2026-07-22', 100);
+    const twice = setTargetForDay(once, '2026-07-22', 75);
+    const entries = twice.targetHistory.filter((h) => h.effectiveDate === '2026-07-22');
+    expect(entries).toHaveLength(1);
+    expect(getEffectiveTarget(twice, '2026-07-22')).toBe(75);
+    expect(getEffectiveTarget(twice, '2026-07-23')).toBe(200);
+  });
+
+  it('clearing a target makes that day untargeted but leaves later days targeted', () => {
+    const ex = makeExercise({ targetHistory: [{ effectiveDate: '2026-07-20', target: 200 }] });
+    const updated = setTargetForDay(ex, '2026-07-22', null);
+    expect(getEffectiveTarget(updated, '2026-07-22')).toBe(null);
+    expect(getEffectiveTarget(updated, '2026-07-23')).toBe(200);
+  });
+
+  it('normalizes zero, negative, and NaN targets to untargeted', () => {
+    const ex = makeExercise({ targetHistory: [{ effectiveDate: '2026-07-20', target: 200 }] });
+    expect(getEffectiveTarget(setTargetForDay(ex, '2026-07-22', 0), '2026-07-22')).toBe(null);
+    expect(getEffectiveTarget(setTargetForDay(ex, '2026-07-22', -5), '2026-07-22')).toBe(null);
+    expect(getEffectiveTarget(setTargetForDay(ex, '2026-07-22', NaN), '2026-07-22')).toBe(null);
+  });
+
+  it('adds a target to a day that previously had none', () => {
+    const ex = makeExercise({ targetHistory: [{ effectiveDate: '2026-07-20', target: null }] });
+    const updated = setTargetForDay(ex, '2026-07-22', 60);
+    expect(getEffectiveTarget(updated, '2026-07-22')).toBe(60);
+    expect(getEffectiveTarget(updated, '2026-07-23')).toBe(null);
+  });
+
+  it('handles an exercise with no target history at all', () => {
+    const ex = makeExercise({ targetHistory: [] });
+    const updated = setTargetForDay(ex, '2026-07-22', 60);
+    expect(getEffectiveTarget(updated, '2026-07-22')).toBe(60);
+    expect(getEffectiveTarget(updated, '2026-07-23')).toBe(null);
+  });
+
+  it('returns the same reference when the value is unchanged', () => {
+    const ex = makeExercise({ targetHistory: [{ effectiveDate: '2026-07-20', target: 200 }] });
+    expect(setTargetForDay(ex, '2026-07-22', 200)).toBe(ex);
+  });
+
+  it('flips a day to complete in calcDayStats once the target drops to the logged total', () => {
+    const ex = makeExercise({ targetHistory: [{ effectiveDate: '2026-07-20', target: 200 }] });
+    const setsLog = { '2026-07-25': { a: [105] } };
+    expect(calcDayStats([ex], setsLog, '2026-07-25').allComplete).toBe(false);
+    const updated = setTargetForDay(ex, '2026-07-25', 100);
+    const stats = calcDayStats([updated], setsLog, '2026-07-25');
+    expect(stats.allComplete).toBe(true);
+    expect(stats.completedCount).toBe(1);
+    expect(stats.targetedCount).toBe(1);
+  });
+
+  it('extends the current streak once a broken day is corrected', () => {
+    const ex = makeExercise({ targetHistory: [{ effectiveDate: '2026-07-20', target: 200 }] });
+    const setsLog = {
+      '2026-07-24': { a: [105] },
+      '2026-07-25': { a: [200] },
+      '2026-07-26': { a: [200] },
+    };
+    expect(calcStreakInfo([ex], setsLog, TODAY).current).toBe(2);
+    const updated = setTargetForDay(ex, '2026-07-24', 100);
+    expect(calcStreakInfo([updated], setsLog, TODAY).current).toBe(3);
   });
 });
 

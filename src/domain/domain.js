@@ -376,6 +376,46 @@ export function bumpTargetIfPR(exercise, dateStr, total) {
   return { ...exercise, targetHistory: history };
 }
 
+/**
+ * Set the target that applies on ONE specific day, without disturbing any
+ * later day. Used to correct history from the Progress screen: if a past day's
+ * target was wrong, you fix that day and the streak recounts, while today and
+ * every day in between keep the target they already had.
+ *
+ * Because targets resolve forward (getEffectiveTarget takes the latest entry
+ * on-or-before a date), writing an entry at `dateStr` would normally carry
+ * onward. To confine it, we note what the following day resolved to first, and
+ * write a restoring entry there if the edit would otherwise have changed it.
+ *
+ * A target of 0, null, or NaN means "untargeted that day" — the day then goes
+ * neutral for streaks rather than counting as a failure.
+ * Returns the same exercise reference when nothing changed.
+ */
+export function setTargetForDay(exercise, dateStr, newTarget) {
+  const parsed = newTarget == null || newTarget === '' ? null : Number(newTarget);
+  const target = parsed == null || isNaN(parsed) || parsed <= 0 ? null : clampNum(parsed);
+
+  if (getEffectiveTarget(exercise, dateStr) === target) return exercise;
+
+  const nextDay = addDays(dateStr, 1);
+  const carried = getEffectiveTarget(exercise, nextDay);
+
+  const upsert = (history, effectiveDate, value) => {
+    const next = history.slice();
+    const idx = next.findIndex((h) => h.effectiveDate === effectiveDate);
+    if (idx >= 0) next[idx] = { ...next[idx], target: value };
+    else next.push({ effectiveDate, target: value });
+    return next;
+  };
+
+  let history = upsert(exercise.targetHistory || [], dateStr, target);
+  if (getEffectiveTarget({ targetHistory: history }, nextDay) !== carried) {
+    history = upsert(history, nextDay, carried);
+  }
+
+  return { ...exercise, targetHistory: history };
+}
+
 export function buildBackup(exercises, setsLog) {
   return {
     version: 1,

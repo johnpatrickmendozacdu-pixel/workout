@@ -35,7 +35,7 @@ import {
   mergeBackup,
 } from './domain/domain.js';
 import * as gsync from './sync/googleSync.js';
-import { allStats, exerciseStats, achievementsFor, formatDuration, describeLastWorkout } from './domain/stats.js';
+import { allStats, formatDuration, formatCount } from './domain/stats.js';
 
 const DEFAULT_CHIPS = [5, 10, 12];
 
@@ -53,23 +53,14 @@ const state = {
   updateAvailable: false,
   applyUpdate: null,
   modal: null,
-  loggerDraft: '',
   expandedDay: null,
   showArchived: false,
   editingPlanTarget: null,
   editingTodayTotal: null,
   editingDayTarget: null,
   version: { local: typeof __BUILD_ID__ === 'string' ? __BUILD_ID__ : 'dev', status: 'unknown' },
-  // High-water marks per exercise. Persisted so a record announced once is
-  // never re-announced, and survives reloads and device switches.
-  records: {},
-  achievements: [],     // newest first, capped
-  liveToasts: [],       // subset currently animating in the right rail
-  panel: null,          // 'stats' | 'alerts' — mobile drawers only
-  statsDirty: false,    // drives the subtle "Refresh available" prompt
+  panel: null,          // 'stats' — mobile drawer only
 };
-
-const MAX_ACHIEVEMENTS = 200;
 
 const EMOJI_PRESETS = ['💪', '🏃', '🦵', '🧘', '🚴', '🏊', '🤸', '🏋️', '⛹️', '🤾', '🧗', '🥊', '🤺', '🚶', '🧎', '⚽'];
 
@@ -98,13 +89,7 @@ async function loadAll() {
     db.getItem('profile'),
     db.getItem('streak-overrides'),
   ]);
-  const [records, achievements] = await Promise.all([
-    db.getItem('records').catch(() => null),
-    db.getItem('achievements').catch(() => null),
-  ]);
-  state.records = records || {};
-  state.achievements = achievements || [];
-  state.needsRecordBaseline = !records;
+
   state.exercises = exercises || [];
   state.setsLog = setsLog || {};
   state.meta = meta || { lastExportAt: null };
@@ -162,15 +147,6 @@ async function persistTimers() {
 async function persistProfile() {
   try {
     await db.setItem('profile', state.profile);
-    markDirty();
-    return true;
-  } catch (e) {
-    return false;
-  }
-}
-async function persistRecords() {
-  try {
-    await Promise.all([db.setItem('records', state.records), db.setItem('achievements', state.achievements)]);
     markDirty();
     return true;
   } catch (e) {
@@ -402,71 +378,6 @@ async function saveProfile() {
   showToast('Profile saved');
 }
 
-/* ============================= RECORDS & ACHIEVEMENTS ============================= */
-/**
- * Compares live derived stats against the persisted high-water marks and
- * announces anything newly beaten. Driven by stored records rather than a
- * before/after snapshot, so it is correct no matter which mutation ran, and a
- * record announced once is never announced twice — even across reloads.
- * Returns the achievements raised (possibly none).
- */
-async function syncRecords(silent = false) {
-  const stats = allStats(state.exercises, state.setsLog, state.timersLog, null, state.streakOverrides);
-  const raised = [];
-  let changed = false;
-
-  state.exercises.forEach((ex) => {
-    const next = stats[ex.id];
-    const prev = state.records[ex.id] || { topSet: null, bestTime: null, longestStreak: 0, totalReps: 0 };
-    const found = achievementsFor(prev, next, ex);
-    if (found.length) raised.push(...found);
-    // Advance the marks regardless, so growth without a record still counts
-    // toward the next milestone.
-    const advanced = {
-      topSet: Math.max(prev.topSet || 0, next.topSet || 0) || null,
-      bestTime: next.bestTime != null ? Math.min(prev.bestTime == null ? Infinity : prev.bestTime, next.bestTime) : prev.bestTime,
-      longestStreak: Math.max(prev.longestStreak || 0, next.longestStreak || 0),
-      totalReps: Math.max(prev.totalReps || 0, next.totalReps || 0),
-    };
-    if (advanced.bestTime === Infinity) advanced.bestTime = null;
-    if (JSON.stringify(advanced) !== JSON.stringify(prev)) { state.records[ex.id] = advanced; changed = true; }
-  });
-
-  // Silent mode establishes the baseline from existing history. Without it,
-  // first run announces every pre-existing personal best at once, which is
-  // noise: those aren't things you just did.
-  if (raised.length && !silent) {
-    const stamped = raised.map((a) => ({ ...a, id: uid('ach'), ts: Date.now() }));
-    state.achievements = [...stamped, ...state.achievements].slice(0, MAX_ACHIEVEMENTS);
-    state.liveToasts = [...stamped.map((a) => a.id), ...state.liveToasts].slice(0, 4);
-    changed = true;
-    stamped.forEach((a) => setTimeout(() => dismissToast(a.id), 6000));
-  }
-  if (changed) await persistRecords();
-  if (raised.length && !silent) renderAlerts();
-  return silent ? [] : raised;
-}
-
-function dismissToast(id) {
-  if (!state.liveToasts.includes(id)) return;
-  state.liveToasts = state.liveToasts.filter((x) => x !== id);
-  renderAlerts();
-}
-
-/** Announces a finished workout (not a record — just the completion itself). */
-async function announceCompletion(ex, total, elapsedMs) {
-  const entry = {
-    id: uid('ach'), ts: Date.now(), type: 'workout', icon: '✅',
-    title: 'Workout complete',
-    detail: `${ex.name} · ${total} ${ex.unit} · ${formatDuration(elapsedMs)}`,
-  };
-  state.achievements = [entry, ...state.achievements].slice(0, MAX_ACHIEVEMENTS);
-  state.liveToasts = [entry.id, ...state.liveToasts].slice(0, 4);
-  setTimeout(() => dismissToast(entry.id), 6000);
-  await persistRecords();
-  renderAlerts();
-}
-
 /* ============================= MUTATIONS ============================= */
 async function logSet(exId, value) {
   if (!(value > 0)) return;
@@ -511,7 +422,6 @@ async function logSet(exId, value) {
     showToast(msg, () => undoLastSetHandler(exId));
   }
   rerender();
-  syncRecords();
 }
 
 /** "Take the win" — bank the workout and stop the clock. */
@@ -523,8 +433,7 @@ async function takeTheWinHandler(exId) {
   const t = getTimerPure(state.timersLog, d, exId);
   closeModal();
   rerender();
-  await syncRecords();
-  if (ex) await announceCompletion(ex, calcTotal(getSetsFor(exId, d)), t ? t.elapsedMs : 0);
+
 }
 
 /** "Keep going" — clock resumes, everything keeps counting. */
@@ -818,67 +727,45 @@ function renderBanner() {
 function renderDashboard() {
   const el = document.getElementById('rail-stats');
   if (!el) return;
-  const today = todayISO();
-  const stats = allStats(state.exercises, state.setsLog, state.timersLog, null, state.streakOverrides);
+  const stats = allStats(state.exercises, state.setsLog, state.timersLog);
   const active = state.exercises.filter((e) => e.active && !e.archived);
 
   const cards = active.map((ex) => {
     const s = stats[ex.id];
-    const row = (label, value) => `<div class="stat-row"><span>${label}</span><b>${value}</b></div>`;
+    const u = escapeHtml(ex.unit);
+    // Two headline numbers, then the supporting rows. Top Set and Max Reps
+    // lead because they answer different questions: best single effort, and
+    // biggest day.
     return `<section class="dash-card">
       <header class="dash-head"><span class="dash-icon">${escapeHtml(ex.icon)}</span><h3>${escapeHtml(ex.name)}</h3></header>
-      ${row('Top set', s.topSet ? `${s.topSet} ${escapeHtml(ex.unit)}` : '—')}
-      ${row('Best time', formatDuration(s.bestTime))}
-      ${row('Average time', formatDuration(s.avgTime))}
-      ${row('Current streak', `${s.currentStreak} ${s.currentStreak === 1 ? 'day' : 'days'}`)}
-      ${row('Longest streak', `${s.longestStreak} ${s.longestStreak === 1 ? 'day' : 'days'}`)}
-      ${row('Workouts', s.totalWorkouts)}
-      ${row('Total sets', s.totalSets)}
-      ${row('Total reps', s.totalReps.toLocaleString())}
-      ${row('Last workout', describeLastWorkout(s.lastWorkout, today))}
+      <div class="dash-headline">
+        <div class="headline-stat">
+          <b>${s.topSet ?? '—'}</b>
+          <span>Top set<em>best single set</em></span>
+        </div>
+        <div class="headline-stat">
+          <b>${s.maxReps ?? '—'}</b>
+          <span>Max reps<em>biggest day</em></span>
+        </div>
+      </div>
+      <dl class="stat-list">
+        <div><dt>Lifetime</dt><dd>${formatCount(s.totalReps)} ${u}${s.since ? ` <i>since ${escapeHtml(s.since)}</i>` : ''}</dd></div>
+        <div><dt>Best streak</dt><dd>${s.bestStreak}<i>/${s.trackedDays} days</i></dd></div>
+        <div><dt>Best time</dt><dd>${formatDuration(s.bestTime)}</dd></div>
+        <div><dt>Average time</dt><dd>${formatDuration(s.avgTime)}</dd></div>
+      </dl>
     </section>`;
   }).join('');
 
   el.innerHTML = `
-    <div class="rail-head">
-      <h2>Performance</h2>
-      ${state.statsDirty ? `<button class="refresh-chip" data-action="refresh-stats">Refresh available</button>` : ''}
-    </div>
-    ${active.length ? cards : `<p class="rail-empty">Add an exercise to start building lifetime stats.</p>`}`;
-}
-
-/** Achievement rail: live toasts on top, full history beneath. */
-function renderAlerts() {
-  const el = document.getElementById('rail-alerts');
-  if (!el) return;
-  const live = state.achievements.filter((a) => state.liveToasts.includes(a.id));
-  const history = state.achievements.filter((a) => !state.liveToasts.includes(a.id));
-
-  const card = (a, isLive) => `<article class="alert-card ${isLive ? 'live' : ''} ${a.type}">
-    <span class="alert-icon">${a.icon}</span>
-    <div class="alert-body">
-      <div class="alert-title">${escapeHtml(a.title)}</div>
-      <div class="alert-detail">${escapeHtml(a.detail)}</div>
-    </div>
-    ${isLive ? `<button class="alert-x" data-action="dismiss-alert" data-id="${a.id}" aria-label="Dismiss">${ICONS.close}</button>` : ''}
-  </article>`;
-
-  el.innerHTML = `
-    <div class="rail-head">
-      <h2>Achievements</h2>
-      ${state.achievements.length ? `<button class="refresh-chip" data-action="clear-alerts">Clear</button>` : ''}
-    </div>
-    <div class="alert-live">${live.map((a) => card(a, true)).join('')}</div>
-    ${history.length
-      ? `<div class="alert-history">${history.slice(0, 40).map((a) => card(a, false)).join('')}</div>`
-      : (live.length ? '' : `<p class="rail-empty">Records, milestones and completed workouts land here.</p>`)}`;
+    <div class="rail-head"><h2>Performance</h2></div>
+    ${active.length ? cards : `<p class="rail-empty">Add an exercise to start building lifetime numbers.</p>`}`;
 }
 
 function renderPanels() {
   const shell = document.getElementById('shell');
   if (shell) shell.dataset.panel = state.panel || '';
   renderDashboard();
-  renderAlerts();
 }
 
 function render() {
@@ -889,7 +776,6 @@ function render() {
     <div id="shell" data-panel="">
       <aside id="rail-stats" class="rail rail-left"></aside>
       <main id="view-container"></main>
-      <aside id="rail-alerts" class="rail rail-right"></aside>
     </div>
     <nav id="bottom-nav">
       <div class="nav-inner">
@@ -930,11 +816,9 @@ async function checkVersion() {
   renderTopbar();
 }
 
-/** Rail toggles — phone only; at desktop width the rails are always visible. */
+/** Stats drawer toggle — phone only; at desktop width the rail is always visible. */
 function railButtonsHtml() {
-  const unseen = state.liveToasts.length;
-  return `<button class="rail-btn" data-action="toggle-panel" data-panel="stats" aria-label="Performance dashboard">📊</button>
-    <button class="rail-btn" data-action="toggle-panel" data-panel="alerts" aria-label="Achievements">🏅${unseen ? `<span class="badge">${unseen}</span>` : ''}</button>`;
+  return `<button class="rail-btn" data-action="toggle-panel" data-panel="stats" aria-label="Performance">${ICONS.progress}</button>`;
 }
 
 function versionChipHtml() {
@@ -1043,7 +927,7 @@ function viewToday() {
         ${ring(hasTarget ? pct : (total > 0 ? 1 : 0), 52, 4, complete, escapeHtml(ex.icon))}
         <div class="ex-body">
           <div class="ex-name">${escapeHtml(ex.name)}</div>
-          ${hasTarget ? `<div class="ex-bar-track"><div class="ex-bar-fill ${complete ? 'complete' : ''}" style="width:${Math.min(pct, 1) * 100}%"></div></div>` : `<div class="ex-untargeted">No daily target</div>`}
+          ${hasTarget ? `<div class="tally-rail">${tallyMarks(arr.length)}</div>` : `<div class="ex-untargeted">No daily target</div>`}
         </div>
       </button>
       <div class="ex-totals" data-stop>
@@ -1257,7 +1141,6 @@ function modalLogger(exId) {
   const hasTarget = !!target && target > 0;
   const arr = getSetsFor(exId, today);
   const total = calcTotal(arr);
-  const draft = state.loggerDraft;
   const chips = (ex.chips && ex.chips.length === 3) ? ex.chips : DEFAULT_CHIPS;
   const editIndex = state.modal && state.modal.editIndex != null ? state.modal.editIndex : null;
   const listItems = arr.map((v, i) => ({ v, i })).reverse().map(({ v, i }) => {
@@ -1320,7 +1203,7 @@ function modalLogger(exId) {
       </div>
       <div class="logger-unit">${escapeHtml(ex.unit)} logged today</div>
       ${timerHtml}
-      <div class="logger-tally">${tallyMarks(arr.length)}</div>
+      <div class="tally-rail logger-tally">${tallyMarks(arr.length)}</div>
 
       <div class="chip-row">
         ${chips.map((c) => `<button class="chip" data-action="chip-log" data-id="${exId}" data-val="${c}">+${c}</button>`).join('')}
@@ -1328,12 +1211,6 @@ function modalLogger(exId) {
       <div class="chip-row minus-row">
         ${chips.map((c) => `<button class="chip chip-minus" data-action="chip-minus" data-id="${exId}" data-val="${c}" ${arr.length ? '' : 'disabled'}>−${c}</button>`).join('')}
       </div>
-
-      <div class="keypad-display ${draft ? '' : 'placeholder'}">${draft || '0'}</div>
-      <div class="keypad">
-        ${['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '⌫'].map((k) => `<button class="key" data-action="key" data-key="${k}">${k}</button>`).join('')}
-      </div>
-      <button class="log-btn" data-action="log-draft" data-id="${exId}" ${(parseFloat(draft) > 0) ? '' : 'disabled'}>Log set</button>
 
       <div class="set-list">
         <div class="set-list-head"><span>Set history</span><span>${arr.length} set${arr.length === 1 ? '' : 's'}</span></div>
@@ -1590,7 +1467,7 @@ document.addEventListener('click', async (e) => {
     case 'reorder': await reorder(btn.dataset.id, parseInt(btn.dataset.dir, 10)); rerender(); break;
     case 'toggle-archived': state.showArchived = !state.showArchived; renderView(); break;
 
-    case 'open-logger': state.loggerDraft = ''; state.modal = { type: 'logger', exId: btn.dataset.id }; renderModal(); break;
+    case 'open-logger': state.modal = { type: 'logger', exId: btn.dataset.id }; renderModal(); break;
     case 'chip-log':
       await logSet(btn.dataset.id, parseFloat(btn.dataset.val));
       if (state.modal && state.modal.type === 'logger') renderModal();
@@ -1599,19 +1476,6 @@ document.addEventListener('click', async (e) => {
       await decrementHandler(btn.dataset.id, parseFloat(btn.dataset.val));
       if (state.modal && state.modal.type === 'logger') renderModal();
       break;
-    case 'key': {
-      const k = btn.dataset.key;
-      if (k === '⌫') state.loggerDraft = state.loggerDraft.slice(0, -1);
-      else if (k === '.') { if (!state.loggerDraft.includes('.')) state.loggerDraft += (state.loggerDraft ? '.' : '0.'); }
-      else { if (state.loggerDraft.length < 6) state.loggerDraft += k; }
-      renderModal();
-      break;
-    }
-    case 'log-draft': {
-      const val = parseFloat(state.loggerDraft);
-      if (val > 0) { await logSet(btn.dataset.id, val); state.loggerDraft = ''; renderModal(); }
-      break;
-    }
     case 'delete-set': {
       const arr = getSetsFor(btn.dataset.id, btn.dataset.date);
       const index = parseInt(btn.dataset.index, 10);
@@ -1699,20 +1563,6 @@ document.addEventListener('click', async (e) => {
       state.panel = state.panel === btn.dataset.panel ? null : btn.dataset.panel;
       renderPanels();
       break;
-    case 'dismiss-alert':
-      dismissToast(btn.dataset.id);
-      break;
-    case 'clear-alerts':
-      state.achievements = [];
-      state.liveToasts = [];
-      await persistRecords();
-      renderAlerts();
-      break;
-    case 'refresh-stats':
-      state.statsDirty = false;
-      renderDashboard();
-      break;
-
     case 'pause-timer':
       await pauseTimerHandler(btn.dataset.id);
       break;
@@ -1894,10 +1744,7 @@ async function init() {
   await loadAll();
   db.requestPersistence();
   render();
-  // First run on a device with existing history: adopt current bests as the
-  // starting line rather than announcing them.
-  await syncRecords(state.needsRecordBaseline);
-  state.needsRecordBaseline = false;
+
   tryResumeSync().catch(() => {});
   checkVersion();
   document.addEventListener('visibilitychange', () => {

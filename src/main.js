@@ -37,7 +37,7 @@ import {
   mergeBackup,
 } from './domain/domain.js';
 import * as gsync from './sync/googleSync.js';
-import { allStats, formatDuration, formatCount, formatClock } from './domain/stats.js';
+import { allStats, exerciseStats, formatDuration, formatCount, formatClock } from './domain/stats.js';
 
 const DEFAULT_CHIPS = [5, 10, 12];
 // Every number is on screen — no hunting, no typing. One tap applies it in
@@ -63,6 +63,7 @@ const state = {
   editingPlanTarget: null,
   editingTodayTotal: null,
   editingDayTarget: null,
+  editingTopSet: null,
   repMode: 'add',   // 'add' | 'sub' — the pad lever
   version: { local: typeof __BUILD_ID__ === 'string' ? __BUILD_ID__ : 'dev', status: 'unknown' },
   panel: null,          // 'stats' — mobile drawer only
@@ -747,6 +748,41 @@ function renderBanner() {
 }
 
 /* ============================= RENDER: SHELL ============================= */
+/**
+ * Correct the Top Set by fixing the set that produced it, rather than storing a
+ * display override. Overrides drift: a stored "25" would go on hiding a real
+ * 40-rep set logged next week. Editing the source set keeps every number
+ * derived from real data, so it stays right on its own afterwards.
+ */
+async function saveTopSetHandler(exId, rawValue) {
+  const parsed = rawValue === '' || rawValue == null ? null : parseFloat(rawValue);
+  const value = parsed == null || isNaN(parsed) ? null : Math.max(0, parsed);
+  state.editingTopSet = null;
+  if (value == null) { renderPanels(); return; }
+
+  // Locate the single biggest set across all history — the one being shown.
+  let best = null;
+  for (const d in state.setsLog) {
+    const arr = state.setsLog[d] && state.setsLog[d][exId];
+    if (!arr) continue;
+    arr.forEach((v, i) => {
+      if (!best || v > best.v) best = { d, i, v };
+    });
+  }
+  if (!best) { renderPanels(); return; }
+
+  state.setsLog = updateSetAtPure(state.setsLog, best.d, exId, best.i, value);
+  await persistSets();
+  rerender();
+
+  const ex = state.exercises.find((e) => e.id === exId);
+  const now = ex ? exerciseStats(ex, state.setsLog, state.timersLog) : null;
+  const when = formatDisplayDate(best.d, { month: 'short', day: 'numeric' });
+  showToast(value > 0
+    ? `${when}: ${best.v} \u2192 ${value}. Top set is now ${now && now.topSet ? now.topSet : '\u2014'}.`
+    : `${when}: removed that set.`);
+}
+
 /* ============================= SIDE PANELS ============================= */
 /**
  * Lifetime dashboard. Stats are derived on render from the logs, so they are
@@ -768,10 +804,18 @@ function renderDashboard() {
     return `<section class="dash-card">
       <header class="dash-head"><span class="dash-icon">${escapeHtml(ex.icon)}</span><h3>${escapeHtml(ex.name)}</h3></header>
       <div class="dash-headline">
-        <div class="headline-stat">
-          <b>${s.topSet ?? '—'}</b>
-          <span>Top set<em>best single set</em></span>
-        </div>
+        ${state.editingTopSet === ex.id
+          ? `<div class="headline-stat editing" data-stop>
+              <input type="number" min="0" step="any" id="topset-input-${ex.id}" class="topset-input" value="${s.topSet || ''}" placeholder="0">
+              <div class="topset-actions">
+                <button class="mini-btn" data-action="save-top-set" data-id="${ex.id}" aria-label="Save">${ICONS.check}</button>
+                <button class="mini-btn" data-action="cancel-top-set" aria-label="Cancel">${ICONS.close}</button>
+              </div>
+            </div>`
+          : `<button class="headline-stat tappable" data-action="edit-top-set" data-id="${ex.id}" title="Tap to correct the set behind this number">
+              <b>${s.topSet ?? '—'}</b>
+              <span>Top set<em>${s.topSetDate ? escapeHtml(formatDisplayDate(s.topSetDate, { month: 'short', day: 'numeric' })) : 'best single set'}</em></span>
+            </button>`}
         <div class="headline-stat">
           <b>${s.maxReps ?? '—'}</b>
           <span>Max<em>biggest day</em></span>
@@ -1551,6 +1595,20 @@ document.addEventListener('click', async (e) => {
       renderModal();
       break;
     }
+    case 'edit-top-set':
+      state.editingTopSet = btn.dataset.id;
+      renderPanels();
+      { const i = document.getElementById(`topset-input-${btn.dataset.id}`); if (i) { i.focus(); i.select(); } }
+      break;
+    case 'save-top-set': {
+      const input = document.getElementById(`topset-input-${btn.dataset.id}`);
+      await saveTopSetHandler(btn.dataset.id, input ? input.value : '');
+      break;
+    }
+    case 'cancel-top-set':
+      state.editingTopSet = null;
+      renderPanels();
+      break;
     case 'rep-mode':
       state.repMode = btn.dataset.mode;
       renderModal();

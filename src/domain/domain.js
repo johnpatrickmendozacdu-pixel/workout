@@ -308,6 +308,22 @@ export function purgeExerciseSets(setsLog, exId) {
  * when the person just wants "today's number" to read correctly, as an
  * alternative to editing/removing individual sets one at a time.
  */
+/**
+ * Break a bulk day total into believable sets. Used when someone types a
+ * whole day's number without having logged the individual sets: the total is
+ *真 real, but the breakdown is unknown, so we must not invent a single set
+ * equal to the whole day.
+ */
+export function splitIntoSets(total, chunk = 20) {
+  const t = clampNum(total);
+  if (t <= chunk) return [t];
+  const out = [];
+  let left = t;
+  while (left > chunk) { out.push(chunk); left = clampNum(left - chunk); }
+  if (left > 0) out.push(left);
+  return out;
+}
+
 export function setDayTotal(setsLog, dateStr, exId, value) {
   const next = { ...setsLog };
   const dayEntry = { ...(next[dateStr] || {}) };
@@ -325,7 +341,10 @@ export function setDayTotal(setsLog, dateStr, exId, value) {
   // single-effort record and corrupt Top Set.
   const sum = current.reduce((a, b) => a + b, 0);
   if (!current.length) {
-    dayEntry[exId] = [target];
+    // A day total typed with nothing logged is NOT one heroic set. Splitting it
+    // into plausible chunks keeps Top Set honest — a 110-rep day entered in one
+    // go must never masquerade as a 110-rep single set.
+    dayEntry[exId] = splitIntoSets(target);
   } else if (target > sum) {
     current.push(clampNum(target - sum));
     dayEntry[exId] = current;

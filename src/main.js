@@ -841,6 +841,20 @@ function renderPanels() {
   renderDashboard();
 }
 
+const NAV_ITEMS = [
+  { view: 'today', label: 'Today', icon: 'today' },
+  { view: 'plan', label: 'Plan', icon: 'plan' },
+  { view: 'progress', label: 'Progress', icon: 'progress' },
+];
+
+function renderNav() {
+  const el = document.getElementById('bottom-nav');
+  if (!el) return;
+  el.innerHTML = `<div class="nav-inner">${NAV_ITEMS.map((n) => `
+    <button class="nav-btn ${state.view === n.view ? 'active' : ''}" data-action="nav" data-view="${n.view}"
+      aria-current="${state.view === n.view ? 'page' : 'false'}">${ICONS[n.icon]}<span>${n.label}</span></button>`).join('')}</div>`;
+}
+
 function render() {
   const app = document.getElementById('app');
   app.innerHTML = `
@@ -850,14 +864,9 @@ function render() {
       <aside id="rail-stats" class="rail rail-left"></aside>
       <main id="view-container"></main>
     </div>
-    <nav id="bottom-nav">
-      <div class="nav-inner">
-        <button class="nav-btn ${state.view === 'today' ? 'active' : ''}" data-action="nav" data-view="today">${ICONS.today}<span>Today</span></button>
-        <button class="nav-btn ${state.view === 'plan' ? 'active' : ''}" data-action="nav" data-view="plan">${ICONS.plan}<span>Plan</span></button>
-        <button class="nav-btn ${state.view === 'progress' ? 'active' : ''}" data-action="nav" data-view="progress">${ICONS.progress}<span>Progress</span></button>
-      </div>
-    </nav>
+    <nav id="bottom-nav"></nav>
   `;
+  renderNav();
   renderTopbar();
   renderBanner();
   renderView();
@@ -1196,11 +1205,33 @@ function modalComplete() {
   </div>`;
 }
 
+/**
+ * iOS Safari ignores overscroll-behavior on the page itself: with a sheet open,
+ * dragging still scrolls the document underneath. Pinning the body to its
+ * current scroll offset is the only reliable fix, and the offset is restored on
+ * close so the view doesn't jump.
+ */
+let lockedScrollY = 0;
+function setBodyScrollLock(locked) {
+  const body = document.body;
+  if (locked) {
+    if (body.classList.contains('scroll-locked')) return;
+    lockedScrollY = window.scrollY || 0;
+    body.style.top = `-${lockedScrollY}px`;
+    body.classList.add('scroll-locked');
+  } else {
+    if (!body.classList.contains('scroll-locked')) return;
+    body.classList.remove('scroll-locked');
+    body.style.top = '';
+    window.scrollTo(0, lockedScrollY);
+  }
+}
+
 function closeModal() { state.modal = null; renderModal(); }
 function renderModal() {
   const root = document.getElementById('modal-root');
   if (!root) return;
-  if (!state.modal) { root.innerHTML = ''; ensureGlobalTick(); return; }
+  if (!state.modal) { root.innerHTML = ''; setBodyScrollLock(false); ensureGlobalTick(); return; }
   const m = state.modal;
   if (m.type === 'complete') root.innerHTML = modalComplete();
   else if (m.type === 'logger') root.innerHTML = modalLogger(m.exId);
@@ -1211,6 +1242,7 @@ function renderModal() {
   else if (m.type === 'profile') root.innerHTML = modalProfile();
   else if (m.type === 'importChoice') root.innerHTML = modalImportChoice();
   bindModalEvents();
+  setBodyScrollLock(true);
   ensureGlobalTick();
 }
 
@@ -1537,7 +1569,7 @@ document.addEventListener('click', async (e) => {
       state.view = btn.dataset.view;
       db.prefs.set('view', state.view);
       state.expandedDay = null;
-      renderTopbar(); renderView(); renderBanner();
+      renderNav(); renderTopbar(); renderView(); renderBanner();
       break;
 
     case 'open-add-exercise': state.modal = { type: 'exerciseForm', exId: null }; renderModal(); break;

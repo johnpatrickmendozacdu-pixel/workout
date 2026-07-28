@@ -15,6 +15,7 @@ import {
   removeExercise,
   purgeExerciseSets,
   setDayTotal,
+  splitIntoSets,
   getTimer,
   timerElapsedMs,
   startTimer,
@@ -370,6 +371,22 @@ describe('versionStatus', () => {
   });
 });
 
+describe('splitIntoSets', () => {
+  it('never returns one set equal to a whole big day', () => {
+    const sets = splitIntoSets(110);
+    expect(Math.max(...sets)).toBeLessThan(110);
+    expect(sets.reduce((a, b) => a + b, 0)).toBe(110);
+  });
+  it('leaves a small total as a single set', () => {
+    expect(splitIntoSets(16)).toEqual([16]);
+  });
+  it('preserves the total exactly', () => {
+    [21, 45, 97, 200, 333].forEach((t) => {
+      expect(splitIntoSets(t).reduce((a, b) => a + b, 0)).toBe(t);
+    });
+  });
+});
+
 describe('setDayTotal', () => {
   it('reaches a higher total by adding the difference, keeping real sets intact', () => {
     let log = addSet({}, TODAY, 'a', 12);
@@ -388,6 +405,13 @@ describe('setDayTotal', () => {
     expect(Math.max(...log[TODAY].a)).toBeLessThanOrEqual(20);
   });
 
+  it('does not fabricate a giant set when a total is typed with nothing logged', () => {
+    // This is how a 110-rep DAY became a 110-rep "top set".
+    const log = setDayTotal({}, TODAY, 'a', 110);
+    expect(Math.max(...log[TODAY].a)).toBeLessThan(110);
+    expect(calcTotal(log[TODAY].a)).toBe(110);
+  });
+
   it('does not corrupt Top Set when a day total is edited', () => {
     // The old behaviour collapsed the day into one set, so a 105-rep DAY
     // masqueraded as a 105-rep single set and became the Top Set.
@@ -403,9 +427,10 @@ describe('setDayTotal', () => {
     expect(log[TODAY].a).toBeUndefined();
   });
 
-  it('can set a total on a day with no prior sets', () => {
+  it('can set a total on a day with no prior sets, split so no set is inflated', () => {
     const log = setDayTotal({}, TODAY, 'a', 30);
-    expect(log[TODAY].a).toEqual([30]);
+    expect(calcTotal(log[TODAY].a)).toBe(30);
+    expect(Math.max(...log[TODAY].a)).toBeLessThan(30);
   });
 });
 

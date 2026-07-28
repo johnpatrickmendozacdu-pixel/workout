@@ -594,3 +594,9 @@
   }
   .topset-actions{display:flex; gap:6px;}
   .topset-actions .mini-btn{width:34px; height:34px;}
+
+  /* iOS: the page behind an open sheet must not move */
+  body.scroll-locked{position:fixed; left:0; right:0; width:100%; overflow:hidden;}
+  /* momentum scrolling inside the sheet itself */
+  .modal-sheet{-webkit-overflow-scrolling:touch; touch-action:pan-y;}
+  .rail{touch-action:pan-y;}

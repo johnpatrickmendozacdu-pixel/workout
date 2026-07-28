@@ -54,6 +54,18 @@
     white-space:nowrap;
   }
   .streak-pill svg{flex-shrink:0;}
+  .topbar-right{display:flex; align-items:center; gap:8px; flex-shrink:0;}
+  .avatar-chip{
+    width:38px; height:38px; border-radius:999px; flex-shrink:0; display:flex; align-items:center; justify-content:center;
+    font-family:var(--font-mono); font-weight:700; font-size:15px; border:1.5px solid var(--border-strong);
+    background:var(--bg-card); color:var(--text-dim);
+  }
+  .avatar-chip.signed-in{background:var(--accent); color:var(--accent-ink); border-color:var(--accent);}
+  .avatar-chip:active{transform:scale(0.94);}
+  .profile-avatar-big{
+    width:64px; height:64px; border-radius:999px; margin:2px auto 18px; display:flex; align-items:center; justify-content:center;
+    font-family:var(--font-mono); font-weight:700; font-size:26px; background:var(--accent); color:var(--accent-ink);
+  }
   .icon-btn{
     width:38px; height:38px; border-radius:999px; border:1px solid var(--border); background:var(--bg-card);
     display:flex; align-items:center; justify-content:center; flex-shrink:0;

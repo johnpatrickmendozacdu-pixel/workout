@@ -185,7 +185,8 @@ function scheduleSyncPush() {
 }
 
 function renderSyncUI() {
-  if (state.modal && state.modal.type === 'data') renderModal();
+  if (state.modal && state.modal.type === 'profile') renderModal();
+  renderTopbar();
 }
 
 async function pushToDrive() {
@@ -240,6 +241,7 @@ async function googleSignOutHandler() {
   state.sync = { status: 'signed-out', email: null, error: null };
   await db.setItem('sync-account', null).catch(() => {});
   renderModal();
+  renderTopbar();
 }
 async function googleSyncNowHandler() {
   await pullAndMerge();
@@ -486,6 +488,7 @@ const ICONS = {
   flag: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M6 3v18M6 4h11l-2.5 3.5L17 11H6" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>`,
   trophy: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M7 4h10v4a5 5 0 01-10 0V4z" stroke="currentColor" stroke-width="1.6"/><path d="M7 5H4a3 3 0 003 3M17 5h3a3 3 0 01-3 3M12 13v3m-3 4h6m-3-4v0" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>`,
   google: `<svg width="16" height="16" viewBox="0 0 24 24"><path fill="#4285F4" d="M23.5 12.3c0-.9-.1-1.5-.2-2.2H12v4.2h6.5c-.1 1.1-.9 2.7-2.5 3.8l4 3.1c2.4-2.2 3.5-5.4 3.5-8.9z"/><path fill="#34A853" d="M12 24c3.2 0 5.9-1.1 7.9-2.8l-4-3.1c-1.1.7-2.5 1.2-3.9 1.2-3 0-5.6-2-6.5-4.8l-4.1 3.2C3.4 21.5 7.4 24 12 24z"/><path fill="#FBBC05" d="M5.5 14.5c-.2-.7-.4-1.4-.4-2.5s.1-1.7.4-2.5L1.4 6.3C.5 8 0 9.9 0 12s.5 4 1.4 5.7l4.1-3.2z"/><path fill="#EA4335" d="M12 4.8c1.8 0 3 .8 3.7 1.4l3.5-3.4C17.4 1 14.8 0 12 0 7.4 0 3.4 2.5 1.4 6.3l4.1 3.2C6.4 6.8 9 4.8 12 4.8z"/></svg>`,
+  user: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="3.6" stroke="currentColor" stroke-width="1.7"/><path d="M4.5 20c1.5-4 4.3-6 7.5-6s6 2 7.5 6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>`,
 };
 function ring(percent, size, stroke, complete, iconHtml) {
   const r = (size - stroke) / 2, c = 2 * Math.PI * r, off = c - Math.min(Math.max(percent, 0), 1) * c;
@@ -569,6 +572,17 @@ function rerender() {
   renderModal();
 }
 
+function avatarChipHtml() {
+  const p = state.profile || {};
+  const sync = state.sync || { status: 'signed-out' };
+  const signedIn = sync.status !== 'signed-out';
+  const source = p.username || sync.email;
+  const initial = source ? escapeHtml(source[0].toUpperCase()) : '';
+  return `<button class="avatar-chip ${signedIn ? 'signed-in' : 'signed-out'}" data-action="open-profile" aria-label="Profile">
+    ${initial || ICONS.user}
+  </button>`;
+}
+
 function renderTopbar() {
   const el = document.getElementById('topbar');
   if (!el) return;
@@ -581,19 +595,28 @@ function renderTopbar() {
           <div class="app-title">${uname ? `Hey, ${escapeHtml(uname)}` : 'Sets'}</div>
           <div class="date-heading">${formatDisplayDate(todayISO())}</div>
         </div>
-        <div class="streak-pill">${ICONS.flame}${streak}</div>
+        <div class="topbar-right">
+          <div class="streak-pill">${ICONS.flame}${streak}</div>
+          ${avatarChipHtml()}
+        </div>
       </div>`;
   } else if (state.view === 'plan') {
     el.innerHTML = `
       <div class="plan-title-row">
         <div class="screen-title">Plan</div>
-        <button class="add-btn" data-action="open-add-exercise">${ICONS.plus} Add</button>
+        <div class="topbar-right">
+          <button class="add-btn" data-action="open-add-exercise">${ICONS.plus} Add</button>
+          ${avatarChipHtml()}
+        </div>
       </div>`;
   } else {
     el.innerHTML = `
       <div class="plan-title-row">
         <div class="screen-title">Progress</div>
-        <button class="icon-btn" data-action="open-data">${ICONS.gear}</button>
+        <div class="topbar-right">
+          <button class="icon-btn" data-action="open-data">${ICONS.gear}</button>
+          ${avatarChipHtml()}
+        </div>
       </div>`;
   }
 }
@@ -797,6 +820,7 @@ function renderModal() {
   else if (m.type === 'confirmDeleteSet') root.innerHTML = modalConfirm(m);
   else if (m.type === 'confirmDeleteExercise') root.innerHTML = modalConfirmDeleteExercise(m);
   else if (m.type === 'data') root.innerHTML = modalData();
+  else if (m.type === 'profile') root.innerHTML = modalProfile();
   else if (m.type === 'importChoice') root.innerHTML = modalImportChoice();
   bindModalEvents();
   ensureTimerTick();
@@ -972,10 +996,10 @@ function modalConfirmDeleteExercise(m) {
   </div>`;
 }
 
-function modalData() {
-  const last = state.meta.lastExportAt;
+function modalProfile() {
   const p = state.profile || {};
   const sync = state.sync || { status: 'signed-out' };
+  const initial = ((p.username || sync.email || '?')[0] || '?').toUpperCase();
   const syncHtml = (() => {
     if (sync.status === 'signed-out') {
       return `<button class="secondary-btn" style="width:100%" data-action="google-sign-in">${ICONS.google || ''} Sign in with Google</button>
@@ -996,7 +1020,9 @@ function modalData() {
   return `<div class="modal-backdrop" data-action="backdrop">
     <div class="modal-sheet" data-stop>
       <div class="sheet-handle"></div>
-      <div class="sheet-head"><h2>Profile & data</h2><button class="sheet-close" data-action="close-modal">${ICONS.close}</button></div>
+      <div class="sheet-head"><h2>Profile</h2><button class="sheet-close" data-action="close-modal">${ICONS.close}</button></div>
+
+      <div class="profile-avatar-big">${initial}</div>
 
       <div class="field">
         <label>Cross-device sync</label>
@@ -1017,9 +1043,18 @@ function modalData() {
           <input id="f-height" type="number" min="0" step="any" placeholder="—" value="${p.height != null ? p.height : ''}">
         </div>
       </div>
-      <button class="secondary-btn" style="width:100%;margin-bottom:22px" data-action="save-profile">Save profile</button>
+      <button class="secondary-btn" style="width:100%" data-action="save-profile">Save profile</button>
+    </div>
+  </div>`;
+}
 
-      <p style="font-size:13.5px;color:var(--text-dim);line-height:1.5;margin-top:0">Your data lives in this browser's storage and stays on this device. Export a JSON backup any time — it's the only way to move data to another device, and iOS Safari can clear site data if you don't open the app for about a week.</p>
+function modalData() {
+  const last = state.meta.lastExportAt;
+  return `<div class="modal-backdrop" data-action="backdrop">
+    <div class="modal-sheet" data-stop>
+      <div class="sheet-handle"></div>
+      <div class="sheet-head"><h2>Backup & data</h2><button class="sheet-close" data-action="close-modal">${ICONS.close}</button></div>
+      <p style="font-size:13.5px;color:var(--text-dim);line-height:1.5;margin-top:0">Your data lives in this browser's storage and stays on this device. Export a JSON backup any time — it's the only way to move data to another device without Google sync, and iOS Safari can clear site data if you don't open the app for about a week.</p>
       <div class="hint" style="margin-bottom:18px">${last ? `Last export: ${new Date(last).toLocaleString()}` : 'No export yet.'}</div>
       <button class="primary-btn" style="width:100%;margin-bottom:10px" data-action="export">Export backup (.json)</button>
       <label class="secondary-btn" style="width:100%;display:block;text-align:center;margin-bottom:4px;cursor:pointer">
@@ -1243,6 +1278,7 @@ document.addEventListener('click', async (e) => {
       break;
 
     case 'open-data': state.modal = { type: 'data' }; renderModal(); break;
+    case 'open-profile': state.modal = { type: 'profile' }; renderModal(); break;
     case 'export': await doExport(); if (state.modal) renderModal(); break;
     case 'do-import':
       if (pendingImport) { await doImport(pendingImport, btn.dataset.mode); pendingImport = null; }

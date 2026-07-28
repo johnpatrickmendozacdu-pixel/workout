@@ -58,7 +58,15 @@ export function calcTotal(arr) {
  * how many of them hit their target, and a per-exercise breakdown.
  * Untargeted exercises are tracked but never affect completion/streaks.
  */
-export function calcDayStats(exercises, setsLog, dateStr) {
+/**
+ * overrides is an optional { [dateStr]: true|false } map letting the person
+ * manually force a day to count (or not count) toward their streak,
+ * independent of what was actually logged — e.g. for a workout done
+ * somewhere the app wasn't handy. targetedCount/completedCount always
+ * reflect the REAL logged data (so "3/5" stays accurate); only allComplete
+ * and countsForStreak are affected by an override.
+ */
+export function calcDayStats(exercises, setsLog, dateStr, overrides) {
   let targetedCount = 0;
   let completedCount = 0;
   const details = [];
@@ -81,27 +89,32 @@ export function calcDayStats(exercises, setsLog, dateStr) {
     details.push({ ex, total, target, hasTarget, complete });
   }
 
+  const override = overrides && Object.prototype.hasOwnProperty.call(overrides, dateStr) ? overrides[dateStr] : null;
+
   return {
     targetedCount,
     completedCount,
-    allComplete: targetedCount > 0 && completedCount === targetedCount,
+    allComplete: override != null ? override : (targetedCount > 0 && completedCount === targetedCount),
+    countsForStreak: override != null ? true : targetedCount > 0,
+    overridden: override != null,
     details,
   };
 }
 
 /**
  * Current + longest streak. A day only counts toward or against a streak if
- * at least one active, targeted exercise existed that day. Days with zero
- * targeted exercises are neutral: they neither extend nor break a streak.
+ * at least one active, targeted exercise existed that day, OR the person
+ * manually overrode that day via `overrides`. Otherwise it's neutral: it
+ * neither extends nor breaks a streak.
  */
-export function calcStreakInfo(exercises, setsLog, todayOverride) {
+export function calcStreakInfo(exercises, setsLog, todayOverride, overrides) {
   const today = todayOverride || todayISO();
 
   let streak = 0;
   let cursor = today;
   while (true) {
-    const stats = calcDayStats(exercises, setsLog, cursor);
-    if (stats.targetedCount === 0) {
+    const stats = calcDayStats(exercises, setsLog, cursor, overrides);
+    if (!stats.countsForStreak) {
       if (cursor === today) {
         cursor = addDays(cursor, -1);
         continue;
@@ -123,6 +136,11 @@ export function calcStreakInfo(exercises, setsLog, todayOverride) {
   Object.keys(setsLog).forEach((d) => {
     if (!earliest || d < earliest) earliest = d;
   });
+  if (overrides) {
+    Object.keys(overrides).forEach((d) => {
+      if (!earliest || d < earliest) earliest = d;
+    });
+  }
 
   let longest = 0;
   let running = 0;
@@ -130,8 +148,8 @@ export function calcStreakInfo(exercises, setsLog, todayOverride) {
     let cur = earliest;
     let guard = 0;
     while (cur <= today && guard < 20000) {
-      const stats = calcDayStats(exercises, setsLog, cur);
-      if (stats.targetedCount === 0) {
+      const stats = calcDayStats(exercises, setsLog, cur, overrides);
+      if (!stats.countsForStreak) {
         // neutral day
       } else if (stats.allComplete) {
         running++;
@@ -148,14 +166,14 @@ export function calcStreakInfo(exercises, setsLog, todayOverride) {
   return { current: streak, longest };
 }
 
-export function calcWeeklyCompletion(exercises, setsLog, todayOverride) {
+export function calcWeeklyCompletion(exercises, setsLog, todayOverride, overrides) {
   const today = todayOverride || todayISO();
   let completed = 0;
   let counted = 0;
   for (let i = 0; i < 7; i++) {
     const d = addDays(today, -i);
-    const stats = calcDayStats(exercises, setsLog, d);
-    if (stats.targetedCount > 0) {
+    const stats = calcDayStats(exercises, setsLog, d, overrides);
+    if (stats.countsForStreak) {
       counted++;
       if (stats.allComplete) completed++;
     }

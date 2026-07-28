@@ -8,7 +8,11 @@ export default defineConfig({
   base: './',
   plugins: [
     VitePWA({
-      registerType: 'prompt',
+      // autoUpdate, not 'prompt': with 'prompt' a new build sits inert behind
+      // the old service worker until the person clicks the update banner, so an
+      // ordinary refresh keeps serving stale code and shipped fixes appear not
+      // to work. Take the new version on the next load instead.
+      registerType: 'autoUpdate',
       includeAssets: ['icons/*.png'],
       manifest: {
         name: 'Sets — Workout Tracker',
@@ -29,6 +33,10 @@ export default defineConfig({
         // Precache the built app shell so the installed app opens with zero network.
         globPatterns: ['**/*.{js,css,html,png,svg,webmanifest}'],
         cleanupOutdatedCaches: true,
+        // Activate the new worker immediately and take over open pages, so the
+        // very next load runs the new build rather than the previous one.
+        skipWaiting: true,
+        clientsClaim: true,
       },
     }),
   ],

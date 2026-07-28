@@ -24,7 +24,7 @@ const GIS_WAIT_TIMEOUT_MS = 10000;
 /** Silent auth is a background round-trip — fail fast so the UI never lingers.
  *  Interactive auth waits on a human in a popup, so it gets much longer. */
 const SILENT_AUTH_TIMEOUT_MS = 6000;
-const INTERACTIVE_AUTH_TIMEOUT_MS = 120000;
+const INTERACTIVE_AUTH_TIMEOUT_MS = 45000;
 const NETWORK_TIMEOUT_MS = 15000;
 
 let lastEmailHint = null;

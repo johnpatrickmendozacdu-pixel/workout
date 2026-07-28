@@ -208,12 +208,37 @@ function hasSyncAccount() {
 function noteSyncFailure(err) {
   const code = err && err.message;
   if (code === 'token-expired' || code === 'not-signed-in') {
-    state.sync.status = 'reconnect';
-    state.sync.error = null;
+    endSyncing('reconnect');
   } else {
-    state.sync.status = 'error';
-    state.sync.error = 'Could not reach Google Drive.';
+    endSyncing('error', 'Could not reach Google Drive.');
   }
+}
+
+/**
+ * Last-resort guarantee that 'syncing' is never a terminal state. Every path
+ * into it is supposed to finish on its own, but a stuck spinner with no way
+ * out is the worst possible failure here — the app is local-first and works
+ * fine offline, so it should always fall through to something actionable.
+ */
+let syncWatchdog = null;
+const SYNC_WATCHDOG_MS = 20000;
+
+function beginSyncing() {
+  state.sync.status = 'syncing';
+  clearTimeout(syncWatchdog);
+  syncWatchdog = setTimeout(() => {
+    if (state.sync.status !== 'syncing') return;
+    state.sync.status = state.sync.email ? 'reconnect' : 'signed-out';
+    state.sync.error = null;
+    renderSyncUI();
+  }, SYNC_WATCHDOG_MS);
+}
+
+function endSyncing(status, error) {
+  clearTimeout(syncWatchdog);
+  syncWatchdog = null;
+  state.sync.status = status;
+  state.sync.error = error || null;
 }
 
 function scheduleSyncPush() {
@@ -230,9 +255,9 @@ function renderSyncUI() {
 async function pushToDrive() {
   if (!hasSyncAccount()) return;
   try {
-    state.sync.status = 'syncing'; renderSyncUI();
+    beginSyncing(); renderSyncUI();
     await gsync.uploadBackup(buildSyncSnapshot());
-    state.sync.status = 'synced'; state.sync.error = null;
+    endSyncing('synced');
   } catch (e) {
     noteSyncFailure(e);
   }
@@ -242,7 +267,7 @@ async function pushToDrive() {
 async function pullAndMerge() {
   if (!hasSyncAccount()) return;
   try {
-    state.sync.status = 'syncing'; renderSyncUI();
+    beginSyncing(); renderSyncUI();
     const remote = await gsync.downloadBackup();
     if (!remote) {
       await pushToDrive(); // nothing synced yet from any device — seed the cloud copy
@@ -254,7 +279,7 @@ async function pullAndMerge() {
       await pushToDrive();
       return;
     }
-    state.sync.status = 'synced'; state.sync.error = null;
+    endSyncing('synced');
   } catch (e) {
     noteSyncFailure(e);
   }
@@ -262,7 +287,7 @@ async function pullAndMerge() {
 }
 
 async function googleSignInHandler() {
-  state.sync.status = 'syncing'; state.sync.error = null; renderModal();
+  beginSyncing(); state.sync.error = null; renderModal();
   const ok = await gsync.signIn();
   if (ok) {
     // getSignedInEmail() can be null if the userinfo lookup failed; keep the
@@ -273,13 +298,14 @@ async function googleSignInHandler() {
   } else {
     // Falling back to 'reconnect' (not 'error') keeps the retry affordance on
     // screen for someone who was already signed in.
-    state.sync.status = state.sync.email ? 'reconnect' : 'signed-out';
-    state.sync.error = state.sync.email ? null : 'Sign-in didn\u2019t go through — try again.';
+    endSyncing(state.sync.email ? 'reconnect' : 'signed-out',
+      state.sync.email ? null : 'Sign-in didn\u2019t go through — try again.');
     renderSyncUI();
   }
 }
 async function googleSignOutHandler() {
   gsync.signOut();
+  clearTimeout(syncWatchdog);
   state.sync = { status: 'signed-out', email: null, error: null };
   await db.setItem('sync-account', null).catch(() => {});
   renderModal();
@@ -297,7 +323,7 @@ async function tryResumeSync() {
   // Show the account immediately, before the handshake — the person never
   // signed out, so the app shouldn't flash a signed-out avatar on every load.
   state.sync.email = savedEmail;
-  state.sync.status = 'syncing';
+  beginSyncing();
   renderSyncUI();
 
   const ok = await gsync.trySilentSignIn(savedEmail);
@@ -308,8 +334,7 @@ async function tryResumeSync() {
     // Google wouldn't renew silently (signed out of Google, or third-party
     // cookies blocked). Keep the account visible and offer a one-tap reconnect
     // rather than pretending we've forgotten them.
-    state.sync.status = 'reconnect';
-    state.sync.error = null;
+    endSyncing('reconnect');
     renderSyncUI();
   }
 }

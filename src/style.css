@@ -638,3 +638,24 @@
 
   /* respect the notch on iPhone */
   #topbar{padding-top:max(22px, env(safe-area-inset-top));}
+
+  /* ---------- editable day numbers ----------
+     These were a 15px dashed span: technically tappable, practically not.
+     Both are now real controls at the 44px minimum, so a quick correction
+     takes one confident thumb press. */
+  .day-detail div{gap:6px; padding:5px 0;}
+  .day-num{
+    min-width:52px; min-height:44px; padding:0 10px; border-radius:var(--radius-sm);
+    background:var(--bg); border:1px solid var(--border-strong); color:var(--text);
+    font-family:var(--font-num); font-size:13px; font-weight:700; letter-spacing:-0.02em;
+    display:inline-flex; align-items:center; justify-content:center;
+    transition:background .15s ease, border-color .15s ease, transform .09s ease;
+  }
+  .day-num:active{transform:scale(0.94); background:var(--bg-card-hover);}
+  .day-num.target{color:var(--text-dim); border-style:dashed;}
+  .day-num.readonly{background:transparent; border-color:transparent; min-width:0; padding:0;}
+  .day-sep{color:var(--text-faint); font-size:13px; padding:0 1px;}
+  .day-detail{padding:0 13px 12px 30px;}
+  .day-detail .inline-target-edit{gap:6px;}
+  .day-detail .target-edit-input{width:64px; min-height:44px; font-size:14px;}
+  .day-detail .mini-btn{width:40px; height:40px;}

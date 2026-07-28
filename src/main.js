@@ -1083,7 +1083,7 @@ function viewPlan() {
  * one editor for the standing value.
  */
 function renderDayTargetPart(dt, dateStr, isToday) {
-  if (isToday) return dt.hasTarget ? ` / ${dt.target}` : '';
+  if (isToday) return dt.hasTarget ? `<span class="day-sep">/</span><span class="day-num readonly">${dt.target}</span>` : '';
   if (state.editingDayTarget === `${dateStr}|${dt.ex.id}`) {
     return ` / <span class="inline-target-edit" data-stop>
       <input type="number" min="0" step="any" id="day-target-input-${dt.ex.id}" class="target-edit-input" value="${dt.hasTarget ? dt.target : ''}" placeholder="none">
@@ -1091,7 +1091,7 @@ function renderDayTargetPart(dt, dateStr, isToday) {
       <button class="mini-btn" data-action="cancel-day-target-inline" aria-label="Cancel">${ICONS.close}</button>
     </span>`;
   }
-  return ` / <span class="editable-target" data-editable-day-target data-id="${dt.ex.id}" data-date="${dateStr}" title="Tap to edit this day’s target">${dt.hasTarget ? dt.target : '—'}</span>`;
+  return `<span class="day-sep">/</span><button class="day-num target" data-editable-day-target data-id="${dt.ex.id}" data-date="${dateStr}" aria-label="Edit target for this day">${dt.hasTarget ? dt.target : '—'}</button>`;
 }
 
 function viewProgress() {
@@ -1143,7 +1143,7 @@ function viewProgress() {
                 <button class="mini-btn" data-action="save-day-total" data-id="${dt.ex.id}" data-date="${d}" aria-label="Save">${ICONS.check}</button>
                 <button class="mini-btn" data-action="cancel-day-total" aria-label="Cancel">${ICONS.close}</button>
               </span>`
-            : `<span class="editable-target" data-editable-day-total data-id="${dt.ex.id}" data-date="${d}" title="Tap to correct this day's total">${dt.total}</span>`;
+            : `<button class="day-num total" data-editable-day-total data-id="${dt.ex.id}" data-date="${d}" aria-label="Edit total for this day">${dt.total}</button>`;
           return `<div><span>${escapeHtml(dt.ex.icon)} ${escapeHtml(dt.ex.name)}</span><span>${totalPart}${renderDayTargetPart(dt, d, i === 0)} ${escapeHtml(dt.ex.unit)}${timeStr}</span></div>`;
         }).join('')
       }</div>` : ''}

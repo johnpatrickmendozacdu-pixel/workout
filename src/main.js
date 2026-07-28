@@ -1426,6 +1426,12 @@ function modalData() {
     <div class="modal-sheet" data-stop>
       <div class="sheet-handle"></div>
       <div class="sheet-head"><h2>Backup & data</h2><button class="sheet-close" data-action="close-modal">${ICONS.close}</button></div>
+      <div class="field">
+        <label>App version</label>
+        <div class="build-line"><b>${escapeHtml(state.version.local)}</b><span>${{ latest: 'Up to date', stale: 'Update available', unknown: 'Offline \u2014 can\u2019t check' }[state.version.status]}</span></div>
+        <button class="secondary-btn" style="width:100%;margin-top:8px" data-action="force-update">Force update now</button>
+        <div class="hint">Clears the cached app and reloads the newest build. Your workouts are stored separately and are not touched.</div>
+      </div>
       <p style="font-size:13.5px;color:var(--text-dim);line-height:1.5;margin-top:0">Your data lives in this browser's storage and stays on this device. Export a JSON backup any time — it's the only way to move data to another device without Google sync, and iOS Safari can clear site data if you don't open the app for about a week.</p>
       <div class="hint" style="margin-bottom:18px">${last ? `Last export: ${new Date(last).toLocaleString()}` : 'No export yet.'}</div>
       <button class="primary-btn" style="width:100%;margin-bottom:10px" data-action="export">Export backup (.json)</button>
@@ -1697,13 +1703,19 @@ document.addEventListener('click', async (e) => {
     case 'do-import':
       if (pendingImport) { await doImport(pendingImport, btn.dataset.mode); pendingImport = null; }
       break;
+    case 'force-update':
+      await forceUpdate();
+      break;
     case 'apply-update':
       if (state.applyUpdate) state.applyUpdate();
       else location.reload();
       break;
-    case 'check-version':
+    case 'check-version': {
       await checkVersion();
+      const label = { latest: 'Up to date', stale: 'Update ready', unknown: 'Offline — can\u2019t check' }[state.version.status];
+      showToast(`Build ${state.version.local} \u00b7 ${label}`);
       break;
+    }
   }
 });
 
@@ -1814,6 +1826,29 @@ document.addEventListener('keydown', (e) => {
     }
   }
 });
+
+/**
+ * Nuclear reload: unregister every service worker and drop every cache, then
+ * reload. An installed home-screen PWA keeps its own worker and cache, separate
+ * from the browser's, and can otherwise stay pinned to an old build no matter
+ * how many times it's reopened. Workout data lives in IndexedDB and is
+ * deliberately left alone.
+ */
+async function forceUpdate() {
+  try {
+    if (navigator.serviceWorker) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map((r) => r.unregister()));
+    }
+    if (window.caches) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map((k) => caches.delete(k)));
+    }
+  } catch (e) {
+    // best effort — reload regardless
+  }
+  location.reload();
+}
 
 /* ============================= PWA UPDATE PROMPT ============================= */
 const updateSW = registerSW({

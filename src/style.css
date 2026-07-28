@@ -574,3 +574,10 @@
   /* the sheet must clear the fixed bottom nav */
   .modal-sheet{margin-bottom:0;}
   .modal-backdrop{overscroll-behavior:contain;}
+
+  .build-line{
+    display:flex; align-items:baseline; gap:10px; background:var(--bg); border:1px solid var(--border);
+    border-radius:var(--radius-sm); padding:10px 12px;
+  }
+  .build-line b{font-family:var(--font-num); font-size:14px; letter-spacing:-0.02em;}
+  .build-line span{font-size:12px; color:var(--text-dim);}

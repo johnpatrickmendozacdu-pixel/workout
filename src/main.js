@@ -799,15 +799,11 @@ function renderBanner() {
   if (state.updateAvailable) {
     banners.push(`<div class="banner warn"><span>A new version is ready.</span><button data-action="apply-update">Reload</button></div>`);
   }
+  // No periodic "back up your data" nag — Drive sync covers it. This banner
+  // stays only for the case where a write actually failed, where exporting is
+  // the immediate remedy rather than a reminder.
   if (state.storageError) {
     banners.push(`<div class="banner"><span>Couldn't save your last change. Export a backup so nothing's lost.</span><button data-action="export">Export</button></div>`);
-  } else {
-    const hasData = state.exercises.length > 0;
-    const last = state.meta.lastExportAt;
-    const daysSince = last ? (Date.now() - new Date(last).getTime()) / 86400000 : Infinity;
-    if (hasData && daysSince > 7) {
-      banners.push(`<div class="banner warn"><span>${last ? 'It’s been over a week since your last backup.' : 'You haven’t backed up yet.'}</span><button data-action="export">Export</button></div>`);
-    }
   }
   el.innerHTML = banners.join('');
 }

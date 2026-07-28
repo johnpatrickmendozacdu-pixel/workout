@@ -25,6 +25,7 @@ const GIS_WAIT_TIMEOUT_MS = 10000;
  *  Interactive auth waits on a human in a popup, so it gets much longer. */
 const SILENT_AUTH_TIMEOUT_MS = 6000;
 const INTERACTIVE_AUTH_TIMEOUT_MS = 120000;
+const NETWORK_TIMEOUT_MS = 15000;
 
 let lastEmailHint = null;
 
@@ -101,9 +102,17 @@ function withTimeout(promise, ms) {
   });
 }
 
+/** fetch() never times out on its own — a stalled request would otherwise hold
+ *  the sync UI open indefinitely. */
+function fetchWithTimeout(url, options = {}, ms = NETWORK_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ms);
+  return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(timer));
+}
+
 async function fetchEmail() {
   try {
-    const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+    const res = await fetchWithTimeout('https://www.googleapis.com/oauth2/v3/userinfo', {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     if (res.ok) {
@@ -177,7 +186,7 @@ export function signOut() {
 async function driveFetch(url, options = {}, isRetry = false) {
   await ensureFreshToken();
   if (!accessToken) throw new Error('not-signed-in');
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     ...options,
     headers: { ...(options.headers || {}), Authorization: `Bearer ${accessToken}` },
   });

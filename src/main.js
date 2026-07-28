@@ -64,6 +64,7 @@ const state = {
   editingTodayTotal: null,
   editingDayTarget: null,
   editingTopSet: null,
+  editingDayTotal: null,
   repMode: 'add',   // 'add' | 'sub' — the pad lever
   version: { local: typeof __BUILD_ID__ === 'string' ? __BUILD_ID__ : 'dev', status: 'unknown' },
   panel: null,          // 'stats' — mobile drawer only
@@ -673,11 +674,11 @@ async function doImport(obj, mode) {
 
 /* ============================= ICONS ============================= */
 const ICONS = {
-  today: `<svg viewBox="0 0 24 24" fill="none"><path d="M12 8v4l2.5 2.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="1.8"/></svg>`,
-  plan: `<svg viewBox="0 0 24 24" fill="none"><path d="M5 7h14M5 12h14M5 17h9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`,
-  progress: `<svg viewBox="0 0 24 24" fill="none"><path d="M5 19V10M12 19V5M19 19v-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  today: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 8v4l2.5 2.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="1.8"/></svg>`,
+  plan: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M5 7h14M5 12h14M5 17h9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`,
+  progress: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M5 19V10M12 19V5M19 19v-7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
   flame: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 2c1 3-2 4-2 7a4 4 0 108 0c0-1-.4-2-1-3 2 1 4 3.5 4 6.5A7 7 0 015 12.5C5 8 8 6 12 2z" fill="var(--accent)"/></svg>`,
-  close: `<svg viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`,
+  close: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`,
   plus: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>`,
   chevron: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
   trash: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M4 7h16M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m-9 0l1 12a1 1 0 001 1h6a1 1 0 001-1l1-12" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
@@ -687,7 +688,7 @@ const ICONS = {
   archive: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M4 7h16M5 7v11a1 1 0 001 1h12a1 1 0 001-1V7M9 11h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>`,
   restore: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M4 8a8 8 0 111.6 6.4M4 4v4h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
   check: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="var(--success)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
-  gear: `<svg viewBox="0 0 24 24" fill="none"><path d="M12 15a3 3 0 100-6 3 3 0 000 6z" stroke="currentColor" stroke-width="1.7"/><path d="M19.4 13.5a1.7 1.7 0 000-3l-1-.2a6.6 6.6 0 00-.7-1.6l.6-.9a1.7 1.7 0 00-2.4-2.4l-.9.6a6.6 6.6 0 00-1.6-.7l-.2-1a1.7 1.7 0 00-3 0l-.2 1a6.6 6.6 0 00-1.6.7l-.9-.6a1.7 1.7 0 00-2.4 2.4l.6.9a6.6 6.6 0 00-.7 1.6l-1 .2a1.7 1.7 0 000 3l1 .2a6.6 6.6 0 00.7 1.6l-.6.9a1.7 1.7 0 002.4 2.4l.9-.6a6.6 6.6 0 001.6.7l.2 1a1.7 1.7 0 003 0l.2-1a6.6 6.6 0 001.6-.7l.9.6a1.7 1.7 0 002.4-2.4l-.6-.9a6.6 6.6 0 00.7-1.6l1-.2z" stroke="currentColor" stroke-width="1.3"/></svg>`,
+  gear: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 15a3 3 0 100-6 3 3 0 000 6z" stroke="currentColor" stroke-width="1.7"/><path d="M19.4 13.5a1.7 1.7 0 000-3l-1-.2a6.6 6.6 0 00-.7-1.6l.6-.9a1.7 1.7 0 00-2.4-2.4l-.9.6a6.6 6.6 0 00-1.6-.7l-.2-1a1.7 1.7 0 00-3 0l-.2 1a6.6 6.6 0 00-1.6.7l-.9-.6a1.7 1.7 0 00-2.4 2.4l.6.9a6.6 6.6 0 00-.7 1.6l-1 .2a1.7 1.7 0 000 3l1 .2a6.6 6.6 0 00.7 1.6l-.6.9a1.7 1.7 0 002.4 2.4l.9-.6a6.6 6.6 0 001.6.7l.2 1a1.7 1.7 0 003 0l.2-1a6.6 6.6 0 001.6-.7l.9.6a1.7 1.7 0 002.4-2.4l-.6-.9a6.6 6.6 0 00.7-1.6l1-.2z" stroke="currentColor" stroke-width="1.3"/></svg>`,
   play: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M7 5.5v13l11-6.5-11-6.5z" fill="currentColor"/></svg>`,
   pause: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M8 5.5h3v13H8v-13zM13 5.5h3v13h-3v-13z" fill="currentColor"/></svg>`,
   flag: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M6 3v18M6 4h11l-2.5 3.5L17 11H6" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>`,
@@ -749,38 +750,23 @@ function renderBanner() {
 
 /* ============================= RENDER: SHELL ============================= */
 /**
- * Correct the Top Set by fixing the set that produced it, rather than storing a
- * display override. Overrides drift: a stored "25" would go on hiding a real
- * 40-rep set logged next week. Editing the source set keeps every number
- * derived from real data, so it stays right on its own afterwards.
+ * A manual Top Set is a display correction only. It records the number you
+ * give and changes nothing else — no logged set is rewritten, so daily totals,
+ * Max, lifetime reps and streaks stay exactly as they were. Clearing the field
+ * hands the figure back to the logged data.
  */
 async function saveTopSetHandler(exId, rawValue) {
-  const parsed = rawValue === '' || rawValue == null ? null : parseFloat(rawValue);
-  const value = parsed == null || isNaN(parsed) ? null : Math.max(0, parsed);
-  state.editingTopSet = null;
-  if (value == null) { renderPanels(); return; }
-
-  // Locate the single biggest set across all history — the one being shown.
-  let best = null;
-  for (const d in state.setsLog) {
-    const arr = state.setsLog[d] && state.setsLog[d][exId];
-    if (!arr) continue;
-    arr.forEach((v, i) => {
-      if (!best || v > best.v) best = { d, i, v };
-    });
-  }
-  if (!best) { renderPanels(); return; }
-
-  state.setsLog = updateSetAtPure(state.setsLog, best.d, exId, best.i, value);
-  await persistSets();
-  rerender();
-
   const ex = state.exercises.find((e) => e.id === exId);
-  const now = ex ? exerciseStats(ex, state.setsLog, state.timersLog) : null;
-  const when = formatDisplayDate(best.d, { month: 'short', day: 'numeric' });
-  showToast(value > 0
-    ? `${when}: ${best.v} \u2192 ${value}. Top set is now ${now && now.topSet ? now.topSet : '\u2014'}.`
-    : `${when}: removed that set.`);
+  state.editingTopSet = null;
+  if (!ex) { renderPanels(); return; }
+
+  const parsed = rawValue === '' || rawValue == null ? null : parseFloat(rawValue);
+  const value = parsed == null || isNaN(parsed) || parsed <= 0 ? null : Math.round(parsed * 100) / 100;
+
+  ex.topSetOverride = value;
+  await persistExercises();
+  renderPanels();
+  showToast(value == null ? 'Top set back to your logged data' : `Top set set to ${value}. Nothing else changed.`);
 }
 
 /* ============================= SIDE PANELS ============================= */
@@ -1151,7 +1137,14 @@ function viewProgress() {
         stats.details.map((dt) => {
           const t = getTimerPure(state.timersLog, d, dt.ex.id);
           const timeStr = t ? ` · ${formatElapsed(timerElapsedMs(t, Date.now()))}` : '';
-          return `<div><span>${escapeHtml(dt.ex.icon)} ${escapeHtml(dt.ex.name)}</span><span>${dt.total}${renderDayTargetPart(dt, d, i === 0)} ${escapeHtml(dt.ex.unit)}${timeStr}</span></div>`;
+          const totalPart = state.editingDayTotal === `${d}|${dt.ex.id}`
+            ? `<span class="inline-target-edit" data-stop>
+                <input type="number" min="0" step="any" id="day-total-input-${dt.ex.id}" class="target-edit-input" value="${dt.total || ''}" placeholder="0">
+                <button class="mini-btn" data-action="save-day-total" data-id="${dt.ex.id}" data-date="${d}" aria-label="Save">${ICONS.check}</button>
+                <button class="mini-btn" data-action="cancel-day-total" aria-label="Cancel">${ICONS.close}</button>
+              </span>`
+            : `<span class="editable-target" data-editable-day-total data-id="${dt.ex.id}" data-date="${d}" title="Tap to correct this day's total">${dt.total}</span>`;
+          return `<div><span>${escapeHtml(dt.ex.icon)} ${escapeHtml(dt.ex.name)}</span><span>${totalPart}${renderDayTargetPart(dt, d, i === 0)} ${escapeHtml(dt.ex.unit)}${timeStr}</span></div>`;
         }).join('')
       }</div>` : ''}
     </div>`;
@@ -1634,6 +1627,17 @@ document.addEventListener('click', async (e) => {
       renderModal();
       break;
     }
+    case 'save-day-total': {
+      const input = document.getElementById(`day-total-input-${btn.dataset.id}`);
+      state.editingDayTotal = null;
+      await setTotalHandler(btn.dataset.id, btn.dataset.date, input ? input.value : '');
+      renderView();
+      break;
+    }
+    case 'cancel-day-total':
+      state.editingDayTotal = null;
+      renderView();
+      break;
     case 'edit-top-set':
       state.editingTopSet = btn.dataset.id;
       renderPanels();
@@ -1834,6 +1838,14 @@ document.addEventListener('click', (e) => {
     state.editingPlanTarget = targetEl.dataset.id;
     renderView();
     const input = document.getElementById(`plan-target-input-${targetEl.dataset.id}`);
+    if (input) { input.focus(); input.select(); }
+    return;
+  }
+  const dayTotalEl = e.target.closest('[data-editable-day-total]');
+  if (dayTotalEl) {
+    state.editingDayTotal = `${dayTotalEl.dataset.date}|${dayTotalEl.dataset.id}`;
+    renderView();
+    const input = document.getElementById(`day-total-input-${dayTotalEl.dataset.id}`);
     if (input) { input.focus(); input.select(); }
     return;
   }

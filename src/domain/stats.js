@@ -116,9 +116,17 @@ export function exerciseStats(ex, setsLog, timersLog, todayOverride) {
 
   const streak = streakInfo(ex, setsLog, todayOverride);
 
+  // A manual Top Set is a display correction and nothing more: it never
+  // rewrites a logged set, so daily totals, Max, lifetime reps and streaks are
+  // all left exactly as they were.
+  const manual = ex.topSetOverride;
+  const hasManual = manual != null && manual !== '' && !isNaN(Number(manual));
+
   return {
-    topSet: topSet || null,
-    topSetDate,
+    topSet: hasManual ? Number(manual) : (topSet || null),
+    topSetManual: hasManual,
+    topSetComputed: topSet || null,
+    topSetDate: hasManual ? null : topSetDate,
     maxReps: maxReps || null,
     maxRepsDate,
     totalReps,

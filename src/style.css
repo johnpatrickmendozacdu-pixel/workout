@@ -957,3 +957,34 @@
   .guide-list{margin:0; display:flex; flex-direction:column; gap:14px;}
   .guide-list dt{font-size:14px; font-weight:700; color:var(--text);}
   .guide-list dd{margin:3px 0 0; font-size:13px; line-height:1.45; color:var(--text-dim);}
+
+  /* ============ a streak that heats up ============
+     The strip is always one week, so past seven days it simply reads full.
+     From there the NUMBER carries the magnitude: it warms and gains weight as
+     the run lengthens, rather than the strip sprouting counters. Static
+     treatments only — no loops, nothing to keep repainting on a phone. */
+  .streak-now b[data-tier="1"]{color:var(--accent);}
+  .streak-now b[data-tier="2"]{color:var(--accent); text-shadow:0 0 18px rgba(62,224,127,0.35);}
+  .streak-now b[data-tier="3"]{
+    color:#8CF0A8; text-shadow:0 0 22px rgba(62,224,127,0.5), 0 0 44px rgba(62,224,127,0.22);
+  }
+  .streak-now b[data-tier="4"]{
+    color:#FFD9A0;
+    text-shadow:0 0 20px rgba(255,170,90,0.55), 0 0 46px rgba(255,122,102,0.32);
+  }
+  .streak-flame{display:inline-flex; align-items:center; margin-left:-3px; opacity:.9;}
+  .streak-flame svg{width:15px; height:15px;}
+  .streak-now b[data-tier="4"] + .streak-flame svg path{fill:#FFB067;}
+
+  /* a full week reads as one continuous run rather than seven separate days */
+  .strip.unbroken{gap:3px;}
+  .strip.unbroken .dot.hit{border-radius:3px;}
+  .strip.unbroken .dot.hit:first-child{border-radius:999px 3px 3px 999px;}
+  .strip.unbroken .dot.hit:last-child{border-radius:3px 999px 999px 3px;}
+
+  .exday-more{
+    width:100%; min-height:44px; margin-top:4px; background:none; border:none;
+    border-top:1px solid var(--border); color:var(--text-faint);
+    font-family:var(--font-mono); font-size:11px; letter-spacing:0.1em; text-transform:uppercase;
+  }
+  .exday-more:active{color:var(--text-dim);}

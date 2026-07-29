@@ -188,6 +188,25 @@ export function allStats(exercises, setsLog, timersLog, todayOverride, overrides
   return out;
 }
 
+/**
+ * How hot a streak reads. The strip only ever shows a week, so once it fills
+ * the number has to carry the magnitude on its own — these tiers let it
+ * intensify instead of the strip growing arms.
+ *
+ *   0  under a week — plain
+ *   1  a full week held
+ *   2  a fortnight
+ *   3  a month
+ *   4  a hundred days
+ */
+export function streakTier(days) {
+  if (!days || days < 7) return 0;
+  if (days < 14) return 1;
+  if (days < 30) return 2;
+  if (days < 100) return 3;
+  return 4;
+}
+
 /** Time of day a session was completed, e.g. "6:42 AM" — the clock log. */
 export function formatClock(ts) {
   if (!ts) return null;

@@ -40,7 +40,7 @@ import {
   mergeBackup,
 } from './domain/domain.js';
 import * as gsync from './sync/googleSync.js';
-import { allStats, exerciseStats, recentDayStates, formatDuration, formatCount, formatClock } from './domain/stats.js';
+import { allStats, exerciseStats, recentDayStates, streakTier, formatDuration, formatCount, formatClock } from './domain/stats.js';
 
 const DEFAULT_CHIPS = [5, 10, 12];
 // Every number is on screen — no hunting, no typing. One tap applies it in
@@ -69,6 +69,7 @@ const state = {
   editingTopSet: null,
   editingDayTotal: null,
   openExercise: null,
+  expandedDays: null,
   repMode: 'add',   // 'add' | 'sub' — the pad lever
   version: { local: typeof __BUILD_ID__ === 'string' ? __BUILD_ID__ : 'dev', status: 'unknown' },
   panel: null,          // 'stats' — mobile drawer only
@@ -783,6 +784,8 @@ async function saveTopSetHandler(exId, rawValue) {
 function exerciseCard(ex, s, opts = {}) {
   const days = recentDayStates(ex, state.setsLog, state.streakOverrides, 7);
   const strip = days.map((d) => `<i class="dot ${d.state}${d.isToday ? ' today' : ''}"></i>`).join('');
+  const tier = streakTier(s.currentStreak);
+  const full = days.every((d) => d.state === 'hit' || d.state === 'break' || d.state === 'rest');
   const open = state.openExercise === ex.id;
 
   const action = opts.resting !== undefined
@@ -805,10 +808,11 @@ function exerciseCard(ex, s, opts = {}) {
 
   return `<article class="ex-stat ${opts.resting ? 'is-resting' : ''} ${open ? 'is-open' : ''}">
     ${head}
-    <div class="strip" aria-label="Last seven days">${strip}</div>
+    <div class="strip ${full ? 'unbroken' : ''}" aria-label="Last seven days">${strip}</div>
     <div class="ex-stat-nums">
       <div class="streak-now">
-        <b data-len="${String(s.currentStreak).length}">${s.currentStreak}</b>
+        <b data-len="${String(s.currentStreak).length}" data-tier="${tier}">${s.currentStreak}</b>
+        ${tier >= 3 ? `<span class="streak-flame" aria-hidden="true">${ICONS.flame}</span>` : ''}
         <span>day streak${s.breakDays ? ` · ${s.breakDays} rest` : ''}</span>
       </div>
       <div class="streak-best">best ${s.bestStreak}</div>
@@ -834,11 +838,17 @@ function exerciseHistory(ex, s) {
     ${num('Best day', best ? `${best.total} <i>${escapeHtml(formatDisplayDate(best.date, { month: 'short', day: 'numeric' }))}</i>` : '—')}
   </dl>`;
 
+  const showAll = state.expandedDays === ex.id;
+  const LIMIT = 7;
   let rows = '';
-  for (let i = 0; i < 14; i++) {
+  let shown = 0;
+  let hidden = 0;
+  for (let i = 0; i < 120; i++) {
     const d = addDays(today, -i);
     if (ex.createdDate && d < ex.createdDate) break;
     if (!isScheduledOn(ex, d)) continue;
+    if (!showAll && shown >= LIMIT) { hidden++; continue; }
+    shown++;
     const target = getEffectiveTarget(ex, d);
     const total = calcTotal((state.setsLog[d] && state.setsLog[d][ex.id]) || []);
     const rest = isBreakDay(state.streakOverrides, d, ex.id);
@@ -859,7 +869,11 @@ function exerciseHistory(ex, s) {
     </div>`;
   }
 
-  return `<div class="ex-history">${numbers}<div class="exday-list">${rows}</div></div>`;
+  const more = hidden > 0
+    ? `<button class="exday-more" data-action="expand-days" data-id="${ex.id}">+${hidden} earlier day${hidden === 1 ? '' : 's'}</button>`
+    : (showAll ? `<button class="exday-more" data-action="expand-days" data-id="${ex.id}">Show less</button>` : '');
+
+  return `<div class="ex-history">${numbers}<div class="exday-list">${rows}</div>${more}</div>`;
 }
 
 /* ============================= SIDE PANELS ============================= *//* ============================= SIDE PANELS ============================= */
@@ -1933,6 +1947,10 @@ document.addEventListener('click', async (e) => {
     case 'dismiss-tip':
       retireTip(btn.dataset.key);
       rerender();
+      break;
+    case 'expand-days':
+      state.expandedDays = state.expandedDays === btn.dataset.id ? null : btn.dataset.id;
+      renderView();
       break;
     case 'toggle-ex-history':
       retireTip('progress-open');

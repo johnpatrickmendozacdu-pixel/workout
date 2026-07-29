@@ -8,6 +8,7 @@ import {
   formatDuration,
   formatCount,
   recentDayStates,
+  streakTier,
 } from '../src/domain/stats.js';
 
 const TODAY = '2026-07-28';
@@ -199,5 +200,29 @@ describe('recentDayStates (the 7-day strip)', () => {
     const mon = days.find((d) => d.date === '2026-07-27');
     expect(tue.state).toBe('rest');
     expect(mon.state).toBe('miss');
+  });
+});
+
+
+describe('streakTier', () => {
+  it('stays plain until a full week is held', () => {
+    expect(streakTier(0)).toBe(0);
+    expect(streakTier(6)).toBe(0);
+    expect(streakTier(7)).toBe(1);
+  });
+
+  it('steps up at a fortnight, a month and a hundred days', () => {
+    expect(streakTier(13)).toBe(1);
+    expect(streakTier(14)).toBe(2);
+    expect(streakTier(29)).toBe(2);
+    expect(streakTier(30)).toBe(3);
+    expect(streakTier(99)).toBe(3);
+    expect(streakTier(100)).toBe(4);
+    expect(streakTier(9999)).toBe(4);
+  });
+
+  it('never fails on missing input', () => {
+    expect(streakTier(null)).toBe(0);
+    expect(streakTier(undefined)).toBe(0);
   });
 });

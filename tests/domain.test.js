@@ -19,6 +19,8 @@ import {
   getTimer,
   timerPhase,
   sessionSealed,
+  workoutSealed,
+  markPushingOn,
   reopenTimer,
   timerElapsedMs,
   startTimer,
@@ -218,6 +220,46 @@ describe('workout timer', () => {
     expect(sessionSealed(getTimer(finishTimer(timers, TODAY, 'a', 7000, 'gaveup'), TODAY, 'a'))).toBe(true);
   });
 
+  it('meeting the target seals the day even if the session was never closed', () => {
+    // the common case: reps logged, target met, sheet dismissed without tapping
+    const timers = pauseTimer(startTimer({}, TODAY, 'a', 1000), TODAY, 'a', 6000);
+    expect(workoutSealed(getTimer(timers, TODAY, 'a'), 100, 100)).toBe(true);
+    expect(workoutSealed(getTimer(timers, TODAY, 'a'), 120, 100)).toBe(true);
+    expect(workoutSealed(getTimer(timers, TODAY, 'a'), 99, 100)).toBe(false);
+  });
+
+  it('a day with no timer at all still seals on its target', () => {
+    // days finished before timers existed, and totals typed in by hand
+    expect(workoutSealed(null, 100, 100)).toBe(true);
+    expect(workoutSealed(null, 40, 100)).toBe(false);
+  });
+
+  it('an exercise with no target never seals on reps alone', () => {
+    expect(workoutSealed(null, 500, null)).toBe(false);
+    expect(workoutSealed(null, 500, 0)).toBe(false);
+  });
+
+  it('choosing to keep going holds the day open, and keeps holding it', () => {
+    let timers = startTimer({}, TODAY, 'a', 1000);
+    timers = pauseTimer(timers, TODAY, 'a', 6000);
+    timers = markPushingOn(timers, TODAY, 'a');
+    expect(workoutSealed(getTimer(timers, TODAY, 'a'), 120, 100)).toBe(false);
+    // pausing again mid-push must not re-seal what you chose to keep open
+    timers = resumeTimer(timers, TODAY, 'a', 10000);
+    timers = pauseTimer(timers, TODAY, 'a', 12000);
+    expect(getTimer(timers, TODAY, 'a').pushingOn).toBe(true);
+    expect(workoutSealed(getTimer(timers, TODAY, 'a'), 120, 100)).toBe(false);
+    // but deliberately closing it still seals
+    const closed = finishTimer(timers, TODAY, 'a', 13000, 'completed');
+    expect(workoutSealed(getTimer(closed, TODAY, 'a'), 120, 100)).toBe(true);
+  });
+
+  it('reopening a target-sealed day with no timer marks it open for pushing on', () => {
+    const timers = reopenTimer({}, TODAY, 'a');
+    expect(workoutSealed(getTimer(timers, TODAY, 'a'), 100, 100)).toBe(false);
+    expect(getTimer(timers, TODAY, 'a')).toMatchObject({ status: 'paused', elapsedMs: 0, pushingOn: true });
+  });
+
   it('reopenTimer unseals to paused, keeping the time already earned', () => {
     let timers = startTimer({}, TODAY, 'a', 1000);
     timers = finishTimer(timers, TODAY, 'a', 21000, 'completed');
@@ -230,10 +272,10 @@ describe('workout timer', () => {
     expect(timerElapsedMs(getTimer(timers, TODAY, 'a'), 35000)).toBe(25000);
   });
 
-  it('reopenTimer leaves a live or missing timer alone', () => {
+  it('reopening a running session only marks it, never stops the clock', () => {
     const running = startTimer({}, TODAY, 'a', 1000);
-    expect(reopenTimer(running, TODAY, 'a')).toBe(running);
-    expect(reopenTimer({}, TODAY, 'a')).toEqual({});
+    const after = reopenTimer(running, TODAY, 'a');
+    expect(getTimer(after, TODAY, 'a')).toMatchObject({ status: 'running', runStartedAt: 1000, pushingOn: true });
   });
 
   it('timerPhase names the not-yet-started case instead of leaving it null', () => {

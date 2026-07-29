@@ -449,16 +449,47 @@ export function sessionSealed(timer) {
 }
 
 /**
- * Deliberate way out of a sealed day, for the mis-tap and the miscount. Lands
- * paused rather than running, keeping every second already earned: reopening
- * is not the same as still working, and the clock should not start moving on
- * its own behind a decision you may be about to undo.
+ * Whether today's work on an exercise is done and therefore read-only.
+ *
+ * Closing the session seals it, but so does simply meeting the target — most
+ * days end by hitting the number and putting the phone down, not by tapping a
+ * button, and a day finished before timers existed has no session at all.
+ *
+ * The exception is choosing to push past the target. That choice is recorded
+ * on the timer (`pushingOn`) rather than inferred from its status, so pausing
+ * for a break at 120 of 100 cannot silently re-seal a day you kept open.
+ *
+ * Reps alone never seal an exercise with no target: there is no "done" to
+ * reach, so the first rep would otherwise lock the card.
+ */
+export function workoutSealed(timer, total, target) {
+  if (sessionSealed(timer)) return true;
+  if (!(target > 0) || !(total >= target)) return false;
+  return !(timer && timer.pushingOn);
+}
+
+/** Records the choice to carry on past the target. Sticky for the rest of the
+ *  day, which is the whole point — see workoutSealed. */
+export function markPushingOn(timersLog, dateStr, exId) {
+  const t = getTimer(timersLog, dateStr, exId);
+  const base = t || { status: 'paused', elapsedMs: 0, runStartedAt: null };
+  if (t && t.pushingOn) return timersLog;
+  return setTimerRecord(timersLog, dateStr, exId, { ...base, pushingOn: true });
+}
+
+/**
+ * Deliberate way out of a sealed day, for the mis-tap and the miscount. Two
+ * kinds of seal have to come undone: a closed session reverts to paused,
+ * keeping every second already earned, and a day sealed merely by meeting its
+ * target is marked as pushing on. Landing paused rather than running is
+ * deliberate — reopening is not the same as still working, and the clock
+ * should not start moving behind a decision you may be about to undo.
  */
 export function reopenTimer(timersLog, dateStr, exId) {
   const t = getTimer(timersLog, dateStr, exId);
-  if (!sessionSealed(t)) return timersLog;
+  if (!sessionSealed(t)) return markPushingOn(timersLog, dateStr, exId);
   return setTimerRecord(timersLog, dateStr, exId, {
-    status: 'paused', elapsedMs: t.elapsedMs, runStartedAt: null, finishedAt: null,
+    status: 'paused', elapsedMs: t.elapsedMs, runStartedAt: null, finishedAt: null, pushingOn: true,
   });
 }
 
@@ -481,18 +512,21 @@ export function startTimer(timersLog, dateStr, exId, nowMs) {
   return setTimerRecord(timersLog, dateStr, exId, { status: 'running', elapsedMs: 0, runStartedAt: nowMs });
 }
 
+/* Transitions spread the existing record rather than rebuilding it, so a flag
+ * set once — pushingOn — survives every pause and resume for the rest of the
+ * day instead of quietly vanishing on the next state change. */
 export function pauseTimer(timersLog, dateStr, exId, nowMs) {
   const t = getTimer(timersLog, dateStr, exId);
   if (!t || t.status !== 'running') return timersLog;
   return setTimerRecord(timersLog, dateStr, exId, {
-    status: 'paused', elapsedMs: t.elapsedMs + Math.max(0, nowMs - t.runStartedAt), runStartedAt: null,
+    ...t, status: 'paused', elapsedMs: t.elapsedMs + Math.max(0, nowMs - t.runStartedAt), runStartedAt: null,
   });
 }
 
 export function resumeTimer(timersLog, dateStr, exId, nowMs) {
   const t = getTimer(timersLog, dateStr, exId);
   if (!t || t.status !== 'paused') return timersLog;
-  return setTimerRecord(timersLog, dateStr, exId, { status: 'running', elapsedMs: t.elapsedMs, runStartedAt: nowMs });
+  return setTimerRecord(timersLog, dateStr, exId, { ...t, status: 'running', elapsedMs: t.elapsedMs, runStartedAt: nowMs });
 }
 
 /** Ends the timer for the day. outcome is 'completed' (target hit) or 'gaveup'. */

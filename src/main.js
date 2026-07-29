@@ -28,6 +28,8 @@ import {
   getTimer as getTimerPure,
   timerPhase,
   sessionSealed,
+  workoutSealed,
+  markPushingOn,
   reopenTimer as reopenTimerPure,
   timerElapsedMs,
   startTimer as startTimerPure,
@@ -477,6 +479,9 @@ async function takeTheWinHandler(exId) {
 
 /** "Keep going" — clock resumes, everything keeps counting. */
 async function keepGoingHandler(exId) {
+  // Record the choice, don't infer it from the clock: the day is past its
+  // target now, so without this marker the next pause would seal it.
+  state.timersLog = markPushingOn(state.timersLog, todayISO(), exId);
   state.timersLog = resumeTimerPure(state.timersLog, todayISO(), exId, Date.now());
   await persistTimers();
   // Straight back into the logger — "keep going" means keep logging, so
@@ -553,7 +558,10 @@ async function giveUpTimerHandler(exId) {
  */
 function sealedToday(exId, dateStr) {
   if (dateStr && dateStr !== todayISO()) return false;
-  return sessionSealed(getTimerPure(state.timersLog, todayISO(), exId));
+  const d = todayISO();
+  const ex = state.exercises.find((e) => e.id === exId);
+  if (!ex) return false;
+  return workoutSealed(getTimerPure(state.timersLog, d, exId), calcTotal(getSetsFor(exId, d)), getEffectiveTarget(ex, d));
 }
 
 /** The deliberate way out of a sealed day. Lands paused, keeping the time. */
@@ -1274,12 +1282,22 @@ const TIMER_COPY = {
   gaveup: ['Ended early', 'Your reps still count. The time doesn’t.'],
 };
 
-function timerBlockHtml(exId, timer) {
+/* On a sealed day the live copy lies: nothing is going to start on your next
+ * rep, and there is no Resume to come back to. */
+const TIMER_COPY_SEALED = {
+  idle: ['No clock', 'This one was logged without a clock running.'],
+  running: ['In progress', 'Stopped where you left it.'],
+  paused: ['Paused', 'Stopped where you left it.'],
+};
+
+function timerBlockHtml(exId, timer, sealed) {
   const phase = timerPhase(timer);
-  const [statusLabel, note] = TIMER_COPY[phase];
+  const [statusLabel, note] = (sealed && TIMER_COPY_SEALED[phase]) || TIMER_COPY[phase];
   const elapsed = formatElapsed(timerElapsedMs(timer, Date.now()));
   const finishedClock = timer ? formatClock(timer.finishedAt) : null;
-  const live = phase === 'running' || phase === 'paused';
+  // A day sealed by its target can still be sitting on a merely-paused clock,
+  // which must not keep offering Resume and Give up.
+  const live = !sealed && (phase === 'running' || phase === 'paused');
 
   // Nothing to pause, end or reset before the first rep; nothing to touch at
   // all once the day is sealed. Only a live session carries controls.
@@ -1390,7 +1408,7 @@ function modalGuide() {
       has.length && ['The clock', 'Starts on your first rep. Pause any time.'],
       anyTarget && ['Hit the target', 'Take the win, or Keep going.'],
       has.length && ['End early', 'Give up keeps your reps and stops the clock.'],
-      has.length && ['Once it is closed', 'The card locks. Tap Reopen to change it.'],
+      anyTarget && ['Once it is done', 'Hitting the target locks the card. Reopen to change it.'],
       anyTarget && ['Rest a day', 'Open the exercise, Take a break. Streak holds.'],
       !has.length && ['Start', 'Add an exercise.'],
     ],
@@ -1492,7 +1510,10 @@ function renderModal() {
 function sealedNoteHtml(exId, phase) {
   const line = phase === 'gaveup'
     ? 'You ended this one early. It is closed for today — nothing here can change.'
-    : 'You took the win. It is closed for today — nothing here can change.';
+    : phase === 'completed'
+      ? 'You took the win. It is closed for today — nothing here can change.'
+      // sealed by simply reaching the number, which is how most days actually end
+      : 'Target met. This one is done for today — nothing here can change.';
   return `<p class="tip sealed-note">
     <span>${line}</span>
     <button class="reopen-btn" data-action="reopen-session" data-id="${exId}">Reopen</button>
@@ -1510,7 +1531,7 @@ function modalLogger(exId) {
   const chips = (ex.chips && ex.chips.length === 3) ? ex.chips : DEFAULT_CHIPS;
   // A closed session is a record, not a workspace: the card still shows and
   // scrolls exactly as before, but nothing in it can be changed by accident.
-  const sealed = sessionSealed(getTimerPure(state.timersLog, today, exId));
+  const sealed = workoutSealed(getTimerPure(state.timersLog, today, exId), total, target);
   const editIndex = state.modal && !sealed && state.modal.editIndex != null ? state.modal.editIndex : null;
   const listItems = arr.map((v, i) => ({ v, i })).reverse().map(({ v, i }) => {
     const isLatest = i === arr.length - 1;
@@ -1540,7 +1561,7 @@ function modalLogger(exId) {
       : `<div class="logger-total editable-target" data-editable-logger-total data-id="${exId}" title="Tap to edit total">${total}</div>`;
 
   const timer = getTimerPure(state.timersLog, today, exId);
-  const timerHtml = timerBlockHtml(exId, timer);
+  const timerHtml = timerBlockHtml(exId, timer, sealed);
 
   return `<div class="modal-backdrop" data-action="backdrop">
     <div class="modal-sheet" data-stop>
@@ -1558,7 +1579,7 @@ function modalLogger(exId) {
       <div class="tally-rail logger-tally">${tallyMarks(arr.length)}</div>
 
       ${sealed
-        ? sealedNoteHtml(exId, timerPhase(getTimerPure(state.timersLog, today, exId)))
+        ? sealedNoteHtml(exId, timerPhase(timer))
         : (state.repMode === 'sub'
           ? tipHtml('sub-rep', 'Tap any number to subtract it straight away.')
           : tipHtml('log-rep', 'Tap any number to add it straight away.'))}

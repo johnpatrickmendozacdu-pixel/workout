@@ -519,8 +519,17 @@ async function decrementHandler(exId, amount) {
   await persistSets();
   rerender();
 }
+/**
+ * Correcting the record is not the same as working out. The seal stops you
+ * *training* an exercise you already finished; it must not stop you fixing a
+ * number you got wrong, which is what the Progress day list is for. So this
+ * takes no seal guard — only the sealed card's own inline edit does.
+ *
+ * Consistency comes for free: totals are stored, everything else is derived,
+ * so correcting a total below its target unseals the day and moves it back to
+ * To do on its own.
+ */
 async function setTotalHandler(exId, dateStr, rawValue) {
-  if (sealedToday(exId, dateStr)) return;
   const parsed = rawValue === '' || rawValue == null ? null : parseFloat(rawValue);
   const value = (parsed == null || isNaN(parsed) || parsed <= 0) ? null : Math.round(parsed * 100) / 100;
   state.setsLog = setDayTotalPure(state.setsLog, dateStr, exId, value);
@@ -2042,6 +2051,7 @@ document.addEventListener('click', async (e) => {
       break;
 
     case 'save-logger-total-inline': {
+      if (sealedToday(btn.dataset.id, btn.dataset.date)) break;
       const input = document.getElementById('logger-total-input');
       await setTotalHandler(btn.dataset.id, btn.dataset.date, input.value);
       break;

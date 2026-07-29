@@ -893,3 +893,67 @@
   .ex-stat.is-resting .dot.today{box-shadow:0 0 0 3px rgba(62,224,127,0.2);}
   .break-card.taken{border-color:rgba(62,224,127,0.45); background:rgba(62,224,127,0.06);}
   .break-card.taken b{color:var(--accent);}
+
+  /* ============ cards that read as separate objects ============ */
+  .ex-stat{
+    background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-lg);
+    padding:16px 16px 18px; margin-bottom:12px;
+  }
+  .ex-stat + .ex-stat{border-top:1px solid var(--border); padding-top:16px;}
+  .ex-stat.is-open{border-color:var(--border-strong); background:var(--bg-elevated);}
+  .ex-stat-head{
+    display:flex; align-items:center; gap:10px; width:100%; min-height:44px;
+    background:none; border:none; padding:0; margin-bottom:12px; text-align:left; color:inherit;
+  }
+  .ex-stat-chev{color:var(--text-faint); display:flex; transition:transform .2s ease;}
+  .ex-stat-chev.open{transform:rotate(90deg);}
+
+  /* the exercise's own record, folded inside its own card */
+  .ex-history{margin-top:18px; padding-top:16px; border-top:1px solid var(--border);}
+  .ex-numbers{margin:0 0 16px; display:grid; grid-template-columns:1fr 1fr; gap:12px 14px;}
+  .ex-numbers dt{font-family:var(--font-mono); font-size:10px; text-transform:uppercase;
+    letter-spacing:0.12em; color:var(--text-faint);}
+  .ex-numbers dd{margin:3px 0 0; font-family:var(--font-num); font-size:15px; font-weight:700;
+    letter-spacing:-0.02em; color:var(--text);}
+  .ex-numbers dd i{font-style:normal; font-family:var(--font-body); font-weight:500;
+    font-size:11px; color:var(--text-faint); margin-left:3px;}
+  /* Visually inline so the numbers grid stays aligned; the touch area is an
+     overlay rather than a taller box, which was stretching the cell. */
+  .mini-num{
+    font:inherit; background:none; border:none; color:inherit; padding:0;
+    position:relative; text-decoration:underline dashed var(--border-strong);
+    text-underline-offset:4px; text-decoration-thickness:1px;
+  }
+  .mini-num::after{
+    content:''; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+    width:max(44px, 100%); height:44px;
+  }
+
+  .exday-list{display:flex; flex-direction:column;}
+  .exday{display:flex; align-items:center; gap:6px; padding:4px 0; border-top:1px solid var(--border);}
+  .exday-when{flex:1; min-width:0; font-size:12.5px; color:var(--text-dim);}
+  .exday-unit{font-size:11px; color:var(--text-faint);}
+  .exday.hit .exday-when{color:var(--text);}
+  .exday.rest .exday-when{color:var(--text-faint);}
+
+  /* a nudge, deliberately not a button */
+  .break-nudge{
+    margin:20px 2px 0; font-size:12.5px; line-height:1.5; color:var(--text-faint); text-align:center;
+  }
+  .break-nudge.resting{color:var(--accent);}
+
+  /* hints that retire themselves */
+  .tip{
+    display:flex; align-items:center; gap:10px; margin:0 0 12px; padding:10px 12px;
+    background:rgba(62,224,127,0.07); border:1px solid rgba(62,224,127,0.22);
+    border-radius:var(--radius-sm); font-size:12.5px; color:var(--text-dim);
+  }
+  .tip-x{
+    background:none; border:none; color:var(--text-faint); display:flex; flex-shrink:0;
+    width:44px; height:44px; align-items:center; justify-content:center; margin:-10px -8px -10px 0;
+  }
+  .tip-x svg{width:14px; height:14px;}
+
+  .guide-list{margin:0; display:flex; flex-direction:column; gap:14px;}
+  .guide-list dt{font-size:14px; font-weight:700; color:var(--text);}
+  .guide-list dd{margin:3px 0 0; font-size:13px; line-height:1.45; color:var(--text-dim);}

@@ -68,7 +68,7 @@ const state = {
   editingDayTarget: null,
   editingTopSet: null,
   editingDayTotal: null,
-  historyOpen: false,
+  openExercise: null,
   repMode: 'add',   // 'add' | 'sub' — the pad lever
   version: { local: typeof __BUILD_ID__ === 'string' ? __BUILD_ID__ : 'dev', status: 'unknown' },
   panel: null,          // 'stats' — mobile drawer only
@@ -782,18 +782,29 @@ async function saveTopSetHandler(exId, rawValue) {
  */
 function exerciseCard(ex, s, opts = {}) {
   const days = recentDayStates(ex, state.setsLog, state.streakOverrides, 7);
-  const strip = days.map((d) => `<i class="dot ${d.state}${d.isToday ? ' today' : ''}" title="${escapeHtml(formatDisplayDate(d.date, { weekday: 'short', day: 'numeric' }))}"></i>`).join('');
+  const strip = days.map((d) => `<i class="dot ${d.state}${d.isToday ? ' today' : ''}"></i>`).join('');
+  const open = state.openExercise === ex.id;
 
   const action = opts.resting !== undefined
     ? `<button class="rest-toggle ${opts.resting ? 'on' : ''}" data-action="toggle-break" data-id="${ex.id}" aria-pressed="${opts.resting}">${opts.resting ? 'Resting' : 'Rest'}</button>`
-    : '';
+    : (opts.expandable
+      ? `<span class="ex-stat-chev ${open ? 'open' : ''}">${ICONS.chevron}</span>`
+      : '');
 
-  return `<article class="ex-stat ${opts.resting ? 'is-resting' : ''}">
-    <header>
-      <span class="ex-stat-icon">${escapeHtml(ex.icon)}</span>
-      <h3>${escapeHtml(ex.name)}</h3>
-      ${action}
-    </header>
+  const head = opts.expandable
+    ? `<button class="ex-stat-head" data-action="toggle-ex-history" data-id="${ex.id}" aria-expanded="${open}">
+        <span class="ex-stat-icon">${escapeHtml(ex.icon)}</span>
+        <h3>${escapeHtml(ex.name)}</h3>
+        ${action}
+      </button>`
+    : `<header class="ex-stat-head static">
+        <span class="ex-stat-icon">${escapeHtml(ex.icon)}</span>
+        <h3>${escapeHtml(ex.name)}</h3>
+        ${action}
+      </header>`;
+
+  return `<article class="ex-stat ${opts.resting ? 'is-resting' : ''} ${open ? 'is-open' : ''}">
+    ${head}
     <div class="strip" aria-label="Last seven days">${strip}</div>
     <div class="ex-stat-nums">
       <div class="streak-now">
@@ -802,65 +813,59 @@ function exerciseCard(ex, s, opts = {}) {
       </div>
       <div class="streak-best">best ${s.bestStreak}</div>
     </div>
+    ${open ? exerciseHistory(ex, s) : ''}
   </article>`;
 }
 
-/* ============================= SIDE PANELS ============================= */
-/**
- * Lifetime dashboard. Stats are derived on render from the logs, so they are
- * always current — the "refresh" prompt exists only to avoid re-laying out the
- * panel under someone's finger mid-workout, not because the data goes stale.
- */
-function renderDashboard() {
-  const el = document.getElementById('rail-stats');
-  if (!el) return;
-  const stats = allStats(state.exercises, state.setsLog, state.timersLog);
-  const active = state.exercises.filter((e) => e.active && !e.archived);
+/** Everything about one exercise, folded inside its own card — its numbers,
+ *  its best day and its own recent days. Nothing from any other exercise. */
+function exerciseHistory(ex, s) {
+  const u = escapeHtml(ex.unit);
+  const today = todayISO();
+  const best = bestDayForExercise(ex, state.setsLog);
 
-  const cards = active.map((ex) => {
-    const s = stats[ex.id];
-    const u = escapeHtml(ex.unit);
-    // Two headline numbers, then the supporting rows. Top Set and Max Reps
-    // lead because they answer different questions: best single effort, and
-    // biggest day.
-    return `<section class="dash-card">
-      <header class="dash-head"><span class="dash-icon">${escapeHtml(ex.icon)}</span><h3>${escapeHtml(ex.name)}</h3></header>
-      <div class="dash-headline">
-        ${state.editingTopSet === ex.id
-          ? `<div class="headline-stat editing" data-stop>
-              <input type="number" min="0" step="any" id="topset-input-${ex.id}" class="topset-input" value="${s.topSet || ''}" placeholder="0">
-              <div class="topset-actions">
-                <button class="mini-btn" data-action="save-top-set" data-id="${ex.id}" aria-label="Save">${ICONS.check}</button>
-                <button class="mini-btn" data-action="cancel-top-set" aria-label="Cancel">${ICONS.close}</button>
-              </div>
-            </div>`
-          : `<button class="headline-stat tappable" data-action="edit-top-set" data-id="${ex.id}" title="Tap to correct the set behind this number">
-              <b>${s.topSet ?? '—'}</b>
-              <span>Top set<em>${s.topSetDate ? escapeHtml(formatDisplayDate(s.topSetDate, { month: 'short', day: 'numeric' })) : 'best single set'}</em></span>
-            </button>`}
-        <div class="headline-stat">
-          <b>${s.maxReps ?? '—'}</b>
-          <span>Max<em>biggest day</em></span>
-        </div>
-      </div>
-      <dl class="stat-list">
-        <div><dt>Lifetime</dt><dd>${formatCount(s.totalReps)} ${u}${s.since ? ` <i>since ${escapeHtml(s.since)}</i>` : ''}</dd></div>
-        <div><dt>Best streak</dt><dd>${s.bestStreak}<i>/${s.trackedDays} days</i></dd></div>
-        <div><dt>Best time</dt><dd>${formatDuration(s.bestTime)}</dd></div>
-        <div><dt>Average time</dt><dd>${formatDuration(s.avgTime)}</dd></div>
-      </dl>
-    </section>`;
-  }).join('');
+  const num = (label, value) => `<div><dt>${label}</dt><dd>${value}</dd></div>`;
+  const numbers = `<dl class="ex-numbers">
+    ${num('Top set', s.topSet != null ? `<button class="mini-num" data-action="edit-top-set" data-id="${ex.id}">${s.topSet}</button>` : '—')}
+    ${num('Max', s.maxReps != null ? s.maxReps : '—')}
+    ${num('Lifetime', `${formatCount(s.totalReps)}${s.since ? ` <i>since ${escapeHtml(s.since)}</i>` : ''}`)}
+    ${num('Best time', formatDuration(s.bestTime))}
+    ${num('Average', formatDuration(s.avgTime))}
+    ${num('Best day', best ? `${best.total} <i>${escapeHtml(formatDisplayDate(best.date, { month: 'short', day: 'numeric' }))}</i>` : '—')}
+  </dl>`;
 
-  el.innerHTML = `
-    <div class="rail-head"><h2>Performance</h2></div>
-    ${active.length ? cards : `<p class="rail-empty">Add an exercise to start building lifetime numbers.</p>`}`;
+  let rows = '';
+  for (let i = 0; i < 14; i++) {
+    const d = addDays(today, -i);
+    if (ex.createdDate && d < ex.createdDate) break;
+    if (!isScheduledOn(ex, d)) continue;
+    const target = getEffectiveTarget(ex, d);
+    const total = calcTotal((state.setsLog[d] && state.setsLog[d][ex.id]) || []);
+    const rest = isBreakDay(state.streakOverrides, d, ex.id);
+    const hit = target > 0 && total >= target;
+    const editing = state.editingDayTotal === `${d}|${ex.id}`;
+    rows += `<div class="exday ${rest ? 'rest' : hit ? 'hit' : 'miss'}">
+      <span class="exday-when">${i === 0 ? 'Today' : formatDisplayDate(d, { weekday: 'short', day: 'numeric' })}</span>
+      ${editing
+        ? `<span class="inline-target-edit" data-stop>
+            <input type="number" min="0" step="any" id="day-total-input-${ex.id}" class="target-edit-input" value="${total || ''}" placeholder="0">
+            <button class="mini-btn" data-action="save-day-total" data-id="${ex.id}" data-date="${d}" aria-label="Save">${ICONS.check}</button>
+            <button class="mini-btn" data-action="cancel-day-total" aria-label="Cancel">${ICONS.close}</button>
+          </span>`
+        : `<button class="day-num total" data-editable-day-total data-id="${ex.id}" data-date="${d}" aria-label="Edit total">${rest ? '🌙' : total}</button>
+           <span class="day-sep">/</span>
+           <button class="day-num target" data-editable-day-target data-id="${ex.id}" data-date="${d}" aria-label="Edit target">${target || '—'}</button>
+           <span class="exday-unit">${u}</span>`}
+    </div>`;
+  }
+
+  return `<div class="ex-history">${numbers}<div class="exday-list">${rows}</div></div>`;
 }
 
+/* ============================= SIDE PANELS ============================= *//* ============================= SIDE PANELS ============================= */
 function renderPanels() {
   const shell = document.getElementById('shell');
   if (shell) shell.dataset.panel = state.panel || '';
-  renderDashboard();
 }
 
 const NAV_ITEMS = [
@@ -883,7 +888,6 @@ function render() {
     <div id="banner-area"></div>
     <header id="topbar"></header>
     <div id="shell" data-panel="">
-      <aside id="rail-stats" class="rail rail-left"></aside>
       <main id="view-container"></main>
     </div>
     <nav id="bottom-nav"></nav>
@@ -921,6 +925,21 @@ async function checkVersion() {
 }
 
 /** Stats drawer toggle — phone only; at desktop width the rail is always visible. */
+/**
+ * A hint that retires itself. Each one is shown until the thing it describes
+ * has been done, then never again — so the app explains itself once and then
+ * gets out of the way. Kept in prefs (localStorage), not synced data: it is
+ * about this device's reader, not the workout record.
+ */
+function tipHtml(key, text) {
+  if (db.prefs.get('tip:' + key, false)) return '';
+  return `<p class="tip" data-tip="${key}">${escapeHtml(text)}<button class="tip-x" data-action="dismiss-tip" data-key="${key}" aria-label="Got it">${ICONS.close}</button></p>`;
+}
+
+function retireTip(key) {
+  if (!db.prefs.get('tip:' + key, false)) db.prefs.set('tip:' + key, true);
+}
+
 function helpChipHtml() {
   return `<button class="help-chip" data-action="open-guide" aria-label="How this works">${ICONS.help}</button>`;
 }
@@ -968,7 +987,6 @@ function renderTopbar() {
         <div class="topbar-right">
           <div class="streak-pill" title="Longest run currently going">${ICONS.flame}${streak}</div>
           ${helpChipHtml()}
-          ${railButtonsHtml()}
           ${avatarChipHtml()}
         </div>
       </div>`;
@@ -979,7 +997,6 @@ function renderTopbar() {
         <div class="topbar-right">
           <button class="add-btn" data-action="open-add-exercise">${ICONS.plus} Add</button>
           ${helpChipHtml()}
-          ${railButtonsHtml()}
           ${avatarChipHtml()}
         </div>
       </div>`;
@@ -990,7 +1007,6 @@ function renderTopbar() {
         <div class="topbar-right">
           <button class="icon-btn" data-action="open-data">${ICONS.gear}</button>
           ${helpChipHtml()}
-          ${railButtonsHtml()}
           ${avatarChipHtml()}
         </div>
       </div>`;
@@ -1067,14 +1083,13 @@ function viewToday() {
     : '';
 
   const onBreak = active.filter((ex) => isBreakDay(state.streakOverrides, today, ex.id));
-  const breakHtml = `<button class="break-card ${onBreak.length ? 'taken' : ''}" data-action="take-break">
-      <div>
-        <b>${onBreak.length ? `Resting: ${onBreak.map((e) => escapeHtml(e.name)).join(', ')}` : 'Take a break'}</b>
-        <span>${onBreak.length ? 'Those streaks keep counting. Tap to change.' : 'Rest an exercise today without losing its streak.'}</span>
-      </div>
-    </button>`;
+  // A nudge, not a control. Resting belongs inside the exercise it applies to,
+  // so this only points you there.
+  const breakHtml = onBreak.length
+    ? `<p class="break-nudge resting">🌙 Resting today: ${onBreak.map((e) => escapeHtml(e.name)).join(', ')}</p>`
+    : `<p class="break-nudge">Not training one today? Open it and take a break — the streak holds.</p>`;
 
-  return `<div>${rows}${restHtml}${breakHtml}</div>`;
+  return `<div>${tipHtml('open-ex', 'Tap an exercise to log reps.')}${rows}${restHtml}${breakHtml}</div>`;
 }
 
 /* ============================= VIEW: PLAN ============================= */
@@ -1149,73 +1164,11 @@ function renderDayTargetPart(dt, dateStr, isToday) {
 }
 
 function viewProgress() {
-  const today = todayISO();
   const activeEx = state.exercises.filter((e) => e.active && !e.archived).sort((a, b) => a.order - b.order);
+  if (!activeEx.length) return `<p class="rail-empty">Add an exercise to start a streak.</p>`;
   const stats = allStats(activeEx, state.setsLog, state.timersLog, null, state.streakOverrides);
-
-  let html = activeEx.length
-    ? activeEx.map((ex) => exerciseCard(ex, stats[ex.id])).join('')
-    : `<p class="rail-empty">Add an exercise to start a streak.</p>`;
-
-  // History stays folded away — it is for looking something up, not for
-  // reading every time you open the screen.
-  const open = state.historyOpen;
-  html += `<button class="history-toggle ${open ? 'open' : ''}" data-action="toggle-history" aria-expanded="${open}">
-    <span>History</span>${ICONS.chevron}
-  </button>`;
-
-  if (open) {
-    html += '<div class="history-body">';
-
-    const withHistory = activeEx.filter((ex) => bestDayForExercise(ex, state.setsLog));
-    if (withHistory.length) {
-      html += `<div class="section-label">Best day</div>`;
-      withHistory.forEach((ex) => {
-        const best = bestDayForExercise(ex, state.setsLog);
-        html += `<div class="best-row">
-          <div class="best-left"><span>${escapeHtml(ex.icon)}</span><span>${escapeHtml(ex.name)}</span></div>
-          <div style="text-align:right"><div class="best-num">${best.total} ${escapeHtml(ex.unit)}</div><div class="best-date">${formatDisplayDate(best.date, { month: 'short', day: 'numeric' })}</div></div>
-        </div>`;
-      });
-    }
-
-    html += `<div class="section-label">Recent days</div>`;
-    for (let i = 0; i < 14; i++) {
-      const d = addDays(today, -i);
-      const dstats = calcDayStats(state.exercises, state.setsLog, d, state.streakOverrides);
-      const dotClass = dstats.isBreak ? 'break' : (dstats.targetedCount === 0 && !dstats.overridden ? 'none' : (dstats.allComplete ? 'complete' : 'incomplete'));
-      const expanded = state.expandedDay === d;
-      html += `<div class="day-row">
-        <div class="day-row-head">
-          <button class="day-dot-btn" data-action="toggle-day-override" data-date="${d}" aria-label="Toggle whether this day counts">
-            <span class="day-dot ${dotClass}"></span>
-          </button>
-          <button class="day-row-main" data-action="toggle-day" data-date="${d}">
-            <span class="day-label">${i === 0 ? 'Today' : formatDisplayDate(d)}</span>
-            <span class="day-frac">${dstats.isBreak ? 'Rest' : (dstats.targetedCount > 0 ? `${dstats.completedCount}/${dstats.targetedCount}` : '—')}</span>
-          </button>
-        </div>
-        ${expanded ? `<div class="day-detail">${
-          dstats.details.length === 0 ? '<div>Nothing scheduled.</div>' :
-          dstats.details.map((dt) => {
-            const t = getTimerPure(state.timersLog, d, dt.ex.id);
-            const timeStr = t ? ` · ${formatElapsed(timerElapsedMs(t, Date.now()))}` : '';
-            const totalPart = state.editingDayTotal === `${d}|${dt.ex.id}`
-              ? `<span class="inline-target-edit" data-stop>
-                  <input type="number" min="0" step="any" id="day-total-input-${dt.ex.id}" class="target-edit-input" value="${dt.total || ''}" placeholder="0">
-                  <button class="mini-btn" data-action="save-day-total" data-id="${dt.ex.id}" data-date="${d}" aria-label="Save">${ICONS.check}</button>
-                  <button class="mini-btn" data-action="cancel-day-total" aria-label="Cancel">${ICONS.close}</button>
-                </span>`
-              : `<button class="day-num total" data-editable-day-total data-id="${dt.ex.id}" data-date="${d}" aria-label="Edit total for this day">${dt.total}</button>`;
-            return `<div><span>${escapeHtml(dt.ex.icon)} ${escapeHtml(dt.ex.name)}${dt.isBreak ? ' 🌙' : ''}</span><span>${totalPart}${renderDayTargetPart(dt, d, i === 0)} ${escapeHtml(dt.ex.unit)}${timeStr}</span></div>`;
-          }).join('')
-        }</div>` : ''}
-      </div>`;
-    }
-    html += '</div>';
-  }
-
-  return html;
+  return activeEx.map((ex) => exerciseCard(ex, stats[ex.id], { expandable: true })).join('')
+    + tipHtml('progress-open', 'Tap an exercise for its history and numbers.');
 }
 
 /* ============================= MODALS ============================= */
@@ -1287,57 +1240,49 @@ function setBodyScrollLock(locked) {
 }
 
 /**
- * A guide that only tells you what applies right now: the screen you're on
- * comes first and is marked, and entries that don't match your data are
- * dropped. Each line names the real control, so it reads as a map of what you
- * can press rather than prose about features.
+ * The guide covers the screen you are standing on and nothing else — you never
+ * read about Plan while looking at Progress. Entries that don't apply to your
+ * data are dropped, so it shrinks as well as grows with the app.
  */
 function modalGuide() {
   const has = state.exercises.filter((e) => e.active && !e.archived);
   const anyTarget = has.some((e) => getEffectiveTarget(e, todayISO()));
   const anyHistory = Object.keys(state.setsLog).length > 0;
-  const anySchedule = has.some((e) => Array.isArray(e.schedule));
 
-  const sections = [
-    { view: 'today', title: 'Today', items: [
-      has.length && ['Log reps', 'Tap the exercise, then any number on the pad.'],
-      has.length && ['Take reps off', 'Flip the lever to Subtract, then tap a number.'],
-      has.length && ['Time a session', 'Starts on your first set. Keeps running anywhere in the app.'],
-      anyTarget && ['Hit the target', 'Take the win to bank it, or Keep going to carry on.'],
-      anyTarget && ['Rest a day', 'Take a break, pick the exercise. Its streak survives.'],
-      anySchedule && ['Days off', 'Unscheduled exercises sit under Resting today.'],
-      !has.length && ['Start', 'Add an exercise to begin.'],
-    ] },
-    { view: 'plan', title: 'Plan', items: [
-      ['Edit anything', 'Tap the exercise. Name, icon, unit, target, schedule.'],
-      ['Set the days', 'Every day, or pick weekdays. A day off never counts as missed.'],
-      ['Change the pad', 'Quick-add sets the three values you reach for most.'],
-      has.length && ['Retire one', 'Archive keeps its history. Delete removes it.'],
-    ] },
-    { view: 'progress', title: 'Progress', items: [
-      ['Read the strip', 'Filled = target hit, 🌙 = rest, hollow = missed, faint = day off.'],
-      ['Streaks', 'One per exercise. Big number is now, best is your record.'],
-      anyHistory && ['Fix a number', 'Open History, tap a day, tap its total or target.'],
-      anyHistory && ['Past targets', 'Editing one changes that day only.'],
-      ['Top set vs Max', 'Best single set, versus biggest day. Tap Top set to correct it.'],
-    ] },
-  ];
+  const byView = {
+    today: [
+      has.length && ['Log reps', 'Tap the exercise, then a number.'],
+      has.length && ['Take reps off', 'Flip the lever to Subtract.'],
+      anyTarget && ['Hit the target', 'Take the win, or Keep going.'],
+      anyTarget && ['Rest a day', 'Open the exercise, Take a break. Streak holds.'],
+      !has.length && ['Start', 'Add an exercise.'],
+    ],
+    plan: [
+      ['Edit', 'Tap the exercise.'],
+      ['Schedule', 'Every day, or pick weekdays. A day off is never a miss.'],
+      ['Quick-add', 'The three values on the pad.'],
+      has.length && ['Retire', 'Archive keeps history. Delete removes it.'],
+    ],
+    progress: [
+      ['The strip', 'Filled = hit, 🌙 = rest, hollow = missed, faint = day off.'],
+      ['Open a card', 'Its numbers, best day and recent days.'],
+      anyHistory && ['Fix a number', 'Tap a total or target inside a card.'],
+      ['Top set vs Max', 'Best single set, versus biggest day.'],
+    ],
+  };
 
-  const ordered = [...sections].sort((a) => (a.view === state.view ? -1 : 1));
+  const title = { today: 'Today', plan: 'Plan', progress: 'Progress' }[state.view] || 'Today';
+  const items = (byView[state.view] || byView.today).filter(Boolean);
 
   return `<div class="modal-backdrop" data-action="backdrop">
     <div class="modal-sheet" data-stop>
       <div class="sheet-handle"></div>
       <div class="sheet-head">
-        <h2>How this works</h2>
+        <h2>${title}</h2>
         <button class="sheet-close" data-action="close-modal">${ICONS.close}</button>
       </div>
-      ${ordered.map((sec) => `
-        <section class="guide-sec">
-          <h3>${sec.title}${sec.view === state.view ? '<em>here</em>' : ''}</h3>
-          <dl>${sec.items.filter(Boolean).map(([what, how]) => `<div><dt>${escapeHtml(what)}</dt><dd>${how}</dd></div>`).join('')}</dl>
-        </section>`).join('')}
-      <div class="hint">Everything stays on this device. Sign in from your profile to sync it to your own Google Drive.</div>
+      <dl class="guide-list">${items.map(([what, how]) => `<div><dt>${escapeHtml(what)}</dt><dd>${how}</dd></div>`).join('')}</dl>
+      <div class="hint">Switch screens for that screen's guide.</div>
     </div>
   </div>`;
 }
@@ -1470,6 +1415,7 @@ function modalLogger(exId) {
       ${timerHtml}
       <div class="tally-rail logger-tally">${tallyMarks(arr.length)}</div>
 
+      ${tipHtml('log-rep', 'Tap any number to add it straight away.')}
       <div class="rep-lever" role="group" aria-label="Add or subtract reps">
         <button class="lever-opt ${state.repMode === 'add' ? 'on' : ''}" data-action="rep-mode" data-mode="add">Add</button>
         <button class="lever-opt sub ${state.repMode === 'sub' ? 'on' : ''}" data-action="rep-mode" data-mode="sub">Subtract</button>
@@ -1481,8 +1427,8 @@ function modalLogger(exId) {
       ${(() => {
         const resting = isBreakDay(state.streakOverrides, today, exId);
         return `<button class="logger-rest ${resting ? 'on' : ''}" data-action="toggle-break" data-id="${exId}" aria-pressed="${resting}">
-          <span>${resting ? '🌙 Resting today' : 'Rest this today'}</span>
-          <em>${resting ? 'Streak kept. Tap to undo.' : 'Keeps this streak alive'}</em>
+          <span>${resting ? '🌙 Resting today' : 'Take a break today'}</span>
+          <em>${resting ? 'Your streak is safe. Tap to undo.' : 'Counts as rest — your streak keeps going.'}</em>
         </button>`;
       })()}
 
@@ -1766,7 +1712,7 @@ document.addEventListener('click', async (e) => {
     case 'reorder': await reorder(btn.dataset.id, parseInt(btn.dataset.dir, 10)); rerender(); break;
     case 'toggle-archived': state.showArchived = !state.showArchived; renderView(); break;
 
-    case 'open-logger': state.modal = { type: 'logger', exId: btn.dataset.id }; renderModal(); break;
+    case 'open-logger': retireTip('open-ex'); state.modal = { type: 'logger', exId: btn.dataset.id }; renderModal(); break;
     case 'sched-daily':
       if (state.modal) { state.modal.sched = 'daily'; renderModal(); }
       break;
@@ -1842,10 +1788,12 @@ document.addEventListener('click', async (e) => {
       renderPanels();
       break;
     case 'rep-mode':
+      retireTip('subtract');
       state.repMode = btn.dataset.mode;
       renderModal();
       break;
     case 'rep-tap': {
+      retireTip('log-rep');
       const n = parseFloat(btn.dataset.val);
       if (state.repMode === 'sub') await decrementHandler(btn.dataset.id, n);
       else await logSet(btn.dataset.id, n);
@@ -1982,8 +1930,13 @@ document.addEventListener('click', async (e) => {
       await googleSyncNowHandler();
       break;
 
-    case 'toggle-history':
-      state.historyOpen = !state.historyOpen;
+    case 'dismiss-tip':
+      retireTip(btn.dataset.key);
+      rerender();
+      break;
+    case 'toggle-ex-history':
+      retireTip('progress-open');
+      state.openExercise = state.openExercise === btn.dataset.id ? null : btn.dataset.id;
       renderView();
       break;
     case 'toggle-day':

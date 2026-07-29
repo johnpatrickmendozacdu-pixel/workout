@@ -1106,6 +1106,27 @@
   .status-paused .timer-note{border-color:var(--silver);}
   .status-gaveup .timer-note{border-color:var(--danger);}
 
+  /* ---------- a sealed day ----------
+     Same card, same layout, nothing live. The controls stay in place rather
+     than vanishing — the shape of the card you know is part of reading it —
+     but they are visibly inert and cannot be pressed. */
+  .rep-key:disabled, .lever-opt:disabled, .logger-rest:disabled{
+    opacity:0.35; box-shadow:none; pointer-events:none;
+  }
+  .rep-key:disabled{border-color:#2A312D; color:var(--text-faint);}
+  .lever-opt.on:disabled{background:#2A312D; color:var(--text-faint); border-color:#2A312D;}
+  .logger-rest:disabled{border-style:dashed; border-color:#2A312D;}
+
+  .sealed-note{display:flex; align-items:center; justify-content:space-between; gap:12px;}
+  .sealed-note span{flex:1;}
+  .reopen-btn{
+    flex:none; min-height:44px; padding:0 14px; background:transparent;
+    border:2px solid var(--silver); color:var(--text);
+    font-size:12px; font-weight:700; letter-spacing:0.08em; text-transform:uppercase;
+    font-family:var(--font-mono); border-radius:0;
+  }
+  .reopen-btn:active{background:var(--silver); color:var(--paper);}
+
   /* closed out short of target: kept, not celebrated */
   /* the icon paths stroke currentColor, so the colour has to be set on the
      container — stroking the <svg> itself loses to the path's own attribute */
@@ -1201,3 +1222,6 @@
     padding:2px 0 2px 11px; margin:0 0 16px; color:var(--text-dim); font-size:12.5px;
   }
   .tip[data-tip="sub-rep"]{border-left-color:var(--danger);}
+  /* a sealed day is a record, not a live surface: silver, never the neon that
+     marks what is running or winnable */
+  .tip.sealed-note{border-left-color:var(--silver); color:var(--text);}

@@ -27,6 +27,8 @@ import {
   setDayTotal as setDayTotalPure,
   getTimer as getTimerPure,
   timerPhase,
+  sessionSealed,
+  reopenTimer as reopenTimerPure,
   timerElapsedMs,
   startTimer as startTimerPure,
   pauseTimer as pauseTimerPure,
@@ -417,6 +419,7 @@ async function saveProfile() {
 /* ============================= MUTATIONS ============================= */
 async function logSet(exId, value) {
   if (!(value > 0)) return;
+  if (sealedToday(exId)) return;
   const d = todayISO();
   const prevTotal = calcTotal(getSetsFor(exId, d));
   state.setsLog = addSetPure(state.setsLog, d, exId, value);
@@ -484,17 +487,20 @@ async function keepGoingHandler(exId) {
   ensureGlobalTick();
 }
 async function undoLastSetHandler(exId) {
+  if (sealedToday(exId)) return;
   const d = todayISO();
   state.setsLog = undoLastSetPure(state.setsLog, d, exId);
   await persistSets();
   rerender();
 }
 async function removeSetHandler(exId, dateStr, index) {
+  if (sealedToday(exId, dateStr)) return;
   state.setsLog = removeSetAtPure(state.setsLog, dateStr, exId, index);
   await persistSets();
   rerender();
 }
 async function updateSetHandler(exId, dateStr, index, value) {
+  if (sealedToday(exId, dateStr)) return;
   state.setsLog = updateSetAtPure(state.setsLog, dateStr, exId, index, value);
   await persistSets();
   if (state.modal && state.modal.type === 'logger') state.modal.editIndex = null;
@@ -502,12 +508,14 @@ async function updateSetHandler(exId, dateStr, index, value) {
   renderView();
 }
 async function decrementHandler(exId, amount) {
+  if (sealedToday(exId)) return;
   const d = todayISO();
   state.setsLog = decrementLastPure(state.setsLog, d, exId, amount);
   await persistSets();
   rerender();
 }
 async function setTotalHandler(exId, dateStr, rawValue) {
+  if (sealedToday(exId, dateStr)) return;
   const parsed = rawValue === '' || rawValue == null ? null : parseFloat(rawValue);
   const value = (parsed == null || isNaN(parsed) || parsed <= 0) ? null : Math.round(parsed * 100) / 100;
   state.setsLog = setDayTotalPure(state.setsLog, dateStr, exId, value);
@@ -538,6 +546,26 @@ async function giveUpTimerHandler(exId) {
   renderModal();
   renderView();
 }
+/**
+ * Hiding a button is a hint, not a lock. Every mutation that lands on today
+ * asks this first, so a sealed day holds even against a stale node left in the
+ * DOM, a repeated tap racing a re-render, or an edit arriving from Progress.
+ */
+function sealedToday(exId, dateStr) {
+  if (dateStr && dateStr !== todayISO()) return false;
+  return sessionSealed(getTimerPure(state.timersLog, todayISO(), exId));
+}
+
+/** The deliberate way out of a sealed day. Lands paused, keeping the time. */
+async function reopenSessionHandler(exId) {
+  state.timersLog = reopenTimerPure(state.timersLog, todayISO(), exId);
+  await persistTimers();
+  renderModal();
+  renderView();
+  const ex = state.exercises.find((e) => e.id === exId);
+  showToast(`${ex ? ex.name : 'Session'} reopened — clock is paused`);
+}
+
 async function resetTimerHandler(exId) {
   state.timersLog = resetTimerPure(state.timersLog, todayISO(), exId);
   await persistTimers();
@@ -1253,15 +1281,15 @@ function timerBlockHtml(exId, timer) {
   const finishedClock = timer ? formatClock(timer.finishedAt) : null;
   const live = phase === 'running' || phase === 'paused';
 
-  // Nothing to pause, end or reset before the first rep, so idle carries no
-  // controls row at all rather than a row of dead buttons.
-  const controls = phase === 'idle' ? '' : `<div class="timer-controls">
-      ${live ? (phase === 'running'
+  // Nothing to pause, end or reset before the first rep; nothing to touch at
+  // all once the day is sealed. Only a live session carries controls.
+  const controls = live ? `<div class="timer-controls">
+      ${phase === 'running'
         ? `<button class="timer-btn" data-action="pause-timer" data-id="${exId}">${ICONS.pause}Pause</button>`
-        : `<button class="timer-btn" data-action="resume-timer" data-id="${exId}">${ICONS.play}Resume</button>`) : ''}
-      ${live ? `<button class="timer-btn giveup" data-action="giveup-timer" data-id="${exId}">${ICONS.flag}Give up</button>` : ''}
+        : `<button class="timer-btn" data-action="resume-timer" data-id="${exId}">${ICONS.play}Resume</button>`}
+      <button class="timer-btn giveup" data-action="giveup-timer" data-id="${exId}">${ICONS.flag}Give up</button>
       <button class="timer-btn reset" data-action="reset-timer" data-id="${exId}">${ICONS.restore}Reset</button>
-    </div>`;
+    </div>` : '';
 
   return `<div class="timer-block status-${phase}">
     <div class="timer-top">
@@ -1362,6 +1390,7 @@ function modalGuide() {
       has.length && ['The clock', 'Starts on your first rep. Pause any time.'],
       anyTarget && ['Hit the target', 'Take the win, or Keep going.'],
       has.length && ['End early', 'Give up keeps your reps and stops the clock.'],
+      has.length && ['Once it is closed', 'The card locks. Tap Reopen to change it.'],
       anyTarget && ['Rest a day', 'Open the exercise, Take a break. Streak holds.'],
       !has.length && ['Start', 'Add an exercise.'],
     ],
@@ -1451,6 +1480,25 @@ function renderModal() {
   ensureGlobalTick();
 }
 
+/**
+ * Signage for a sealed day, in the slot the "tap any number" note occupies
+ * while the card is live — the place you look before reaching for the pad.
+ *
+ * It carries the one way out. A seal with no escape is a trap: a mis-tapped
+ * "Take the win" or a miscounted set would otherwise be uncorrectable for the
+ * rest of the day, and this app's whole record is built on staying editable.
+ * Reopen is a deliberate second action, not a control you brush past.
+ */
+function sealedNoteHtml(exId, phase) {
+  const line = phase === 'gaveup'
+    ? 'You ended this one early. It is closed for today — nothing here can change.'
+    : 'You took the win. It is closed for today — nothing here can change.';
+  return `<p class="tip sealed-note">
+    <span>${line}</span>
+    <button class="reopen-btn" data-action="reopen-session" data-id="${exId}">Reopen</button>
+  </p>`;
+}
+
 function modalLogger(exId) {
   const ex = state.exercises.find((e) => e.id === exId);
   if (!ex) return '';
@@ -1460,7 +1508,10 @@ function modalLogger(exId) {
   const arr = getSetsFor(exId, today);
   const total = calcTotal(arr);
   const chips = (ex.chips && ex.chips.length === 3) ? ex.chips : DEFAULT_CHIPS;
-  const editIndex = state.modal && state.modal.editIndex != null ? state.modal.editIndex : null;
+  // A closed session is a record, not a workspace: the card still shows and
+  // scrolls exactly as before, but nothing in it can be changed by accident.
+  const sealed = sessionSealed(getTimerPure(state.timersLog, today, exId));
+  const editIndex = state.modal && !sealed && state.modal.editIndex != null ? state.modal.editIndex : null;
   const listItems = arr.map((v, i) => ({ v, i })).reverse().map(({ v, i }) => {
     const isLatest = i === arr.length - 1;
     if (i === editIndex) {
@@ -1473,18 +1524,20 @@ function modalLogger(exId) {
       </div>`;
     }
     return `<div class="set-row">
-      <div class="set-row-left"><span class="set-badge" data-editable-set data-index="${i}" title="Tap to edit">${v}</span>${isLatest ? '<span class="set-latest-tag">Latest</span>' : ''}</div>
-      <button class="set-del" data-action="delete-set" data-id="${exId}" data-date="${today}" data-index="${i}" aria-label="Remove set">${ICONS.trash}</button>
+      <div class="set-row-left"><span class="set-badge"${sealed ? '' : ` data-editable-set data-index="${i}" title="Tap to edit"`}>${v}</span>${isLatest ? '<span class="set-latest-tag">Latest</span>' : ''}</div>
+      ${sealed ? '' : `<button class="set-del" data-action="delete-set" data-id="${exId}" data-date="${today}" data-index="${i}" aria-label="Remove set">${ICONS.trash}</button>`}
     </div>`;
   }).join('');
-  const editingTotal = !!(state.modal && state.modal.editingTotal);
+  const editingTotal = !!(state.modal && !sealed && state.modal.editingTotal);
   const totalDisplay = editingTotal
     ? `<span class="inline-total-edit" data-stop>
          <input type="number" min="0" step="any" id="logger-total-input" class="total-edit-input large" value="${total || ''}" placeholder="0" autofocus>
          <button class="mini-btn" data-action="save-logger-total-inline" data-id="${exId}" data-date="${today}" aria-label="Save">${ICONS.check}</button>
          <button class="mini-btn" data-action="cancel-logger-total-inline" aria-label="Cancel">${ICONS.close}</button>
        </span>`
-    : `<div class="logger-total editable-target" data-editable-logger-total data-id="${exId}" title="Tap to edit total">${total}</div>`;
+    : sealed
+      ? `<div class="logger-total">${total}</div>`
+      : `<div class="logger-total editable-target" data-editable-logger-total data-id="${exId}" title="Tap to edit total">${total}</div>`;
 
   const timer = getTimerPure(state.timersLog, today, exId);
   const timerHtml = timerBlockHtml(exId, timer);
@@ -1504,22 +1557,24 @@ function modalLogger(exId) {
       ${timerHtml}
       <div class="tally-rail logger-tally">${tallyMarks(arr.length)}</div>
 
-      ${state.repMode === 'sub'
-        ? tipHtml('sub-rep', 'Tap any number to subtract it straight away.')
-        : tipHtml('log-rep', 'Tap any number to add it straight away.')}
+      ${sealed
+        ? sealedNoteHtml(exId, timerPhase(getTimerPure(state.timersLog, today, exId)))
+        : (state.repMode === 'sub'
+          ? tipHtml('sub-rep', 'Tap any number to subtract it straight away.')
+          : tipHtml('log-rep', 'Tap any number to add it straight away.'))}
       <div class="rep-lever" role="group" aria-label="Add or subtract reps">
-        <button class="lever-opt ${state.repMode === 'add' ? 'on' : ''}" data-action="rep-mode" data-mode="add">Add</button>
-        <button class="lever-opt sub ${state.repMode === 'sub' ? 'on' : ''}" data-action="rep-mode" data-mode="sub">Subtract</button>
+        <button class="lever-opt ${state.repMode === 'add' ? 'on' : ''}" data-action="rep-mode" data-mode="add" ${sealed ? 'disabled' : ''}>Add</button>
+        <button class="lever-opt sub ${state.repMode === 'sub' ? 'on' : ''}" data-action="rep-mode" data-mode="sub" ${sealed ? 'disabled' : ''}>Subtract</button>
       </div>
       <div class="rep-pad ${state.repMode === 'sub' ? 'subtracting' : ''}">
-        ${REP_PAD.map((n) => `<button class="rep-key" data-action="rep-tap" data-id="${exId}" data-val="${n}" ${state.repMode === 'sub' && !arr.length ? 'disabled' : ''}>${state.repMode === 'sub' ? '−' : '+'}${n}</button>`).join('')}
+        ${REP_PAD.map((n) => `<button class="rep-key" data-action="rep-tap" data-id="${exId}" data-val="${n}" ${sealed || (state.repMode === 'sub' && !arr.length) ? 'disabled' : ''}>${state.repMode === 'sub' ? '−' : '+'}${n}</button>`).join('')}
       </div>
 
       ${(() => {
         const resting = isBreakDay(state.streakOverrides, today, exId);
-        return `<button class="logger-rest ${resting ? 'on' : ''}" data-action="toggle-break" data-id="${exId}" aria-pressed="${resting}">
+        return `<button class="logger-rest ${resting ? 'on' : ''}" data-action="toggle-break" data-id="${exId}" aria-pressed="${resting}" ${sealed ? 'disabled' : ''}>
           <span>${resting ? '🌙 Resting today' : 'Rest today'}</span>
-          <em>${resting ? 'Your streak is safe. Tap to undo.' : 'Counts as rest — your streak keeps going.'}</em>
+          <em>${sealed ? 'Today is already closed.' : (resting ? 'Your streak is safe. Tap to undo.' : 'Counts as rest — your streak keeps going.')}</em>
         </button>`;
       })()}
 
@@ -1841,6 +1896,7 @@ document.addEventListener('click', async (e) => {
     case 'toggle-break': {
       const d = todayISO();
       const id = btn.dataset.id;
+      if (sealedToday(id)) break;
       const was = isBreakDay(state.streakOverrides, d, id);
       state.streakOverrides = setDayOverride(state.streakOverrides, d, id, was ? null : 'break');
       await persistStreakOverrides();
@@ -1996,6 +2052,9 @@ document.addEventListener('click', async (e) => {
       break;
     case 'confirm-giveup':
       await giveUpTimerHandler(btn.dataset.id);
+      break;
+    case 'reopen-session':
+      await reopenSessionHandler(btn.dataset.id);
       break;
     case 'reset-timer':
       if (confirm('Reset today’s timer back to 0:00? This only clears the clock, not your logged reps.')) {

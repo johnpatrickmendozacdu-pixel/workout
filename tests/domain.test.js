@@ -18,6 +18,8 @@ import {
   splitIntoSets,
   getTimer,
   timerPhase,
+  sessionSealed,
+  reopenTimer,
   timerElapsedMs,
   startTimer,
   pauseTimer,
@@ -202,6 +204,36 @@ describe('workout timer', () => {
 
   it('getTimer returns null when nothing has been logged yet', () => {
     expect(getTimer({}, TODAY, 'a')).toBeNull();
+  });
+
+  it('a session is sealed only once it has been deliberately closed', () => {
+    let timers = startTimer({}, TODAY, 'a', 1000);
+    expect(sessionSealed(getTimer(timers, TODAY, 'a'))).toBe(false);
+    // crossing the target pauses but does NOT seal — "Keep going" has to stay open
+    timers = pauseTimer(timers, TODAY, 'a', 6000);
+    expect(sessionSealed(getTimer(timers, TODAY, 'a'))).toBe(false);
+    expect(sessionSealed(null)).toBe(false);
+
+    expect(sessionSealed(getTimer(finishTimer(timers, TODAY, 'a', 7000, 'completed'), TODAY, 'a'))).toBe(true);
+    expect(sessionSealed(getTimer(finishTimer(timers, TODAY, 'a', 7000, 'gaveup'), TODAY, 'a'))).toBe(true);
+  });
+
+  it('reopenTimer unseals to paused, keeping the time already earned', () => {
+    let timers = startTimer({}, TODAY, 'a', 1000);
+    timers = finishTimer(timers, TODAY, 'a', 21000, 'completed');
+    timers = reopenTimer(timers, TODAY, 'a');
+    expect(timers[TODAY].a).toMatchObject({ status: 'paused', elapsedMs: 20000, runStartedAt: null });
+    expect(timers[TODAY].a.finishedAt).toBeNull();
+    expect(sessionSealed(getTimer(timers, TODAY, 'a'))).toBe(false);
+    // and it can be resumed from there without losing the 20s
+    timers = resumeTimer(timers, TODAY, 'a', 30000);
+    expect(timerElapsedMs(getTimer(timers, TODAY, 'a'), 35000)).toBe(25000);
+  });
+
+  it('reopenTimer leaves a live or missing timer alone', () => {
+    const running = startTimer({}, TODAY, 'a', 1000);
+    expect(reopenTimer(running, TODAY, 'a')).toBe(running);
+    expect(reopenTimer({}, TODAY, 'a')).toEqual({});
   });
 
   it('timerPhase names the not-yet-started case instead of leaving it null', () => {

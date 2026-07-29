@@ -437,6 +437,31 @@ export function timerPhase(timer) {
   return timer ? timer.status : 'idle';
 }
 
+/**
+ * A session is sealed once you deliberately closed it — Take the win, or Log
+ * what I did. Crossing the target is NOT enough: that pauses the clock and
+ * offers Keep going, which has to stay open or you could never push past a
+ * target. Sealed days are read-only in the logger.
+ */
+export function sessionSealed(timer) {
+  const phase = timerPhase(timer);
+  return phase === 'completed' || phase === 'gaveup';
+}
+
+/**
+ * Deliberate way out of a sealed day, for the mis-tap and the miscount. Lands
+ * paused rather than running, keeping every second already earned: reopening
+ * is not the same as still working, and the clock should not start moving on
+ * its own behind a decision you may be about to undo.
+ */
+export function reopenTimer(timersLog, dateStr, exId) {
+  const t = getTimer(timersLog, dateStr, exId);
+  if (!sessionSealed(t)) return timersLog;
+  return setTimerRecord(timersLog, dateStr, exId, {
+    status: 'paused', elapsedMs: t.elapsedMs, runStartedAt: null, finishedAt: null,
+  });
+}
+
 function setTimerRecord(timersLog, dateStr, exId, record) {
   const next = { ...timersLog };
   next[dateStr] = { ...(next[dateStr] || {}), [exId]: record };

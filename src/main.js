@@ -797,7 +797,7 @@ function exerciseCard(ex, s, opts = {}) {
     <div class="strip" aria-label="Last seven days">${strip}</div>
     <div class="ex-stat-nums">
       <div class="streak-now">
-        <b>${s.currentStreak}</b>
+        <b data-len="${String(s.currentStreak).length}">${s.currentStreak}</b>
         <span>day streak${s.breakDays ? ` · ${s.breakDays} rest` : ''}</span>
       </div>
       <div class="streak-best">best ${s.bestStreak}</div>
@@ -1480,6 +1480,14 @@ function modalLogger(exId) {
       <div class="rep-pad ${state.repMode === 'sub' ? 'subtracting' : ''}">
         ${REP_PAD.map((n) => `<button class="rep-key" data-action="rep-tap" data-id="${exId}" data-val="${n}" ${state.repMode === 'sub' && !arr.length ? 'disabled' : ''}>${state.repMode === 'sub' ? '−' : '+'}${n}</button>`).join('')}
       </div>
+
+      ${(() => {
+        const resting = isBreakDay(state.streakOverrides, today, exId);
+        return `<button class="logger-rest ${resting ? 'on' : ''}" data-action="toggle-break" data-id="${exId}" aria-pressed="${resting}">
+          <span>${resting ? '🌙 Resting today' : 'Rest this today'}</span>
+          <em>${resting ? 'Streak kept. Tap to undo.' : 'Keeps this streak alive'}</em>
+        </button>`;
+      })()}
 
       <div class="set-list">
         <div class="set-list-head"><span>Set history</span><span>${arr.length} set${arr.length === 1 ? '' : 's'}</span></div>

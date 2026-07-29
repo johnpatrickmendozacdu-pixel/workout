@@ -969,7 +969,6 @@ function renderTopbar() {
           <div class="streak-pill" title="Longest run currently going">${ICONS.flame}${streak}</div>
           ${helpChipHtml()}
           ${railButtonsHtml()}
-          ${versionChipHtml()}
           ${avatarChipHtml()}
         </div>
       </div>`;
@@ -981,7 +980,6 @@ function renderTopbar() {
           <button class="add-btn" data-action="open-add-exercise">${ICONS.plus} Add</button>
           ${helpChipHtml()}
           ${railButtonsHtml()}
-          ${versionChipHtml()}
           ${avatarChipHtml()}
         </div>
       </div>`;
@@ -993,7 +991,6 @@ function renderTopbar() {
           <button class="icon-btn" data-action="open-data">${ICONS.gear}</button>
           ${helpChipHtml()}
           ${railButtonsHtml()}
-          ${versionChipHtml()}
           ${avatarChipHtml()}
         </div>
       </div>`;

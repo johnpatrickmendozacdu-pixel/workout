@@ -1,23 +1,23 @@
 :root{
-    /* Chalk & Slate — a tally board in a garage gym.
-       Colour carries meaning, never brand: all chrome is slate and chalk,
-       and hue only appears when something has actually been achieved. */
-    --bg:#0E1417;
-    --bg-elevated:#131C20;
-    --bg-card:#161E22;
-    --bg-card-hover:#1C262B;
-    --border:rgba(234,240,238,0.09);
-    --border-strong:rgba(234,240,238,0.18);
-    --text:#EAF0EE;            /* chalk — the count is the brightest thing */
-    --text-dim:#98A7A8;
-    --text-faint:#6E7E80;
-    --accent:#EAF0EE;          /* chalk, not a brand colour */
-    --accent-ink:#0E1417;
-    --accent-2:#6E9B7A;
-    --success:#6E9B7A;         /* moss — target met */
-    --success-ink:#0E1417;
-    --record:#C4552F;          /* clay — records only */
-    --danger:#A8432B;
+    /* Deep-sea navy with a signal green. The green is the only saturated
+       colour in the system, so it always means something: a target met, the
+       section you're in, the action to take. Everything else is navy and haze. */
+    --bg:#0A1922;
+    --bg-elevated:#0F2431;
+    --bg-card:#12293A;
+    --bg-card-hover:#173447;
+    --border:rgba(234,242,244,0.09);
+    --border-strong:rgba(234,242,244,0.20);
+    --text:#EAF2F4;
+    --text-dim:#8FA7B4;
+    --text-faint:#809AA7;   /* lifted to clear 4.5:1 on the navy */
+    --accent:#3EE07F;          /* signal green */
+    --accent-ink:#05131B;      /* text on green */
+    --accent-2:#3EE07F;
+    --success:#3EE07F;         /* a met target IS the signal */
+    --success-ink:#05131B;
+    --record:#FF7A66;          /* coral, records only */
+    --danger:#E2593F;
     --radius-lg:20px;
     --radius-md:13px;
     --radius-sm:9px;
@@ -43,7 +43,7 @@
     max-width:460px; margin:0 auto; min-height:100dvh; display:flex; flex-direction:column;
     transition:max-width .2s ease;
     position:relative; background:
-      radial-gradient(120% 60% at 50% 0%, rgba(234,240,238,0.045), transparent 62%), var(--bg);
+      radial-gradient(130% 60% at 50% 0%, rgba(62,224,127,0.06), transparent 64%), var(--bg);
   }
 
   /* ---------- topbar ---------- */
@@ -846,3 +846,50 @@
   .logger-rest em{display:block; font-style:normal; font-size:11.5px; color:var(--text-faint); margin-top:2px;}
   .logger-rest.on{border-style:solid; border-color:rgba(110,155,122,0.45); background:rgba(110,155,122,0.07);}
   .logger-rest.on span{color:var(--success);}
+
+  /* ============ deep-sea palette: where the green is spent ============
+     Green marks meaning only — a met day, the section you're in, the action
+     to take. Numbers and headings stay white so the green never competes
+     with the figure you actually came to read. */
+
+  /* micro-labels become tracked mono, the way the reference sets them */
+  .section-label, .rail-head h2, .guide-sec h3, .history-toggle, .app-title{
+    font-family:var(--font-mono); color:var(--accent); letter-spacing:0.16em; font-weight:600;
+  }
+  .history-toggle{color:var(--accent);}
+  .history-toggle svg{color:var(--text-faint);}
+  .set-list-head{font-family:var(--font-mono); letter-spacing:0.12em;}
+
+  /* a hit day is the signal colour; rest and misses recede into the navy */
+  .dot.hit{background:var(--accent); border-color:var(--accent);}
+  .dot.break{background:var(--text-faint); border-color:var(--text-faint); opacity:.9;}
+  .dot.today{box-shadow:0 0 0 3px rgba(62,224,127,0.16);}
+
+  /* the streak number stays white — green would fight it for attention */
+  .streak-now b{color:var(--text);}
+  .day-dot.complete{background:var(--accent);}
+
+  /* primary actions carry the green, with dark ink for contrast */
+  .nav-btn.active{background:var(--accent); color:var(--accent-ink);}
+  .nav-btn.active svg{stroke:var(--accent-ink);}
+  .primary-btn, .add-btn{background:var(--accent); color:var(--accent-ink);}
+  .avatar-chip.signed-in{background:var(--accent); color:var(--accent-ink); border-color:var(--accent);}
+  .lever-opt.on{background:var(--accent); color:var(--accent-ink);}
+  .sched-mode.on{background:var(--accent); color:var(--accent-ink); border-color:var(--accent);}
+  .sched-day.on{background:var(--accent); color:var(--accent-ink); border-color:var(--accent);}
+  .guide-sec h3 em{background:var(--accent); color:var(--accent-ink); font-family:var(--font-body); letter-spacing:0;}
+  .rest-toggle.on{background:var(--accent); color:var(--accent-ink); border-color:var(--accent);}
+  .version-chip.latest{color:var(--accent);}
+  .streak-pill{color:var(--text); border-color:var(--border-strong);}
+  .streak-pill svg path{fill:var(--accent);}
+
+  /* completion reads green across the app */
+  .ex-card.complete{border-color:rgba(62,224,127,0.4); background:rgba(62,224,127,0.06);}
+  .ex-card.complete .ex-name{color:var(--accent);}
+  .ex-card.complete .tally-bar, .ex-card.complete .tally-strike{background:var(--accent);}
+  .timer-block.status-completed{border-color:rgba(62,224,127,0.4);}
+  .logger-rest.on{border-color:rgba(62,224,127,0.45); background:rgba(62,224,127,0.07);}
+  .logger-rest.on span{color:var(--accent);}
+  .ex-stat.is-resting .dot.today{box-shadow:0 0 0 3px rgba(62,224,127,0.2);}
+  .break-card.taken{border-color:rgba(62,224,127,0.45); background:rgba(62,224,127,0.06);}
+  .break-card.taken b{color:var(--accent);}

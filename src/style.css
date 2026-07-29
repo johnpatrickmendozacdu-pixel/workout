@@ -53,7 +53,7 @@
   }
   .topbar-row{display:flex; align-items:center; justify-content:space-between; gap:12px;}
   .app-title{font-size:13px; letter-spacing:0.14em; text-transform:uppercase; color:var(--text-faint); font-weight:600;}
-  .date-heading{font-size:26px; font-weight:800; margin:2px 0 0; letter-spacing:-0.01em;}
+  .date-heading{font-size:24px; white-space:nowrap; font-weight:800; margin:2px 0 0; letter-spacing:-0.01em;}
   .streak-pill{
     display:flex; align-items:center; gap:6px; background:var(--bg-card); border:1px solid var(--border);
     padding:8px 12px; border-radius:999px; font-family:var(--font-mono); font-weight:600; font-size:14px;
@@ -730,6 +730,7 @@
   .streak-row-nums em{font-style:normal; font-size:10px; text-transform:uppercase; letter-spacing:0.08em; color:var(--text-faint); margin-top:3px;}
   .streak-row-nums.best b{color:var(--text-dim); font-size:15px;}
   .stat-grid.one{display:block; margin-top:14px;}
+  .stat-card{border:none; background:transparent; padding:0;}
 
   /* ---------- break picker ---------- */
   .break-list{display:flex; flex-direction:column; gap:8px;}
@@ -747,3 +748,81 @@
   .break-row-body em{display:block; font-style:normal; font-size:11.5px; color:var(--text-faint); margin-top:2px;}
   .break-row-state{font-size:12px; font-weight:700; color:var(--text-dim); flex-shrink:0;}
   .break-row.on .break-row-state{color:var(--success);}
+
+  /* ============ Progress: one card per exercise ============
+     Light is the scarce resource here. It is spent on three things only —
+     the current streak number, a filled day dot, and the active nav pill.
+     Everything else stays in the slate range so those three read instantly. */
+  .ex-stat{padding:2px 2px 22px; margin-bottom:4px;}
+  .ex-stat + .ex-stat{border-top:1px solid var(--border); padding-top:20px;}
+  .ex-stat header{display:flex; align-items:center; gap:10px; margin-bottom:14px;}
+  .ex-stat-icon{font-size:19px; flex-shrink:0;}
+  .ex-stat h3{flex:1; min-width:0; margin:0; font-size:15px; font-weight:700; color:var(--text-dim);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+
+  .strip{display:flex; gap:7px; margin-bottom:16px;}
+  .dot{
+    flex:1; height:9px; border-radius:999px; background:transparent;
+    border:1.5px solid var(--border-strong); display:block;
+  }
+  .dot.hit{background:var(--text); border-color:var(--text);}          /* light spent */
+  .dot.break{background:var(--text-faint); border-color:var(--text-faint); opacity:.85;}
+  .dot.miss{background:transparent; border-color:var(--border-strong);}
+  .dot.rest, .dot.none{background:transparent; border-color:var(--border); opacity:.5;}
+  .dot.today{box-shadow:0 0 0 3px rgba(234,240,238,0.08);}
+
+  .ex-stat-nums{display:flex; align-items:baseline; gap:12px;}
+  .streak-now{display:flex; align-items:baseline; gap:9px; flex:1;}
+  .streak-now b{
+    font-family:var(--font-num); font-size:38px; font-weight:700; letter-spacing:-0.05em;
+    line-height:1; color:var(--text);                                   /* light spent */
+  }
+  .streak-now span{font-size:12.5px; color:var(--text-faint);}
+  .streak-best{font-size:12px; color:var(--text-faint); font-family:var(--font-num); letter-spacing:-0.02em;}
+  .ex-stat.is-resting .dot.today{box-shadow:0 0 0 3px rgba(110,155,122,0.18);}
+
+  .rest-toggle{
+    min-height:44px; padding:0 16px; border-radius:999px; flex-shrink:0;
+    background:transparent; border:1px solid var(--border-strong); color:var(--text-dim);
+    font-size:12.5px; font-weight:700; transition:background .16s ease, color .16s ease, transform .09s ease;
+  }
+  .rest-toggle:active{transform:scale(0.94);}
+  .rest-toggle.on{background:var(--success); border-color:var(--success); color:var(--success-ink);}
+
+  /* History folds away until asked for */
+  .history-toggle{
+    width:100%; min-height:52px; display:flex; align-items:center; justify-content:space-between;
+    margin-top:10px; padding:0 4px; background:none; border:none; border-top:1px solid var(--border);
+    color:var(--text-dim); font-size:12px; font-weight:700; text-transform:uppercase; letter-spacing:0.1em;
+  }
+  .history-toggle svg{transition:transform .2s ease; color:var(--text-faint);}
+  .history-toggle.open svg{transform:rotate(90deg);}
+  .history-body{animation:fadeIn .18s ease;}
+
+  /* the picker shows the same card, so it needs the same room */
+  .break-list .ex-stat{padding-bottom:18px;}
+  .break-list .ex-stat + .ex-stat{padding-top:18px;}
+
+  /* guide: what on the left, how beneath — half the words, twice the scannability */
+  .guide-sec dl{margin:0; display:flex; flex-direction:column; gap:11px;}
+  .guide-sec dt{font-size:13.5px; font-weight:700; color:var(--text);}
+  .guide-sec dd{margin:2px 0 0; font-size:13px; line-height:1.45; color:var(--text-dim);}
+  .guide-sec h3 em{background:var(--accent); color:var(--accent-ink);}
+
+  /* ---------- touch targets ----------
+     Several controls are visually small on purpose (a 44px avatar would crowd
+     the title). Their hit area is extended past the artwork instead, so the
+     design stays tight while every target clears 44x44. */
+  .help-chip, .rail-btn, .version-chip, .avatar-chip, .icon-btn{position:relative;}
+  .help-chip::after, .rail-btn::after, .version-chip::after,
+  .avatar-chip::after, .icon-btn::after{
+    content:''; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+    width:44px; height:44px; border-radius:50%;
+  }
+  .day-row-main{min-height:44px;}
+  .day-dot-btn{
+    position:relative; width:34px; height:44px; display:flex; align-items:center; justify-content:center;
+    background:none; border:none; flex-shrink:0;
+  }
+  .day-dot-btn::after{content:''; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:44px; height:44px;}
+  .history-toggle{min-height:52px;}

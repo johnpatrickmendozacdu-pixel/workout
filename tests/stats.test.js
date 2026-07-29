@@ -7,6 +7,7 @@ import {
   exerciseStats,
   formatDuration,
   formatCount,
+  recentDayStates,
 } from '../src/domain/stats.js';
 
 const TODAY = '2026-07-28';
@@ -160,5 +161,43 @@ describe('formatCount', () => {
     expect(formatCount(9999)).toBe('9,999');
     expect(formatCount(12400)).toBe('12.4k');
     expect(formatCount(1250000)).toBe('1.3M');
+  });
+});
+
+
+describe('recentDayStates (the 7-day strip)', () => {
+  const e = ex({ createdDate: '2026-07-24', targetHistory: [{ effectiveDate: '2026-07-24', target: 100 }] });
+  const log = {
+    '2026-07-26': { a: [100] },   // hit
+    '2026-07-27': { a: [40] },    // miss
+    '2026-07-28': { a: [100] },   // hit
+  };
+  const overrides = { '2026-07-25': { a: 'break' } };
+
+  it('classifies hit, miss, break and pre-history days', () => {
+    const days = recentDayStates(e, log, overrides, 7, '2026-07-28');
+    const byDate = Object.fromEntries(days.map((d) => [d.date, d.state]));
+    expect(byDate['2026-07-28']).toBe('hit');
+    expect(byDate['2026-07-27']).toBe('miss');
+    expect(byDate['2026-07-26']).toBe('hit');
+    expect(byDate['2026-07-25']).toBe('break');
+    expect(byDate['2026-07-23']).toBe('none');   // before it existed
+  });
+
+  it('returns exactly n days, oldest first, ending today', () => {
+    const days = recentDayStates(e, log, overrides, 7, '2026-07-28');
+    expect(days).toHaveLength(7);
+    expect(days[0].date).toBe('2026-07-22');   // seven days back, inclusive
+    expect(days[6].date).toBe('2026-07-28');
+    expect(days[6].isToday).toBe(true);
+  });
+
+  it('marks an unscheduled day as rest, not a miss', () => {
+    const monOnly = ex({ createdDate: '2026-07-22', schedule: [1], targetHistory: [{ effectiveDate: '2026-07-22', target: 100 }] });
+    const days = recentDayStates(monOnly, {}, {}, 7, '2026-07-28');
+    const tue = days.find((d) => d.date === '2026-07-28');
+    const mon = days.find((d) => d.date === '2026-07-27');
+    expect(tue.state).toBe('rest');
+    expect(mon.state).toBe('miss');
   });
 });

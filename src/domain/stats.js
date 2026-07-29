@@ -76,6 +76,39 @@ export function streakInfo(ex, setsLog, todayOverride, overrides) {
   return { best, current, tracked, breaks };
 }
 
+/**
+ * The last `n` days for one exercise, oldest first, each classified for the
+ * strip on its card. Derived from the same logs as every other figure, so the
+ * dots can never disagree with the streak number printed beside them.
+ *
+ *   hit    — target met that day
+ *   break  — claimed as rest, keeps the run alive
+ *   miss   — was due, not met
+ *   rest   — not scheduled that day, so nothing was due
+ *   none   — before the exercise existed, or it had no target
+ */
+export function recentDayStates(ex, setsLog, overrides, n = 7, todayOverride) {
+  const today = todayOverride || todayISO();
+  const out = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const date = addDays(today, -i);
+    let state;
+    if (ex.createdDate && date < ex.createdDate) state = 'none';
+    else if (!isScheduledOn(ex, date)) state = 'rest';
+    else if (isBreakDay(overrides, date, ex.id)) state = 'break';
+    else {
+      const target = getEffectiveTarget(ex, date);
+      if (!target || target <= 0) state = 'none';
+      else {
+        const total = calcTotal((setsLog[date] && setsLog[date][ex.id]) || []);
+        state = total >= target ? 'hit' : 'miss';
+      }
+    }
+    out.push({ date, state, isToday: date === today });
+  }
+  return out;
+}
+
 /** Month + year of the first logged rep, e.g. "Jul 2026" — the "since" that
  *  gives the lifetime total a period. */
 export function lifetimeSince(exId, setsLog) {

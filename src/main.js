@@ -40,7 +40,7 @@ import {
   mergeBackup,
 } from './domain/domain.js';
 import * as gsync from './sync/googleSync.js';
-import { allStats, exerciseStats, formatDuration, formatCount, formatClock } from './domain/stats.js';
+import { allStats, exerciseStats, recentDayStates, formatDuration, formatCount, formatClock } from './domain/stats.js';
 
 const DEFAULT_CHIPS = [5, 10, 12];
 // Every number is on screen — no hunting, no typing. One tap applies it in
@@ -68,6 +68,7 @@ const state = {
   editingDayTarget: null,
   editingTopSet: null,
   editingDayTotal: null,
+  historyOpen: false,
   repMode: 'add',   // 'add' | 'sub' — the pad lever
   version: { local: typeof __BUILD_ID__ === 'string' ? __BUILD_ID__ : 'dev', status: 'unknown' },
   panel: null,          // 'stats' — mobile drawer only
@@ -773,6 +774,37 @@ async function saveTopSetHandler(exId, rawValue) {
   showToast(value == null ? 'Top set back to your logged data' : `Top set set to ${value}. Nothing else changed.`);
 }
 
+/**
+ * One exercise, one card — used on Progress and inside the break picker, so a
+ * resting exercise reads as the same object in a different state rather than a
+ * second design. The strip is CSS dots over recentDayStates, so it is the same
+ * derived data as the streak number printed beside it and cannot disagree.
+ */
+function exerciseCard(ex, s, opts = {}) {
+  const days = recentDayStates(ex, state.setsLog, state.streakOverrides, 7);
+  const strip = days.map((d) => `<i class="dot ${d.state}${d.isToday ? ' today' : ''}" title="${escapeHtml(formatDisplayDate(d.date, { weekday: 'short', day: 'numeric' }))}"></i>`).join('');
+
+  const action = opts.resting !== undefined
+    ? `<button class="rest-toggle ${opts.resting ? 'on' : ''}" data-action="toggle-break" data-id="${ex.id}" aria-pressed="${opts.resting}">${opts.resting ? 'Resting' : 'Rest'}</button>`
+    : '';
+
+  return `<article class="ex-stat ${opts.resting ? 'is-resting' : ''}">
+    <header>
+      <span class="ex-stat-icon">${escapeHtml(ex.icon)}</span>
+      <h3>${escapeHtml(ex.name)}</h3>
+      ${action}
+    </header>
+    <div class="strip" aria-label="Last seven days">${strip}</div>
+    <div class="ex-stat-nums">
+      <div class="streak-now">
+        <b>${s.currentStreak}</b>
+        <span>day streak${s.breakDays ? ` · ${s.breakDays} rest` : ''}</span>
+      </div>
+      <div class="streak-best">best ${s.bestStreak}</div>
+    </div>
+  </article>`;
+}
+
 /* ============================= SIDE PANELS ============================= */
 /**
  * Lifetime dashboard. Stats are derived on render from the logs, so they are
@@ -934,7 +966,7 @@ function renderTopbar() {
           <div class="date-heading">${formatDisplayDate(todayISO())}</div>
         </div>
         <div class="topbar-right">
-          <div class="streak-pill">${ICONS.flame}${streak}${si.breaks ? `<em class="pill-breaks">${si.breaks}\u00a0🌙</em>` : ''}</div>
+          <div class="streak-pill" title="Longest run currently going">${ICONS.flame}${streak}</div>
           ${helpChipHtml()}
           ${railButtonsHtml()}
           ${versionChipHtml()}
@@ -1120,78 +1152,72 @@ function renderDayTargetPart(dt, dateStr, isToday) {
 }
 
 function viewProgress() {
-  const weekly = calcWeeklyCompletion(state.exercises, state.setsLog, null, state.streakOverrides);
+  const today = todayISO();
   const activeEx = state.exercises.filter((e) => e.active && !e.archived).sort((a, b) => a.order - b.order);
   const stats = allStats(activeEx, state.setsLog, state.timersLog, null, state.streakOverrides);
 
-  // Streaks belong to an exercise, so there is no single number here to show.
-  let html = `<div class="section-label">Streaks</div>`;
-  html += activeEx.length
-    ? activeEx.map((ex) => {
-        const s = stats[ex.id];
-        return `<div class="streak-row">
-          <span class="streak-row-icon">${escapeHtml(ex.icon)}</span>
-          <span class="streak-row-name">${escapeHtml(ex.name)}</span>
-          <span class="streak-row-nums">
-            <b>${s.currentStreak}</b><em>now${s.breakDays ? ` · ${s.breakDays}\u00a0🌙` : ''}</em>
-          </span>
-          <span class="streak-row-nums best">
-            <b>${s.bestStreak}</b><em>best</em>
-          </span>
-        </div>`;
-      }).join('')
+  let html = activeEx.length
+    ? activeEx.map((ex) => exerciseCard(ex, stats[ex.id])).join('')
     : `<p class="rail-empty">Add an exercise to start a streak.</p>`;
 
-  html += `<div class="stat-grid one">
-    <div class="stat-card"><div class="stat-num">${weekly === null ? '—' : weekly + '%'}</div><div class="stat-label">Days completed this week</div></div>
-  </div>`;
+  // History stays folded away — it is for looking something up, not for
+  // reading every time you open the screen.
+  const open = state.historyOpen;
+  html += `<button class="history-toggle ${open ? 'open' : ''}" data-action="toggle-history" aria-expanded="${open}">
+    <span>History</span>${ICONS.chevron}
+  </button>`;
 
-  const withHistory = state.exercises.filter((ex) => bestDayForExercise(ex, state.setsLog));
-  if (withHistory.length) {
-    html += `<div class="section-label">Best day</div>`;
-    withHistory.forEach((ex) => {
-      const best = bestDayForExercise(ex, state.setsLog);
-      html += `<div class="best-row">
-        <div class="best-left"><span>${escapeHtml(ex.icon)}</span><span>${escapeHtml(ex.name)}</span></div>
-        <div style="text-align:right"><div class="best-num">${best.total} ${escapeHtml(ex.unit)}</div><div class="best-date">${formatDisplayDate(best.date, { month: 'short', day: 'numeric' })}</div></div>
+  if (open) {
+    html += '<div class="history-body">';
+
+    const withHistory = activeEx.filter((ex) => bestDayForExercise(ex, state.setsLog));
+    if (withHistory.length) {
+      html += `<div class="section-label">Best day</div>`;
+      withHistory.forEach((ex) => {
+        const best = bestDayForExercise(ex, state.setsLog);
+        html += `<div class="best-row">
+          <div class="best-left"><span>${escapeHtml(ex.icon)}</span><span>${escapeHtml(ex.name)}</span></div>
+          <div style="text-align:right"><div class="best-num">${best.total} ${escapeHtml(ex.unit)}</div><div class="best-date">${formatDisplayDate(best.date, { month: 'short', day: 'numeric' })}</div></div>
+        </div>`;
+      });
+    }
+
+    html += `<div class="section-label">Recent days</div>`;
+    for (let i = 0; i < 14; i++) {
+      const d = addDays(today, -i);
+      const dstats = calcDayStats(state.exercises, state.setsLog, d, state.streakOverrides);
+      const dotClass = dstats.isBreak ? 'break' : (dstats.targetedCount === 0 && !dstats.overridden ? 'none' : (dstats.allComplete ? 'complete' : 'incomplete'));
+      const expanded = state.expandedDay === d;
+      html += `<div class="day-row">
+        <div class="day-row-head">
+          <button class="day-dot-btn" data-action="toggle-day-override" data-date="${d}" aria-label="Toggle whether this day counts">
+            <span class="day-dot ${dotClass}"></span>
+          </button>
+          <button class="day-row-main" data-action="toggle-day" data-date="${d}">
+            <span class="day-label">${i === 0 ? 'Today' : formatDisplayDate(d)}</span>
+            <span class="day-frac">${dstats.isBreak ? 'Rest' : (dstats.targetedCount > 0 ? `${dstats.completedCount}/${dstats.targetedCount}` : '—')}</span>
+          </button>
+        </div>
+        ${expanded ? `<div class="day-detail">${
+          dstats.details.length === 0 ? '<div>Nothing scheduled.</div>' :
+          dstats.details.map((dt) => {
+            const t = getTimerPure(state.timersLog, d, dt.ex.id);
+            const timeStr = t ? ` · ${formatElapsed(timerElapsedMs(t, Date.now()))}` : '';
+            const totalPart = state.editingDayTotal === `${d}|${dt.ex.id}`
+              ? `<span class="inline-target-edit" data-stop>
+                  <input type="number" min="0" step="any" id="day-total-input-${dt.ex.id}" class="target-edit-input" value="${dt.total || ''}" placeholder="0">
+                  <button class="mini-btn" data-action="save-day-total" data-id="${dt.ex.id}" data-date="${d}" aria-label="Save">${ICONS.check}</button>
+                  <button class="mini-btn" data-action="cancel-day-total" aria-label="Cancel">${ICONS.close}</button>
+                </span>`
+              : `<button class="day-num total" data-editable-day-total data-id="${dt.ex.id}" data-date="${d}" aria-label="Edit total for this day">${dt.total}</button>`;
+            return `<div><span>${escapeHtml(dt.ex.icon)} ${escapeHtml(dt.ex.name)}${dt.isBreak ? ' 🌙' : ''}</span><span>${totalPart}${renderDayTargetPart(dt, d, i === 0)} ${escapeHtml(dt.ex.unit)}${timeStr}</span></div>`;
+          }).join('')
+        }</div>` : ''}
       </div>`;
-    });
+    }
+    html += '</div>';
   }
 
-  html += `<div class="section-label">Recent days</div>`;
-  const today = todayISO();
-  for (let i = 0; i < 14; i++) {
-    const d = addDays(today, -i);
-    const stats = calcDayStats(state.exercises, state.setsLog, d, state.streakOverrides);
-    const dotClass = stats.isBreak ? 'break' : (stats.targetedCount === 0 && !stats.overridden ? 'none' : (stats.allComplete ? 'complete' : 'incomplete'));
-    const expanded = state.expandedDay === d;
-    html += `<div class="day-row">
-      <div class="day-row-head">
-        <button class="day-dot-btn" data-action="toggle-day-override" data-date="${d}" aria-label="Toggle streak day" title="Tap to mark this day as counting (or not) toward your streak">
-          <span class="day-dot ${dotClass} ${stats.overridden ? 'overridden' : ''}"></span>
-        </button>
-        <button class="day-row-main" data-action="toggle-day" data-date="${d}">
-          <span class="day-label">${i === 0 ? 'Today' : formatDisplayDate(d)}</span>
-          <span class="day-frac">${stats.isBreak ? 'Rest' : (stats.targetedCount > 0 ? `${stats.completedCount}/${stats.targetedCount}` : '—')}</span>
-        </button>
-      </div>
-      ${expanded ? `<div class="day-detail">${
-        stats.details.length === 0 ? '<div>No exercises logged.</div>' :
-        stats.details.map((dt) => {
-          const t = getTimerPure(state.timersLog, d, dt.ex.id);
-          const timeStr = t ? ` · ${formatElapsed(timerElapsedMs(t, Date.now()))}` : '';
-          const totalPart = state.editingDayTotal === `${d}|${dt.ex.id}`
-            ? `<span class="inline-target-edit" data-stop>
-                <input type="number" min="0" step="any" id="day-total-input-${dt.ex.id}" class="target-edit-input" value="${dt.total || ''}" placeholder="0">
-                <button class="mini-btn" data-action="save-day-total" data-id="${dt.ex.id}" data-date="${d}" aria-label="Save">${ICONS.check}</button>
-                <button class="mini-btn" data-action="cancel-day-total" aria-label="Cancel">${ICONS.close}</button>
-              </span>`
-            : `<button class="day-num total" data-editable-day-total data-id="${dt.ex.id}" data-date="${d}" aria-label="Edit total for this day">${dt.total}</button>`;
-          return `<div><span>${escapeHtml(dt.ex.icon)} ${escapeHtml(dt.ex.name)}</span><span>${totalPart}${renderDayTargetPart(dt, d, i === 0)} ${escapeHtml(dt.ex.unit)}${timeStr}</span></div>`;
-        }).join('')
-      }</div>` : ''}
-    </div>`;
-  }
   return html;
 }
 
@@ -1264,9 +1290,10 @@ function setBodyScrollLock(locked) {
 }
 
 /**
- * A guide that only tells you what applies right now. Entries are filtered by
- * what actually exists in your data, and the screen you're on is listed first
- * and marked — so it reads as "what can I do here", not a manual.
+ * A guide that only tells you what applies right now: the screen you're on
+ * comes first and is marked, and entries that don't match your data are
+ * dropped. Each line names the real control, so it reads as a map of what you
+ * can press rather than prose about features.
  */
 function modalGuide() {
   const has = state.exercises.filter((e) => e.active && !e.archived);
@@ -1276,26 +1303,26 @@ function modalGuide() {
 
   const sections = [
     { view: 'today', title: 'Today', items: [
-      has.length && 'Tap an exercise to open the logger.',
-      has.length && 'In the logger, tap any number to add it instantly. Flip the lever to Subtract to take reps off.',
-      has.length && 'The clock starts on your first set and keeps running while you move around the app.',
-      anyTarget && 'Hit your target and you choose: take the win, or keep going with the clock still running.',
-      anyTarget && 'Need a rest day? Take a break keeps your streak alive and marks the day as rest.',
-      anySchedule && 'Exercises not scheduled for today appear under Resting today.',
-      !has.length && 'Add your first exercise to start logging.',
+      has.length && ['Log reps', 'Tap the exercise, then any number on the pad.'],
+      has.length && ['Take reps off', 'Flip the lever to Subtract, then tap a number.'],
+      has.length && ['Time a session', 'Starts on your first set. Keeps running anywhere in the app.'],
+      anyTarget && ['Hit the target', 'Take the win to bank it, or Keep going to carry on.'],
+      anyTarget && ['Rest a day', 'Take a break, pick the exercise. Its streak survives.'],
+      anySchedule && ['Days off', 'Unscheduled exercises sit under Resting today.'],
+      !has.length && ['Start', 'Add an exercise to begin.'],
     ] },
     { view: 'plan', title: 'Plan', items: [
-      'Tap any exercise to edit it — name, icon, unit, target and schedule.',
-      'Schedule is either every day or the weekdays you pick. A rest day never counts as missed.',
-      'Quick-add buttons set the three values you reach for most.',
-      has.length && 'Archive keeps history without cluttering Today. Delete removes it for good.',
+      ['Edit anything', 'Tap the exercise. Name, icon, unit, target, schedule.'],
+      ['Set the days', 'Every day, or pick weekdays. A day off never counts as missed.'],
+      ['Change the pad', 'Quick-add sets the three values you reach for most.'],
+      has.length && ['Retire one', 'Archive keeps its history. Delete removes it.'],
     ] },
     { view: 'progress', title: 'Progress', items: [
-      'Top set is your best single set. Max is your biggest day. They answer different questions.',
-      anyHistory && 'Tap a day to expand it, then tap either number to correct that day\u2019s total or its target.',
-      anyHistory && 'Correcting a past target changes that day only — later days keep what they had.',
-      'Best streak counts consecutive days you hit the target, shown over the days you were training.',
-      'Tap Top set to correct it by hand. That changes the displayed number and nothing else.',
+      ['Read the strip', 'Filled = target hit, 🌙 = rest, hollow = missed, faint = day off.'],
+      ['Streaks', 'One per exercise. Big number is now, best is your record.'],
+      anyHistory && ['Fix a number', 'Open History, tap a day, tap its total or target.'],
+      anyHistory && ['Past targets', 'Editing one changes that day only.'],
+      ['Top set vs Max', 'Best single set, versus biggest day. Tap Top set to correct it.'],
     ] },
   ];
 
@@ -1310,33 +1337,22 @@ function modalGuide() {
       </div>
       ${ordered.map((sec) => `
         <section class="guide-sec">
-          <h3>${sec.title}${sec.view === state.view ? '<em>you\u2019re here</em>' : ''}</h3>
-          <ul>${sec.items.filter(Boolean).map((t) => `<li>${escapeHtml(t)}</li>`).join('')}</ul>
+          <h3>${sec.title}${sec.view === state.view ? '<em>here</em>' : ''}</h3>
+          <dl>${sec.items.filter(Boolean).map(([what, how]) => `<div><dt>${escapeHtml(what)}</dt><dd>${how}</dd></div>`).join('')}</dl>
         </section>`).join('')}
-      <div class="hint">Everything is stored on this device. Sign in from your profile to sync it to your own Google Drive.</div>
+      <div class="hint">Everything stays on this device. Sign in from your profile to sync it to your own Google Drive.</div>
     </div>
   </div>`;
 }
 
-/** Streaks belong to an exercise, so a break has to name one. */
+/** Streaks belong to an exercise, so a break has to name one. Same card as
+ *  Progress, with a rest toggle — one object, two states. */
 function modalConfirmBreak() {
   const today = todayISO();
   const active = state.exercises
     .filter((e) => e.active && !e.archived && isScheduledOn(e, today))
     .sort((a, b) => a.order - b.order);
-
-  const rows = active.map((ex) => {
-    const resting = isBreakDay(state.streakOverrides, today, ex.id);
-    const s = exerciseStats(ex, state.setsLog, state.timersLog, null, state.streakOverrides);
-    return `<button class="break-row ${resting ? 'on' : ''}" data-action="toggle-break" data-id="${ex.id}" aria-pressed="${resting}">
-      <span class="break-row-icon">${escapeHtml(ex.icon)}</span>
-      <span class="break-row-body">
-        <b>${escapeHtml(ex.name)}</b>
-        <em>${s.currentStreak} day streak${s.breakDays ? ` · ${s.breakDays} break${s.breakDays === 1 ? '' : 's'}` : ''}</em>
-      </span>
-      <span class="break-row-state">${resting ? '🌙 Resting' : 'Rest'}</span>
-    </button>`;
-  }).join('');
+  const stats = allStats(active, state.setsLog, state.timersLog, null, state.streakOverrides);
 
   return `<div class="modal-backdrop" data-action="backdrop">
     <div class="modal-sheet" data-stop>
@@ -1345,8 +1361,12 @@ function modalConfirmBreak() {
         <h2>Take a break</h2>
         <button class="sheet-close" data-action="close-modal">${ICONS.close}</button>
       </div>
-      <p class="break-copy">Pick what you're resting today. That exercise keeps its streak, and the day is recorded as a break rather than a workout.</p>
-      ${active.length ? `<div class="break-list">${rows}</div>` : '<p class="rail-empty">Nothing scheduled today.</p>'}
+      <p class="break-copy">Resting keeps that exercise's streak alive and records the day as rest.</p>
+      ${active.length
+        ? `<div class="break-list">${active.map((ex) => exerciseCard(ex, stats[ex.id], {
+            resting: isBreakDay(state.streakOverrides, today, ex.id),
+          })).join('')}</div>`
+        : '<p class="rail-empty">Nothing scheduled today.</p>'}
       ${active.length > 1 ? `<button class="secondary-btn" style="width:100%;margin-top:12px" data-action="rest-all">Rest everything today</button>` : ''}
     </div>
   </div>`;
@@ -1957,6 +1977,10 @@ document.addEventListener('click', async (e) => {
       await googleSyncNowHandler();
       break;
 
+    case 'toggle-history':
+      state.historyOpen = !state.historyOpen;
+      renderView();
+      break;
     case 'toggle-day':
       state.expandedDay = state.expandedDay === btn.dataset.date ? null : btn.dataset.date;
       renderView();

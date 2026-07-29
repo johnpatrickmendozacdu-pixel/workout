@@ -1117,6 +1117,12 @@
   .lever-opt.on:disabled{background:#2A312D; color:var(--text-faint); border-color:#2A312D;}
   .logger-rest:disabled{border-style:dashed; border-color:#2A312D;}
 
+  /* The mark rides on the wordmark line, not beside the whole block: the date
+     below is the widest thing in the bar, so this costs the row no width and
+     leaves the chips on the right where they were. */
+  .app-title{display:flex; align-items:center; gap:7px;}
+  .brand-mark{width:21px; height:21px; flex:none; color:var(--accent);}
+
   .sealed-note{display:flex; align-items:center; justify-content:space-between; gap:12px;}
   .sealed-note span{flex:1;}
   .reopen-btn{

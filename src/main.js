@@ -580,7 +580,7 @@ async function reopenSessionHandler(exId) {
   renderModal();
   renderView();
   const ex = state.exercises.find((e) => e.id === exId);
-  showToast(`${ex ? ex.name : 'Session'} reopened — clock is paused`);
+  showToast(`${ex ? ex.name : 'Session'} is open again — clock is paused`);
 }
 
 async function resetTimerHandler(exId) {
@@ -728,6 +728,28 @@ async function doImport(obj, mode) {
 }
 
 /* ============================= ICONS ============================= */
+/**
+ * The Sets mark: an S whose body is the dragon — head at the top terminal,
+ * tail at the bottom — knocked into a disc. Original artwork, in the same
+ * tradition as other hard-edged creature-in-a-disc emblems rather than derived
+ * from any of them.
+ *
+ * The topbar takes the outlined cut, not the filled one. Neon is rationed to
+ * marking what is live or achieved, and a solid neon disc sitting in the bar
+ * all day would spend that signal on nothing. The filled cut lives in
+ * `public/icon.svg`, where a home screen needs it to punch.
+ */
+const LOGO_MARK = `<svg class="brand-mark" viewBox="0 0 100 100" aria-hidden="true" focusable="false">
+  <circle cx="50" cy="50" r="47" fill="none" stroke="currentColor" stroke-width="4"/>
+  <path fill="none" stroke="currentColor" stroke-width="15" stroke-linejoin="round"
+        d="M66 31 C48 21, 29 29, 33 42 C36 53, 59 52, 63 62 C67 74, 45 82, 29 73"/>
+  <polygon fill="currentColor" points="57,23 68,16 80,20 94,31 89,36 79,33 87,42 74,41 59,34"/>
+  <polygon fill="currentColor" points="67,17 54,11 64,21"/>
+  <polygon fill="currentColor" points="75,41 70,52 73,40"/>
+  <polygon fill="currentColor" points="34,68 27,78 15,79"/>
+  <polygon fill="var(--paper)" points="74,24 82,27 75,29"/>
+</svg>`;
+
 const ICONS = {
   today: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 8v4l2.5 2.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="1.8"/></svg>`,
   plan: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M5 7h14M5 12h14M5 17h9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`,
@@ -1030,7 +1052,7 @@ function renderTopbar() {
     el.innerHTML = `
       <div class="topbar-row">
         <div>
-          <div class="app-title">${uname ? `Hey, ${escapeHtml(uname)}` : 'Sets'}</div>
+          <div class="app-title">${LOGO_MARK}${uname ? `Hey, ${escapeHtml(uname)}` : 'Sets'}</div>
           <div class="date-heading">${formatDisplayDate(todayISO())}</div>
         </div>
         <div class="topbar-right">
@@ -1417,7 +1439,7 @@ function modalGuide() {
       has.length && ['The clock', 'Starts on your first rep. Pause any time.'],
       anyTarget && ['Hit the target', 'Take the win, or Keep going.'],
       has.length && ['End early', 'Give up keeps your reps and stops the clock.'],
-      anyTarget && ['Once it is done', 'Hitting the target locks the card. Reopen to change it.'],
+      anyTarget && ['Once it is done', 'Hitting the target locks the card. Train again to reopen it.'],
       anyTarget && ['Rest a day', 'Open the exercise, Take a break. Streak holds.'],
       !has.length && ['Start', 'Add an exercise.'],
     ],
@@ -1525,7 +1547,7 @@ function sealedNoteHtml(exId, phase) {
       : 'Target met. This one is done for today — nothing here can change.';
   return `<p class="tip sealed-note">
     <span>${line}</span>
-    <button class="reopen-btn" data-action="reopen-session" data-id="${exId}">Reopen</button>
+    <button class="reopen-btn" data-action="reopen-session" data-id="${exId}">Train again</button>
   </p>`;
 }
 

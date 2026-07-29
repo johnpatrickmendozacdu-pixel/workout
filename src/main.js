@@ -992,6 +992,7 @@ function renderTopbar() {
         <div class="topbar-right">
           <div class="streak-pill" title="Longest run currently going">${ICONS.flame}${streak}</div>
           ${helpChipHtml()}
+          ${versionChipHtml()}
           ${avatarChipHtml()}
         </div>
       </div>`;
@@ -1002,6 +1003,7 @@ function renderTopbar() {
         <div class="topbar-right">
           <button class="add-btn" data-action="open-add-exercise">${ICONS.plus} Add</button>
           ${helpChipHtml()}
+          ${versionChipHtml()}
           ${avatarChipHtml()}
         </div>
       </div>`;
@@ -1012,6 +1014,7 @@ function renderTopbar() {
         <div class="topbar-right">
           <button class="icon-btn" data-action="open-data">${ICONS.gear}</button>
           ${helpChipHtml()}
+          ${versionChipHtml()}
           ${avatarChipHtml()}
         </div>
       </div>`;
@@ -1432,7 +1435,7 @@ function modalLogger(exId) {
       ${(() => {
         const resting = isBreakDay(state.streakOverrides, today, exId);
         return `<button class="logger-rest ${resting ? 'on' : ''}" data-action="toggle-break" data-id="${exId}" aria-pressed="${resting}">
-          <span>${resting ? '🌙 Resting today' : 'Take a break today'}</span>
+          <span>${resting ? '🌙 Resting today' : 'Rest today'}</span>
           <em>${resting ? 'Your streak is safe. Tap to undo.' : 'Counts as rest — your streak keeps going.'}</em>
         </button>`;
       })()}

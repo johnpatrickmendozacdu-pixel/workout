@@ -1,26 +1,31 @@
 :root{
-    /* Deep-sea navy with a signal green. The green is the only saturated
-       colour in the system, so it always means something: a target met, the
-       section you're in, the action to take. Everything else is navy and haze. */
-    --bg:#0A1922;
-    --bg-elevated:#0F2431;
-    --bg-card:#12293A;
-    --bg-card-hover:#173447;
-    --border:rgba(234,242,244,0.09);
-    --border-strong:rgba(234,242,244,0.20);
-    --text:#EAF2F4;
-    --text-dim:#8FA7B4;
-    --text-faint:#809AA7;   /* lifted to clear 4.5:1 on the navy */
-    --accent:#3EE07F;          /* signal green */
-    --accent-ink:#05131B;      /* text on green */
-    --accent-2:#3EE07F;
-    --success:#3EE07F;         /* a met target IS the signal */
-    --success-ink:#05131B;
-    --record:#FF7A66;          /* coral, records only */
-    --danger:#E2593F;
-    --radius-lg:20px;
-    --radius-md:13px;
-    --radius-sm:9px;
+    /* Brutalist light: paper, silver, black rule, one dark green.
+       Nothing is soft — no radius, no blur, no gradient. Separation is done
+       with black rule and flat blocks, so where one thing ends and the next
+       begins is never in doubt. */
+    --paper:#EFEFEC;
+    --bg:#EFEFEC;
+    --bg-elevated:#FFFFFF;
+    --bg-card:#FFFFFF;
+    --bg-card-hover:#E4E4DF;
+    --silver:#C9CCC8;
+    --silver-deep:#A8ADA8;
+    --ink:#0A0A0A;
+    --border:#0A0A0A;
+    --border-strong:#0A0A0A;
+    --text:#0A0A0A;
+    --text-dim:#3D423F;
+    --text-faint:#5A615D;
+    --accent:#14532D;          /* dark green */
+    --accent-ink:#FFFFFF;
+    --accent-2:#14532D;
+    --success:#14532D;
+    --success-ink:#FFFFFF;
+    --record:#14532D;
+    --danger:#A3231B;
+    --radius-lg:0px;
+    --radius-md:0px;
+    --radius-sm:0px;
     --font-body:'Manrope',system-ui,-apple-system,sans-serif;
     --font-mono:'JetBrains Mono',ui-monospace,Menlo,monospace;
     --font-num:'Martian Mono','JetBrains Mono',ui-monospace,monospace;
@@ -43,7 +48,7 @@
     max-width:460px; margin:0 auto; min-height:100dvh; display:flex; flex-direction:column;
     transition:max-width .2s ease;
     position:relative; background:
-      radial-gradient(130% 60% at 50% 0%, rgba(62,224,127,0.06), transparent 64%), var(--bg);
+      var(--paper);
   }
 
   /* ---------- topbar ---------- */
@@ -988,3 +993,136 @@
     font-family:var(--font-mono); font-size:11px; letter-spacing:0.1em; text-transform:uppercase;
   }
   .exday-more:active{color:var(--text-dim);}
+
+  /* ============================================================
+     BRUTALIST LIGHT — paper, silver, black rule, one dark green
+     Separation is structural: every object sits on white inside a 2px black
+     rule, so where push-ups end and squats begin is unmistakable. Nothing
+     is rounded, blurred or shaded soft; the only shadow is a hard offset.
+     ============================================================ */
+  body{background:var(--paper);}
+  #app{background:var(--paper);}
+
+  /* every surface: white, hard black rule, no radius */
+  .ex-card, .ex-stat, .modal-sheet, .dash-card, .plan-row, .day-row, .best-row,
+  .empty-card, .rest-row, .break-row, .timer-block, .set-row, .banner, .toast,
+  .rep-key, .sched-day, .sched-mode, .rep-lever, .day-num, .headline-stat,
+  .build-line, .tip, .logger-rest, .streak-row, .exday-more, .rest-toggle,
+  .secondary-btn, .primary-btn, .add-btn, .icon-btn, .help-chip, .version-chip,
+  .avatar-chip, .streak-pill, .sheet-close, .mini-btn{
+    border-radius:0 !important;
+  }
+  .ex-card, .ex-stat, .plan-row, .best-row, .rest-row, .empty-card, .timer-block{
+    background:#FFFFFF; border:2px solid var(--ink);
+  }
+  .ex-stat{margin-bottom:16px; padding:16px;}
+  .ex-stat + .ex-stat{border-top:2px solid var(--ink); padding-top:16px;}
+  .ex-stat.is-open{background:#FFFFFF; border-color:var(--ink); box-shadow:5px 5px 0 var(--ink);}
+  .ex-card{box-shadow:4px 4px 0 var(--ink); margin-bottom:16px;}
+  .plan-row{box-shadow:4px 4px 0 var(--ink); margin-bottom:16px;}
+
+  /* type: mono labels, black, tracked */
+  .section-label, .rail-head h2, .guide-sec h3, .app-title, .set-list-head,
+  .exday-more, .ex-numbers dt{color:var(--ink);}
+  .app-title{color:var(--accent);}
+  .date-heading, .screen-title{color:var(--ink);}
+
+  /* the strip: filled = green block, missed = white in rule, rest = silver */
+  .strip{gap:6px;}
+  .dot{height:14px; border:2px solid var(--ink); border-radius:0 !important;}
+  .dot.hit{background:var(--accent); border-color:var(--ink);}
+  .dot.break{background:var(--silver); border-color:var(--ink);}
+  .dot.miss{background:#FFFFFF; border-color:var(--ink);}
+  .dot.rest, .dot.none{background:var(--silver); border-color:var(--silver-deep); opacity:.55;}
+  .dot.today{box-shadow:0 3px 0 var(--ink);}
+  .strip.unbroken .dot.hit{border-radius:0 !important;}
+
+  /* streak heat: blocks, not glows */
+  .streak-now b{color:var(--ink); text-shadow:none !important;}
+  .streak-now b[data-tier="1"]{color:var(--accent);}
+  .streak-now b[data-tier="2"]{color:var(--accent); border-bottom:4px solid var(--accent);}
+  .streak-now b[data-tier="3"]{background:var(--accent); color:#FFFFFF; padding:0 8px;}
+  .streak-now b[data-tier="4"]{background:var(--ink); color:#FFFFFF; padding:0 8px;}
+  .streak-flame svg path{fill:var(--accent) !important;}
+  .streak-now b[data-tier="4"] + .streak-flame svg path{fill:var(--ink) !important;}
+  .streak-best{color:var(--text-dim);}
+
+  /* controls */
+  .primary-btn, .add-btn, .nav-btn.active, .lever-opt.on, .sched-mode.on,
+  .sched-day.on, .rest-toggle.on, .avatar-chip.signed-in, .guide-sec h3 em{
+    background:var(--accent); color:#FFFFFF; border:2px solid var(--ink);
+  }
+  .nav-btn.active svg{stroke:#FFFFFF;}
+  .secondary-btn, .rep-key, .sched-day, .sched-mode, .rest-toggle, .day-num,
+  .icon-btn, .help-chip, .version-chip, .avatar-chip, .streak-pill, .mini-btn{
+    background:#FFFFFF; border:2px solid var(--ink); color:var(--ink);
+  }
+  .rep-key{box-shadow:3px 3px 0 var(--ink); font-weight:800;}
+  .rep-key:active{box-shadow:0 0 0 var(--ink); transform:translate(3px,3px);}
+  .rep-pad.subtracting .rep-key{border-color:var(--danger); color:var(--danger);}
+  .rep-lever{background:var(--silver); border:2px solid var(--ink); padding:3px;}
+  .lever-opt{color:var(--ink);}
+  .lever-opt.sub.on{background:var(--danger); color:#FFFFFF;}
+  .sheet-close{background:var(--danger); border:2px solid var(--ink); color:#FFFFFF;}
+  .sheet-close svg{stroke:#FFFFFF;}
+  .streak-pill svg path{fill:var(--accent);}
+  .version-chip.latest{color:var(--accent);}
+
+  /* nav sits on a black rule, active is a solid green block */
+  #bottom-nav{background:var(--paper); border-top:2px solid var(--ink);}
+  .nav-btn{color:var(--text-dim);}
+  .nav-btn.active{color:#FFFFFF;}
+
+  /* sheets */
+  .modal-sheet{background:#FFFFFF; border:2px solid var(--ink); border-top:3px solid var(--ink);}
+  .modal-backdrop{background:rgba(10,10,10,0.45);}
+  .sheet-handle{background:var(--ink);}
+  #topbar{background:var(--paper); border-bottom:2px solid var(--ink);}
+
+  /* per-day rows inside a card, ruled not tinted */
+  .exday{border-top:2px solid var(--ink); padding:6px 0;}
+  .exday.rest .exday-when{color:var(--text-faint);}
+  .day-num{box-shadow:2px 2px 0 var(--ink);}
+  .day-num.target{border-style:dashed;}
+  .ex-history{border-top:2px solid var(--ink); margin-top:16px; padding-top:14px;}
+  .ex-numbers dd{color:var(--ink);}
+  .exday-more{border-top:2px solid var(--ink); color:var(--accent); font-weight:700;}
+
+  /* tally marks read as ink */
+  .tally-bar, .tally-strike{background:var(--ink);}
+  .ex-card.complete{background:#FFFFFF; border-color:var(--accent); box-shadow:4px 4px 0 var(--accent);}
+  .ex-card.complete .ex-name{color:var(--accent);}
+  .ex-card.complete .tally-bar, .ex-card.complete .tally-strike{background:var(--accent);}
+
+  /* hints and nudges */
+  .tip{background:var(--silver); border:2px solid var(--ink); color:var(--ink);}
+  .tip-x svg{stroke:var(--ink);}
+  .break-nudge{color:var(--text-dim);}
+  .break-nudge.resting{color:var(--accent); font-weight:700;}
+  .logger-rest{border:2px dashed var(--ink); background:#FFFFFF;}
+  .logger-rest.on{background:var(--accent); border-style:solid;}
+  .logger-rest.on span, .logger-rest.on em{color:#FFFFFF;}
+  .logger-rest span{color:var(--ink);}
+
+  .timer-block.status-completed{border-color:var(--accent); box-shadow:4px 4px 0 var(--accent);}
+  .timer-clock{color:var(--ink);}
+  .set-badge{background:var(--silver); border:2px solid var(--ink); color:var(--ink);}
+  .guide-list dt{color:var(--ink);}
+  .guide-list dd{color:var(--text-dim);}
+
+  /* the nav bar itself: paper on a black rule, no blur, no rounded pill */
+  .nav-inner{
+    background:var(--paper); backdrop-filter:none; border-top:2px solid var(--ink);
+    padding:8px 12px calc(8px + var(--safe-bottom)); gap:8px;
+  }
+  .nav-btn{border-radius:0 !important; color:var(--text-dim); font-weight:700;}
+  .nav-btn svg{stroke:currentColor;}
+  .nav-btn.active{background:var(--accent); color:#FFFFFF; border:2px solid var(--ink);}
+  .nav-btn.active svg{stroke:#FFFFFF;}
+
+  /* these two predate the restyle and never cleared 44px */
+  .chevron-btn, .set-del{position:relative;}
+  .chevron-btn::after, .set-del::after{
+    content:''; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+    width:44px; height:44px;
+  }

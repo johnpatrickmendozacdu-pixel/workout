@@ -1026,11 +1026,12 @@ function renderView() {
 
 /* ============================= VIEW: TODAY ============================= */
 function viewToday() {
+  const today = todayISO();
   const all = state.exercises.filter((e) => e.active).sort((a, b) => a.order - b.order);
-  const todayStr = todayISO();
-  const active = all.filter((e) => isScheduledOn(e, todayStr));
-  const resting = all.filter((e) => !isScheduledOn(e, todayStr));
-  if (active.length === 0) {
+  const scheduled = all.filter((e) => isScheduledOn(e, today));
+  const resting = all.filter((e) => !isScheduledOn(e, today));
+
+  if (scheduled.length === 0 && resting.length === 0) {
     return `<div class="empty-card">
       <div class="glyph">🗓️</div>
       <h3>No exercises yet</h3>
@@ -1038,61 +1039,76 @@ function viewToday() {
       <button class="primary-btn" data-action="open-add-exercise">Add your first exercise</button>
     </div>`;
   }
-  const today = todayISO();
-  const rows = active.map((ex) => {
+
+  const read = (ex) => {
     const target = getEffectiveTarget(ex, today);
     const arr = getSetsFor(ex.id, today);
     const total = calcTotal(arr);
     const hasTarget = !!target && target > 0;
-    const pct = hasTarget ? total / target : (total > 0 ? 1 : 0);
-    const complete = hasTarget && total >= target;
-    const isEditingTotal = state.editingTodayTotal === ex.id;
-    const totalDisplay = isEditingTotal
-      ? `<span class="inline-total-edit" data-stop>
-           <input type="number" min="0" step="any" id="today-total-input-${ex.id}" class="total-edit-input" value="${total || ''}" placeholder="0">
-           <button class="mini-btn" data-action="save-today-total-inline" data-id="${ex.id}" data-date="${today}" aria-label="Save">${ICONS.check}</button>
-           <button class="mini-btn" data-action="cancel-today-total-inline" aria-label="Cancel">${ICONS.close}</button>
-         </span>`
-      : `<span class="ex-total-num editable-target" data-editable-today-total data-id="${ex.id}" title="Tap to edit total">${total}</span>`;
-    const timer = getTimerPure(state.timersLog, today, ex.id);
-    const timeBadge = timer
-      ? `<div class="ex-time-badge status-${timer.status}">${timer.status === 'running' ? ICONS.play : timer.status === 'paused' ? ICONS.pause : timer.status === 'completed' ? ICONS.trophy : ICONS.flag}<span data-elapsed="${ex.id}">${formatElapsed(timerElapsedMs(timer, Date.now()))}</span></div>`
-      : '';
-    return `<div class="ex-card ${complete ? 'complete' : ''}">
-      <button class="ex-card-main" data-action="open-logger" data-id="${ex.id}">
-        ${ring(hasTarget ? pct : (total > 0 ? 1 : 0), 52, 4, complete, escapeHtml(ex.icon))}
-        <div class="ex-body">
-          <div class="ex-name">${escapeHtml(ex.name)}</div>
-          ${hasTarget ? `<div class="tally-rail">${tallyMarks(arr.length)}</div>` : `<div class="ex-untargeted">No daily target</div>`}
-        </div>
-      </button>
-      <div class="ex-totals" data-stop>
-        ${totalDisplay}
-        ${hasTarget ? `<div class="ex-total-target">/ ${target} ${escapeHtml(ex.unit)}</div>` : `<div class="ex-total-target">${escapeHtml(ex.unit)}</div>`}
-        ${timeBadge}
-      </div>
-      <button class="chevron-btn" data-action="open-logger" data-id="${ex.id}" aria-label="Open logger">${ICONS.chevron}</button>
-    </div>`;
-  }).join('');
+    const left = hasTarget ? Math.max(0, target - total) : 0;
+    return {
+      ex, target, total, hasTarget, left,
+      done: isBreakDay(state.streakOverrides, today, ex.id) || (hasTarget ? total >= target : total > 0),
+      rest: isBreakDay(state.streakOverrides, today, ex.id),
+      pct: hasTarget ? Math.min(1, total / target) : (total > 0 ? 1 : 0),
+      timer: getTimerPure(state.timersLog, today, ex.id),
+    };
+  };
 
-  // Anything not scheduled today is shown as resting rather than hidden, so
-  // it's obvious the app knows about it and isn't counting it against you.
-  const restHtml = resting.length
-    ? `<div class="section-label">Resting today</div>` + resting.map((ex) => `<div class="rest-row">
-        <span class="rest-icon">${escapeHtml(ex.icon)}</span>
-        <span class="rest-name">${escapeHtml(ex.name)}</span>
-        <span class="rest-when">${escapeHtml(scheduleLabel(ex))}</span>
-      </div>`).join('')
-    : '';
+  const rows = scheduled.map(read);
+  const todo = rows.filter((r) => !r.done);
+  const done = rows.filter((r) => r.done);
 
-  const onBreak = active.filter((ex) => isBreakDay(state.streakOverrides, today, ex.id));
-  // A nudge, not a control. Resting belongs inside the exercise it applies to,
-  // so this only points you there.
-  const breakHtml = onBreak.length
+  /* What is left to do, largest thing on the row. One tap starts it. */
+  const todoCard = (r) => {
+    const running = r.timer && r.timer.status === 'running';
+    return `<button class="today-card" data-action="open-logger" data-id="${r.ex.id}">
+      <span class="today-icon">${escapeHtml(r.ex.icon)}</span>
+      <span class="today-body">
+        <span class="today-name">${escapeHtml(r.ex.name)}</span>
+        <span class="today-meter" aria-hidden="true"><i style="width:${Math.round(r.pct * 100)}%"></i></span>
+        <span class="today-sub">${r.hasTarget ? `${r.total} of ${r.target} ${escapeHtml(r.ex.unit)}` : `${r.total} ${escapeHtml(r.ex.unit)} · no target`}${running ? ` · <b data-elapsed="${r.ex.id}">${formatElapsed(timerElapsedMs(r.timer, Date.now()))}</b>` : ''}</span>
+      </span>
+      <span class="today-left">
+        ${r.hasTarget ? `<b>${r.left}</b><em>to go</em>` : `<b>${r.total}</b><em>logged</em>`}
+      </span>
+    </button>`;
+  };
+
+  /* Finished work steps back: one quiet line, no colour blast. */
+  const doneRow = (r) => `<button class="done-row" data-action="open-logger" data-id="${r.ex.id}">
+    <span class="done-tick">${r.rest ? '🌙' : ICONS.check}</span>
+    <span class="done-name">${escapeHtml(r.ex.name)}</span>
+    <span class="done-num">${r.rest ? 'Rest' : `${r.total} ${escapeHtml(r.ex.unit)}`}</span>
+  </button>`;
+
+  let html = tipHtml('open-ex', 'Tap an exercise to log reps.');
+
+  if (todo.length) {
+    html += `<div class="section-label">To do${todo.length > 1 ? ` · ${todo.length}` : ''}</div>`;
+    html += todo.map(todoCard).join('');
+  } else if (scheduled.length) {
+    html += `<div class="all-clear"><b>All done today</b><span>Every target met. Rest up.</span></div>`;
+  }
+
+  if (done.length) {
+    html += `<div class="section-label">Done</div>` + done.map(doneRow).join('');
+  }
+
+  if (resting.length) {
+    html += `<div class="section-label">Not scheduled</div>` + resting.map((ex) => `<div class="rest-row">
+      <span class="rest-icon">${escapeHtml(ex.icon)}</span>
+      <span class="rest-name">${escapeHtml(ex.name)}</span>
+      <span class="rest-when">${escapeHtml(scheduleLabel(ex))}</span>
+    </div>`).join('');
+  }
+
+  const onBreak = scheduled.filter((ex) => isBreakDay(state.streakOverrides, today, ex.id));
+  html += onBreak.length
     ? `<p class="break-nudge resting">🌙 Resting today: ${onBreak.map((e) => escapeHtml(e.name)).join(', ')}</p>`
     : `<p class="break-nudge">Not training one today? Open it and take a break — the streak holds.</p>`;
 
-  return `<div>${tipHtml('open-ex', 'Tap an exercise to log reps.')}${rows}${restHtml}${breakHtml}</div>`;
+  return html;
 }
 
 /* ============================= VIEW: PLAN ============================= */

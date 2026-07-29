@@ -997,139 +997,6 @@
   .exday-more:active{color:var(--text-dim);}
 
   /* ============================================================
-     BRUTALIST LIGHT — paper, silver, black rule, one dark green
-     Separation is structural: every object sits on white inside a 2px black
-     rule, so where push-ups end and squats begin is unmistakable. Nothing
-     is rounded, blurred or shaded soft; the only shadow is a hard offset.
-     ============================================================ */
-  body{background:var(--paper);}
-  #app{background:var(--paper);}
-
-  /* every surface: white, hard black rule, no radius */
-  .ex-card, .ex-stat, .modal-sheet, .dash-card, .plan-row, .day-row, .best-row,
-  .empty-card, .rest-row, .break-row, .timer-block, .set-row, .banner, .toast,
-  .rep-key, .sched-day, .sched-mode, .rep-lever, .day-num, .headline-stat,
-  .build-line, .tip, .logger-rest, .streak-row, .exday-more, .rest-toggle,
-  .secondary-btn, .primary-btn, .add-btn, .icon-btn, .help-chip, .version-chip,
-  .avatar-chip, .streak-pill, .sheet-close, .mini-btn{
-    border-radius:0 !important;
-  }
-  .ex-card, .ex-stat, .plan-row, .best-row, .rest-row, .empty-card, .timer-block{
-    background:#FFFFFF; border:2px solid var(--ink);
-  }
-  .ex-stat{margin-bottom:16px; padding:16px;}
-  .ex-stat + .ex-stat{border-top:2px solid var(--ink); padding-top:16px;}
-  .ex-stat.is-open{background:#FFFFFF; border-color:var(--ink); box-shadow:5px 5px 0 var(--ink);}
-  .ex-card{box-shadow:4px 4px 0 var(--ink); margin-bottom:16px;}
-  .plan-row{box-shadow:4px 4px 0 var(--ink); margin-bottom:16px;}
-
-  /* type: mono labels, black, tracked */
-  .section-label, .rail-head h2, .guide-sec h3, .app-title, .set-list-head,
-  .exday-more, .ex-numbers dt{color:var(--ink);}
-  .app-title{color:var(--accent);}
-  .date-heading, .screen-title{color:var(--ink);}
-
-  /* the strip: filled = green block, missed = white in rule, rest = silver */
-  .strip{gap:6px;}
-  .dot{height:14px; border:2px solid var(--ink); border-radius:0 !important;}
-  .dot.hit{background:var(--accent); border-color:var(--ink);}
-  .dot.break{background:var(--silver); border-color:var(--ink);}
-  .dot.miss{background:#FFFFFF; border-color:var(--ink);}
-  .dot.rest, .dot.none{background:var(--silver); border-color:var(--silver-deep); opacity:.55;}
-  .dot.today{box-shadow:0 3px 0 var(--ink);}
-  .strip.unbroken .dot.hit{border-radius:0 !important;}
-
-  /* streak heat: blocks, not glows */
-  .streak-now b{color:var(--ink); text-shadow:none !important;}
-  .streak-now b[data-tier="1"]{color:var(--accent);}
-  .streak-now b[data-tier="2"]{color:var(--accent); border-bottom:4px solid var(--accent);}
-  .streak-now b[data-tier="3"]{background:var(--accent); color:#FFFFFF; padding:0 8px;}
-  .streak-now b[data-tier="4"]{background:var(--ink); color:#FFFFFF; padding:0 8px;}
-  .streak-flame svg path{fill:var(--accent) !important;}
-  .streak-now b[data-tier="4"] + .streak-flame svg path{fill:var(--ink) !important;}
-  .streak-best{color:var(--text-dim);}
-
-  /* controls */
-  .primary-btn, .add-btn, .nav-btn.active, .lever-opt.on, .sched-mode.on,
-  .sched-day.on, .rest-toggle.on, .avatar-chip.signed-in, .guide-sec h3 em{
-    background:var(--accent); color:#FFFFFF; border:2px solid var(--ink);
-  }
-  .nav-btn.active svg{stroke:#FFFFFF;}
-  .secondary-btn, .rep-key, .sched-day, .sched-mode, .rest-toggle, .day-num,
-  .icon-btn, .help-chip, .version-chip, .avatar-chip, .streak-pill, .mini-btn{
-    background:#FFFFFF; border:2px solid var(--ink); color:var(--ink);
-  }
-  .rep-key{box-shadow:3px 3px 0 var(--ink); font-weight:800;}
-  .rep-key:active{box-shadow:0 0 0 var(--ink); transform:translate(3px,3px);}
-  .rep-pad.subtracting .rep-key{border-color:var(--danger); color:var(--danger);}
-  .rep-lever{background:var(--silver); border:2px solid var(--ink); padding:3px;}
-  .lever-opt{color:var(--ink);}
-  .lever-opt.sub.on{background:var(--danger); color:#FFFFFF;}
-  .sheet-close{background:var(--danger); border:2px solid var(--ink); color:#FFFFFF;}
-  .sheet-close svg{stroke:#FFFFFF;}
-  .streak-pill svg path{fill:var(--accent);}
-  .version-chip.latest{color:var(--accent);}
-
-  /* nav sits on a black rule, active is a solid green block */
-  #bottom-nav{background:var(--paper); border-top:2px solid var(--ink);}
-  .nav-btn{color:var(--text-dim);}
-  .nav-btn.active{color:#FFFFFF;}
-
-  /* sheets */
-  .modal-sheet{background:#FFFFFF; border:2px solid var(--ink); border-top:3px solid var(--ink);}
-  .modal-backdrop{background:rgba(10,10,10,0.45);}
-  .sheet-handle{background:var(--ink);}
-  #topbar{background:var(--paper); border-bottom:2px solid var(--ink);}
-
-  /* per-day rows inside a card, ruled not tinted */
-  .exday{border-top:2px solid var(--ink); padding:6px 0;}
-  .exday.rest .exday-when{color:var(--text-faint);}
-  .day-num{box-shadow:2px 2px 0 var(--ink);}
-  .day-num.target{border-style:dashed;}
-  .ex-history{border-top:2px solid var(--ink); margin-top:16px; padding-top:14px;}
-  .ex-numbers dd{color:var(--ink);}
-  .exday-more{border-top:2px solid var(--ink); color:var(--accent); font-weight:700;}
-
-  /* tally marks read as ink */
-  .tally-bar, .tally-strike{background:var(--ink);}
-  .ex-card.complete{background:#FFFFFF; border-color:var(--accent); box-shadow:4px 4px 0 var(--accent);}
-  .ex-card.complete .ex-name{color:var(--accent);}
-  .ex-card.complete .tally-bar, .ex-card.complete .tally-strike{background:var(--accent);}
-
-  /* hints and nudges */
-  .tip{background:var(--silver); border:2px solid var(--ink); color:var(--ink);}
-  .tip-x svg{stroke:var(--ink);}
-  .break-nudge{color:var(--text-dim);}
-  .break-nudge.resting{color:var(--accent); font-weight:700;}
-  .logger-rest{border:2px dashed var(--ink); background:#FFFFFF;}
-  .logger-rest.on{background:var(--accent); border-style:solid;}
-  .logger-rest.on span, .logger-rest.on em{color:#FFFFFF;}
-  .logger-rest span{color:var(--ink);}
-
-  .timer-block.status-completed{border-color:var(--accent); box-shadow:4px 4px 0 var(--accent);}
-  .timer-clock{color:var(--ink);}
-  .set-badge{background:var(--silver); border:2px solid var(--ink); color:var(--ink);}
-  .guide-list dt{color:var(--ink);}
-  .guide-list dd{color:var(--text-dim);}
-
-  /* the nav bar itself: paper on a black rule, no blur, no rounded pill */
-  .nav-inner{
-    background:var(--paper); backdrop-filter:none; border-top:2px solid var(--ink);
-    padding:8px 12px calc(8px + var(--safe-bottom)); gap:8px;
-  }
-  .nav-btn{border-radius:0 !important; color:var(--text-dim); font-weight:700;}
-  .nav-btn svg{stroke:currentColor;}
-  .nav-btn.active{background:var(--accent); color:#FFFFFF; border:2px solid var(--ink);}
-  .nav-btn.active svg{stroke:#FFFFFF;}
-
-  /* these two predate the restyle and never cleared 44px */
-  .chevron-btn, .set-del{position:relative;}
-  .chevron-btn::after, .set-del::after{
-    content:''; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
-    width:44px; height:44px;
-  }
-
-  /* ============================================================
      NIGHT BRUTALIST — black ground, silver rule, dark green, neon signal
      Same hard structure as the light pass; the ink simply inverts. Neon is
      rationed: it marks what is live or achieved and nothing else, so the eye
@@ -1226,3 +1093,78 @@
   .logger-rest span{color:var(--text);}
   .break-nudge{color:var(--text-faint);}
   .break-nudge.resting{color:var(--accent);}
+
+  /* structural: brutalism has no rounded corners anywhere */
+  .ex-card, .ex-stat, .modal-sheet, .plan-row, .day-row, .best-row, .empty-card,
+  .rest-row, .break-row, .timer-block, .set-row, .banner, .toast, .rep-key,
+  .sched-day, .sched-mode, .rep-lever, .day-num, .headline-stat, .build-line,
+  .tip, .logger-rest, .exday-more, .rest-toggle, .secondary-btn, .primary-btn,
+  .add-btn, .icon-btn, .help-chip, .version-chip, .avatar-chip, .streak-pill,
+  .sheet-close, .mini-btn, .nav-btn, .dot, .lever-opt, .timer-btn, .set-badge{
+    border-radius:0 !important;
+  }
+
+  /* these two never cleared 44px and predate the restyle */
+  .chevron-btn, .set-del{position:relative;}
+  .chevron-btn::after, .set-del::after{
+    content:''; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+    width:44px; height:44px;
+  }
+
+  /* ============ TODAY: what is left, and one tap to start ============
+     The screen answers a single question, so one number dominates each row:
+     how many reps remain. Progress is a thin meter rather than a ring, the
+     count sits underneath as support, and finished work steps back to a quiet
+     line instead of shouting in green. Nothing competes with the number you
+     act on. */
+  .today-card{
+    display:flex; align-items:center; gap:14px; width:100%; text-align:left;
+    background:var(--surface); border:2px solid var(--ink); box-shadow:4px 4px 0 var(--green-deep);
+    padding:16px; margin-bottom:14px; color:var(--text); min-height:88px;
+    transition:transform .09s ease, box-shadow .09s ease;
+  }
+  .today-card:active{transform:translate(2px,2px); box-shadow:2px 2px 0 var(--green-deep);}
+  .today-icon{font-size:26px; flex-shrink:0; line-height:1;}
+  .today-body{flex:1; min-width:0; display:flex; flex-direction:column; gap:8px;}
+  .today-name{font-size:17px; font-weight:800; letter-spacing:-0.01em; color:var(--text);}
+  .today-meter{display:block; height:8px; background:#0F1412; border:2px solid var(--silver-deep);}
+  .today-meter i{display:block; height:100%; background:var(--accent);}
+  .today-sub{font-size:12px; color:var(--text-dim); font-family:var(--font-mono);}
+  .today-sub b{color:var(--accent); font-weight:700;}
+  .today-left{
+    flex-shrink:0; display:flex; flex-direction:column; align-items:flex-end;
+    min-width:64px; padding-left:8px; border-left:2px solid var(--ink);
+  }
+  .today-left b{
+    font-family:var(--font-num); font-size:30px; font-weight:700; letter-spacing:-0.05em;
+    line-height:1; color:var(--accent);
+  }
+  .today-left em{
+    font-style:normal; font-size:9.5px; text-transform:uppercase; letter-spacing:0.12em;
+    color:var(--text-faint); margin-top:5px; font-family:var(--font-mono);
+  }
+
+  /* done: present, not loud */
+  .done-row{
+    display:flex; align-items:center; gap:11px; width:100%; text-align:left; min-height:52px;
+    background:transparent; border:none; border-bottom:2px solid #1E2522; padding:6px 2px;
+    color:var(--text-dim);
+  }
+  .done-tick{display:flex; color:var(--accent); flex-shrink:0;}
+  .done-tick svg{width:17px; height:17px;}
+  .done-name{flex:1; min-width:0; font-size:14.5px; font-weight:600;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .done-num{font-family:var(--font-mono); font-size:12.5px; color:var(--text-faint);}
+
+  .all-clear{
+    border:2px solid var(--accent); background:#0F1412; padding:18px 16px; margin-bottom:14px;
+  }
+  .all-clear b{display:block; font-size:16px; color:var(--accent); font-weight:800;}
+  .all-clear span{display:block; font-size:12.5px; color:var(--text-dim); margin-top:3px;}
+
+  /* the note is signage, not a card competing with the cards */
+  .tip{
+    background:transparent; border:none; border-left:3px solid var(--accent);
+    padding:2px 0 2px 11px; margin:0 0 16px; color:var(--text-dim); font-size:12.5px;
+  }
+  .tip[data-tip="sub-rep"]{border-left-color:var(--danger);}

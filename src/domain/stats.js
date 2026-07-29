@@ -189,6 +189,54 @@ export function allStats(exercises, setsLog, timersLog, todayOverride, overrides
 }
 
 /**
+ * A window onto one exercise's history, newest first.
+ *
+ * Reach and render are deliberately separate. Walking the calendar is cheap —
+ * a decade is a few thousand arithmetic steps — but putting a few thousand
+ * rows in the DOM is not. So this counts the whole history and returns only
+ * the slice asked for, letting the list reach back as far as the data goes
+ * while the page only ever holds what has actually been opened.
+ *
+ * Bounded by the exercise's own beginning (its createdDate, or its first
+ * logged day), so it stops where the history genuinely stops rather than at
+ * an arbitrary number.
+ */
+export function dayHistory(ex, setsLog, overrides, limit, todayOverride) {
+  const today = todayOverride || todayISO();
+  const logged = workoutDates(ex.id, setsLog);
+  let first = ex.createdDate || null;
+  if (logged.length && (!first || logged[0] < first)) first = logged[0];
+  if (!first) return { rows: [], remaining: 0, total: 0 };
+
+  const rows = [];
+  let total = 0;
+  let cursor = today;
+  let guard = 0;
+
+  while (cursor >= first && guard < 20000) {
+    if (isScheduledOn(ex, cursor)) {
+      total++;
+      if (rows.length < limit) {
+        const target = getEffectiveTarget(ex, cursor);
+        const totalReps = calcTotal((setsLog[cursor] && setsLog[cursor][ex.id]) || []);
+        rows.push({
+          date: cursor,
+          isToday: cursor === today,
+          target: target || null,
+          total: totalReps,
+          rest: isBreakDay(overrides, cursor, ex.id),
+          hit: !!target && totalReps >= target,
+        });
+      }
+    }
+    cursor = addDays(cursor, -1);
+    guard++;
+  }
+
+  return { rows, remaining: Math.max(0, total - rows.length), total };
+}
+
+/**
  * How hot a streak reads. The strip only ever shows a week, so once it fills
  * the number has to carry the magnitude on its own — these tiers let it
  * intensify instead of the strip growing arms.

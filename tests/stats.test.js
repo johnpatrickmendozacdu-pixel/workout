@@ -9,6 +9,7 @@ import {
   formatCount,
   recentDayStates,
   streakTier,
+  dayHistory,
 } from '../src/domain/stats.js';
 
 const TODAY = '2026-07-28';
@@ -224,5 +225,56 @@ describe('streakTier', () => {
   it('never fails on missing input', () => {
     expect(streakTier(null)).toBe(0);
     expect(streakTier(undefined)).toBe(0);
+  });
+});
+
+
+describe('dayHistory (reach without rendering)', () => {
+  const e = ex({ createdDate: '2026-01-01', targetHistory: [{ effectiveDate: '2026-01-01', target: 100 }] });
+  const log = { '2026-07-28': { a: [100] }, '2026-03-02': { a: [40] } };
+
+  it('returns only the slice asked for, but counts the whole history', () => {
+    const w = dayHistory(e, log, {}, 7, '2026-07-28');
+    expect(w.rows).toHaveLength(7);
+    expect(w.total).toBe(209);              // Jan 1 to Jul 28 inclusive
+    expect(w.remaining).toBe(202);
+  });
+
+  it('reaches as far back as the data goes when the window is opened up', () => {
+    const w = dayHistory(e, log, {}, 500, '2026-07-28');
+    expect(w.rows).toHaveLength(209);       // the whole history, not a fixed cap
+    expect(w.remaining).toBe(0);
+  });
+
+  it('stops at the exercise\'s own beginning, not an arbitrary limit', () => {
+    const young = ex({ createdDate: '2026-07-20', targetHistory: [{ effectiveDate: '2026-07-20', target: 100 }] });
+    const recentOnly = { '2026-07-28': { a: [100] } };
+    const w = dayHistory(young, recentOnly, {}, 500, '2026-07-28');
+    expect(w.total).toBe(9);
+    expect(w.rows[w.rows.length - 1].date).toBe('2026-07-20');
+  });
+
+  it('reaches back past createdDate when sets were logged earlier still', () => {
+    const young = ex({ createdDate: '2026-07-20', targetHistory: [{ effectiveDate: '2026-07-20', target: 100 }] });
+    const w = dayHistory(young, log, {}, 500, '2026-07-28');
+    expect(w.rows[w.rows.length - 1].date).toBe('2026-03-02'); // the earliest real data wins
+  });
+
+  it('counts only scheduled days, so a rest day never pads the list', () => {
+    const monOnly = ex({ createdDate: '2026-07-01', schedule: [1], targetHistory: [{ effectiveDate: '2026-07-01', target: 100 }] });
+    const w = dayHistory(monOnly, {}, {}, 50, '2026-07-28');
+    expect(w.total).toBe(4);                 // four Mondays in that range
+    w.rows.forEach((r) => expect(new Date(r.date + 'T00:00:00').getDay()).toBe(1));
+  });
+
+  it('marks hit, rest and today correctly', () => {
+    const w = dayHistory(e, log, { '2026-07-27': { a: 'break' } }, 3, '2026-07-28');
+    expect(w.rows[0]).toMatchObject({ date: '2026-07-28', isToday: true, hit: true });
+    expect(w.rows[1]).toMatchObject({ date: '2026-07-27', rest: true });
+    expect(w.rows[2]).toMatchObject({ date: '2026-07-26', hit: false });
+  });
+
+  it('is empty and safe for an exercise with no history', () => {
+    expect(dayHistory(ex({ createdDate: null }), {}, {}, 7, '2026-07-28')).toEqual({ rows: [], remaining: 0, total: 0 });
   });
 });

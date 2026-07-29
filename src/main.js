@@ -40,11 +40,12 @@ import {
   mergeBackup,
 } from './domain/domain.js';
 import * as gsync from './sync/googleSync.js';
-import { allStats, exerciseStats, recentDayStates, streakTier, formatDuration, formatCount, formatClock } from './domain/stats.js';
+import { allStats, exerciseStats, recentDayStates, streakTier, dayHistory, formatDuration, formatCount, formatClock } from './domain/stats.js';
 
 const DEFAULT_CHIPS = [5, 10, 12];
 // Every number is on screen — no hunting, no typing. One tap applies it in
 // whichever direction the lever is set to.
+const DAY_PAGE = 7;   // a week at a time — the list grows only on request
 const REP_PAD = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 20, 25, 30, 50];
 
 /* ============================= STATE ============================= */
@@ -69,7 +70,7 @@ const state = {
   editingTopSet: null,
   editingDayTotal: null,
   openExercise: null,
-  expandedDays: null,
+  dayLimits: {},
   repMode: 'add',   // 'add' | 'sub' — the pad lever
   version: { local: typeof __BUILD_ID__ === 'string' ? __BUILD_ID__ : 'dev', status: 'unknown' },
   panel: null,          // 'stats' — mobile drawer only
@@ -838,40 +839,30 @@ function exerciseHistory(ex, s) {
     ${num('Best day', best ? `${best.total} <i>${escapeHtml(formatDisplayDate(best.date, { month: 'short', day: 'numeric' }))}</i>` : '—')}
   </dl>`;
 
-  const showAll = state.expandedDays === ex.id;
-  const LIMIT = 7;
-  let rows = '';
-  let shown = 0;
-  let hidden = 0;
-  for (let i = 0; i < 120; i++) {
-    const d = addDays(today, -i);
-    if (ex.createdDate && d < ex.createdDate) break;
-    if (!isScheduledOn(ex, d)) continue;
-    if (!showAll && shown >= LIMIT) { hidden++; continue; }
-    shown++;
-    const target = getEffectiveTarget(ex, d);
-    const total = calcTotal((state.setsLog[d] && state.setsLog[d][ex.id]) || []);
-    const rest = isBreakDay(state.streakOverrides, d, ex.id);
-    const hit = target > 0 && total >= target;
-    const editing = state.editingDayTotal === `${d}|${ex.id}`;
-    rows += `<div class="exday ${rest ? 'rest' : hit ? 'hit' : 'miss'}">
-      <span class="exday-when">${i === 0 ? 'Today' : formatDisplayDate(d, { weekday: 'short', day: 'numeric' })}</span>
+  // Reach is unbounded; only the rendered slice grows, and only when asked.
+  const limit = state.dayLimits[ex.id] || DAY_PAGE;
+  const { rows: history, remaining } = dayHistory(ex, state.setsLog, state.streakOverrides, limit);
+
+  const rows = history.map((r) => {
+    const editing = state.editingDayTotal === `${r.date}|${ex.id}`;
+    return `<div class="exday ${r.rest ? 'rest' : r.hit ? 'hit' : 'miss'}">
+      <span class="exday-when">${r.isToday ? 'Today' : escapeHtml(formatDisplayDate(r.date, { weekday: 'short', day: 'numeric', month: 'short' }))}</span>
       ${editing
         ? `<span class="inline-target-edit" data-stop>
-            <input type="number" min="0" step="any" id="day-total-input-${ex.id}" class="target-edit-input" value="${total || ''}" placeholder="0">
-            <button class="mini-btn" data-action="save-day-total" data-id="${ex.id}" data-date="${d}" aria-label="Save">${ICONS.check}</button>
+            <input type="number" min="0" step="any" id="day-total-input-${ex.id}" class="target-edit-input" value="${r.total || ''}" placeholder="0">
+            <button class="mini-btn" data-action="save-day-total" data-id="${ex.id}" data-date="${r.date}" aria-label="Save">${ICONS.check}</button>
             <button class="mini-btn" data-action="cancel-day-total" aria-label="Cancel">${ICONS.close}</button>
           </span>`
-        : `<button class="day-num total" data-editable-day-total data-id="${ex.id}" data-date="${d}" aria-label="Edit total">${rest ? '🌙' : total}</button>
+        : `<button class="day-num total" data-editable-day-total data-id="${ex.id}" data-date="${r.date}" aria-label="Edit total">${r.rest ? '🌙' : r.total}</button>
            <span class="day-sep">/</span>
-           <button class="day-num target" data-editable-day-target data-id="${ex.id}" data-date="${d}" aria-label="Edit target">${target || '—'}</button>
+           <button class="day-num target" data-editable-day-target data-id="${ex.id}" data-date="${r.date}" aria-label="Edit target">${r.target || '—'}</button>
            <span class="exday-unit">${u}</span>`}
     </div>`;
-  }
+  }).join('');
 
-  const more = hidden > 0
-    ? `<button class="exday-more" data-action="expand-days" data-id="${ex.id}">+${hidden} earlier day${hidden === 1 ? '' : 's'}</button>`
-    : (showAll ? `<button class="exday-more" data-action="expand-days" data-id="${ex.id}">Show less</button>` : '');
+  const more = remaining > 0
+    ? `<button class="exday-more" data-action="more-days" data-id="${ex.id}">+${remaining.toLocaleString()} earlier</button>`
+    : (limit > DAY_PAGE ? `<button class="exday-more" data-action="less-days" data-id="${ex.id}">Show less</button>` : '');
 
   return `<div class="ex-history">${numbers}<div class="exday-list">${rows}</div>${more}</div>`;
 }
@@ -1948,8 +1939,17 @@ document.addEventListener('click', async (e) => {
       retireTip(btn.dataset.key);
       rerender();
       break;
-    case 'expand-days':
-      state.expandedDays = state.expandedDays === btn.dataset.id ? null : btn.dataset.id;
+    case 'more-days': {
+      // Grows geometrically: cheap for the common case of a recent
+      // correction, but still reaches years back in a handful of taps rather
+      // than sixty. The first page stays a week either way.
+      const cur = state.dayLimits[btn.dataset.id] || DAY_PAGE;
+      state.dayLimits[btn.dataset.id] = cur + Math.max(30, cur);
+      renderView();
+      break;
+    }
+    case 'less-days':
+      delete state.dayLimits[btn.dataset.id];
       renderView();
       break;
     case 'toggle-ex-history':

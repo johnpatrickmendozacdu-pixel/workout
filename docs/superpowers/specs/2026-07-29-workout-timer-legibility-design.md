@@ -63,9 +63,11 @@ turning to the warning colour.
 
 ### 3. Give up gets the sheet its opposite already has
 
-Give up is currently one silent tap with no confirmation and no
-acknowledgement. Crossing your target, the symmetric moment, opens a sheet with
-a stat line and two choices.
+Give up currently guards itself with a native `confirm()`, which in an
+installed PWA arrives as a system alert in the OS's own styling, breaking the
+design language entirely and showing you none of your numbers. Crossing your
+target, the symmetric moment, opens a proper sheet with a stat line and two
+choices.
 
 Tapping Give up now opens `modal.type = 'giveup'`, built as a sibling of
 `modalComplete`:

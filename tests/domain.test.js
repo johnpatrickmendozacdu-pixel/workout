@@ -17,6 +17,7 @@ import {
   setDayTotal,
   splitIntoSets,
   getTimer,
+  timerPhase,
   timerElapsedMs,
   startTimer,
   pauseTimer,
@@ -201,6 +202,23 @@ describe('workout timer', () => {
 
   it('getTimer returns null when nothing has been logged yet', () => {
     expect(getTimer({}, TODAY, 'a')).toBeNull();
+  });
+
+  it('timerPhase names the not-yet-started case instead of leaving it null', () => {
+    expect(timerPhase(null)).toBe('idle');
+    expect(timerPhase(getTimer({}, TODAY, 'a'))).toBe('idle');
+  });
+
+  it('timerPhase reports the status of a timer that exists', () => {
+    let timers = startTimer({}, TODAY, 'a', 1000);
+    expect(timerPhase(getTimer(timers, TODAY, 'a'))).toBe('running');
+    timers = pauseTimer(timers, TODAY, 'a', 6000);
+    expect(timerPhase(getTimer(timers, TODAY, 'a'))).toBe('paused');
+
+    const won = finishTimer(timers, TODAY, 'a', 7000, 'completed');
+    expect(timerPhase(getTimer(won, TODAY, 'a'))).toBe('completed');
+    const quit = finishTimer(timers, TODAY, 'a', 7000, 'gaveup');
+    expect(timerPhase(getTimer(quit, TODAY, 'a'))).toBe('gaveup');
   });
 });
 

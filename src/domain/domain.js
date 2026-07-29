@@ -428,6 +428,15 @@ export function getTimer(timersLog, dateStr, exId) {
   return (timersLog[dateStr] && timersLog[dateStr][exId]) || null;
 }
 
+/**
+ * The phase a timer is in, with the not-yet-started case given a name. The card
+ * now draws a dormant block before the first rep, so "no record yet" is a state
+ * the UI renders rather than an absence it checks for.
+ */
+export function timerPhase(timer) {
+  return timer ? timer.status : 'idle';
+}
+
 function setTimerRecord(timersLog, dateStr, exId, record) {
   const next = { ...timersLog };
   next[dateStr] = { ...(next[dateStr] || {}), [exId]: record };

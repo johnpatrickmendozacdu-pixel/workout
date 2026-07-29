@@ -26,6 +26,7 @@ import {
   purgeExerciseSets as purgeExerciseSetsPure,
   setDayTotal as setDayTotalPure,
   getTimer as getTimerPure,
+  timerPhase,
   timerElapsedMs,
   startTimer as startTimerPure,
   pauseTimer as pauseTimerPure,
@@ -531,6 +532,9 @@ async function resumeTimerHandler(exId) {
 async function giveUpTimerHandler(exId) {
   state.timersLog = finishTimerPure(state.timersLog, todayISO(), exId, Date.now(), 'gaveup');
   await persistTimers();
+  // Confirmed from the give-up sheet, so land back on the card the sheet came
+  // from — now reading "Ended early" — rather than re-rendering the question.
+  if (state.modal && state.modal.type === 'giveup') state.modal = { type: 'logger', exId };
   renderModal();
   renderView();
 }
@@ -1046,9 +1050,12 @@ function viewToday() {
     const total = calcTotal(arr);
     const hasTarget = !!target && target > 0;
     const left = hasTarget ? Math.max(0, target - total) : 0;
+    // A session you deliberately ended is not work still owing. Today answers
+    // "what's left"; it should not keep asking for reps you already declined.
+    const endedEarly = timerPhase(getTimerPure(state.timersLog, today, ex.id)) === 'gaveup';
     return {
-      ex, target, total, hasTarget, left,
-      done: isBreakDay(state.streakOverrides, today, ex.id) || (hasTarget ? total >= target : total > 0),
+      ex, target, total, hasTarget, left, endedEarly,
+      done: endedEarly || isBreakDay(state.streakOverrides, today, ex.id) || (hasTarget ? total >= target : total > 0),
       rest: isBreakDay(state.streakOverrides, today, ex.id),
       pct: hasTarget ? Math.min(1, total / target) : (total > 0 ? 1 : 0),
       timer: getTimerPure(state.timersLog, today, ex.id),
@@ -1076,11 +1083,16 @@ function viewToday() {
   };
 
   /* Finished work steps back: one quiet line, no colour blast. */
-  const doneRow = (r) => `<button class="done-row" data-action="open-logger" data-id="${r.ex.id}">
-    <span class="done-tick">${r.rest ? '🌙' : ICONS.check}</span>
-    <span class="done-name">${escapeHtml(r.ex.name)}</span>
-    <span class="done-num">${r.rest ? 'Rest' : `${r.total} ${escapeHtml(r.ex.unit)}`}</span>
-  </button>`;
+  const doneRow = (r) => {
+    // Ended early is closed out, not won: it keeps the quiet row but takes a
+    // flag instead of the tick, and shows the shortfall honestly.
+    const short = r.endedEarly && r.hasTarget && r.total < r.target;
+    return `<button class="done-row${short ? ' ended-early' : ''}" data-action="open-logger" data-id="${r.ex.id}">
+      <span class="done-tick">${r.rest ? '🌙' : (short ? ICONS.flag : ICONS.check)}</span>
+      <span class="done-name">${escapeHtml(r.ex.name)}</span>
+      <span class="done-num">${r.rest ? 'Rest' : (short ? `${r.total} of ${r.target}` : `${r.total} ${escapeHtml(r.ex.unit)}`)}</span>
+    </button>`;
+  };
 
   let html = tipHtml('open-ex', 'Tap an exercise to log reps.');
 
@@ -1216,6 +1228,51 @@ function ensureGlobalTick() {
   }, 1000);
 }
 
+/**
+ * The clock, in every phase including the one before it starts. Drawing a
+ * dormant block rather than nothing is the whole point: the rule that your
+ * first rep starts the clock has to be readable *before* you trip over it, and
+ * the block no longer materialises under your thumb mid-tap.
+ *
+ * The note is permanent signage in the same slot every phase, and it states a
+ * consequence rather than a sentiment — a session you end early really is
+ * excluded from your best and average times by `completedTimes`.
+ */
+const TIMER_COPY = {
+  idle: ['Not started', 'Starts on your first rep.'],
+  running: ['In progress', 'Pause any time — stepping away costs you nothing.'],
+  paused: ['Paused', 'Clock stopped. Your reps still count. Resume when you’re back.'],
+  completed: ['Target hit', 'Banked. This time counts toward your best.'],
+  gaveup: ['Ended early', 'Your reps still count. The time doesn’t.'],
+};
+
+function timerBlockHtml(exId, timer) {
+  const phase = timerPhase(timer);
+  const [statusLabel, note] = TIMER_COPY[phase];
+  const elapsed = formatElapsed(timerElapsedMs(timer, Date.now()));
+  const finishedClock = timer ? formatClock(timer.finishedAt) : null;
+  const live = phase === 'running' || phase === 'paused';
+
+  // Nothing to pause, end or reset before the first rep, so idle carries no
+  // controls row at all rather than a row of dead buttons.
+  const controls = phase === 'idle' ? '' : `<div class="timer-controls">
+      ${live ? (phase === 'running'
+        ? `<button class="timer-btn" data-action="pause-timer" data-id="${exId}">${ICONS.pause}Pause</button>`
+        : `<button class="timer-btn" data-action="resume-timer" data-id="${exId}">${ICONS.play}Resume</button>`) : ''}
+      ${live ? `<button class="timer-btn giveup" data-action="giveup-timer" data-id="${exId}">${ICONS.flag}Give up</button>` : ''}
+      <button class="timer-btn reset" data-action="reset-timer" data-id="${exId}">${ICONS.restore}Reset</button>
+    </div>`;
+
+  return `<div class="timer-block status-${phase}">
+    <div class="timer-top">
+      <span class="timer-clock" id="timer-display" data-elapsed="${exId}" data-status="${phase}">${elapsed}</span>
+      <span class="timer-status">${phase === 'completed' ? ICONS.trophy : ''}${statusLabel}${finishedClock ? ` · ${escapeHtml(finishedClock)}` : ''}</span>
+    </div>
+    ${controls}
+    <p class="timer-note">${escapeHtml(note)}</p>
+  </div>`;
+}
+
 /** Target reached: bank it, or push past it. Timer is already paused. */
 function modalComplete() {
   const m = state.modal;
@@ -1232,6 +1289,36 @@ function modalComplete() {
         <button class="secondary-btn" data-action="keep-going" data-id="${m.exId}">Keep going</button>
       </div>
       <div class="hint">Keep going resumes the clock and carries on counting reps, sets and time.</div>
+    </div>
+  </div>`;
+}
+
+/**
+ * Ending early is the same moment as reaching the target with the opposite
+ * sign, so it gets the same sheet rather than a native confirm() — which in an
+ * installed PWA arrives as a system alert and shows you none of your numbers.
+ * The clock keeps running underneath: this is a question, not a pause.
+ */
+function modalGiveUp() {
+  const m = state.modal;
+  const ex = state.exercises.find((e) => e.id === m.exId);
+  if (!ex) return '';
+  const today = todayISO();
+  const total = calcTotal(getSetsFor(m.exId, today));
+  const target = getEffectiveTarget(ex, today);
+  const timer = getTimerPure(state.timersLog, today, m.exId);
+  const done = target ? `${total} of ${target} ${escapeHtml(ex.unit)}` : `${total} ${escapeHtml(ex.unit)}`;
+  return `<div class="modal-backdrop">
+    <div class="modal-sheet center celebrate" data-stop>
+      <div class="celebrate-glyph">${escapeHtml(ex.icon)}</div>
+      <h2>End here?</h2>
+      <div class="celebrate-line">${escapeHtml(ex.name)}</div>
+      <div class="celebrate-stat">${done} <span>•</span> ${formatDuration(timerElapsedMs(timer, Date.now()))}</div>
+      <div class="celebrate-actions">
+        <button class="primary-btn danger" data-action="confirm-giveup" data-id="${m.exId}">Log what I did</button>
+        <button class="secondary-btn" data-action="keep-going" data-id="${m.exId}">Keep going</button>
+      </div>
+      <div class="hint">Everything above is kept. Today just won't count as hitting the target.</div>
     </div>
   </div>`;
 }
@@ -1272,7 +1359,9 @@ function modalGuide() {
     today: [
       has.length && ['Log reps', 'Tap the exercise, then a number.'],
       has.length && ['Take reps off', 'Flip the lever to Subtract.'],
+      has.length && ['The clock', 'Starts on your first rep. Pause any time.'],
       anyTarget && ['Hit the target', 'Take the win, or Keep going.'],
+      has.length && ['End early', 'Give up keeps your reps and stops the clock.'],
       anyTarget && ['Rest a day', 'Open the exercise, Take a break. Streak holds.'],
       !has.length && ['Start', 'Add an exercise.'],
     ],
@@ -1341,6 +1430,7 @@ function renderModal() {
   if (!state.modal) { root.innerHTML = ''; lastModalKey = null; setBodyScrollLock(false); ensureGlobalTick(); return; }
   const m = state.modal;
   if (m.type === 'complete') root.innerHTML = modalComplete();
+  else if (m.type === 'giveup') root.innerHTML = modalGiveUp();
   else if (m.type === 'confirmBreak') root.innerHTML = modalConfirmBreak();
   else if (m.type === 'guide') root.innerHTML = modalGuide();
   else if (m.type === 'logger') root.innerHTML = modalLogger(m.exId);
@@ -1397,27 +1487,7 @@ function modalLogger(exId) {
     : `<div class="logger-total editable-target" data-editable-logger-total data-id="${exId}" title="Tap to edit total">${total}</div>`;
 
   const timer = getTimerPure(state.timersLog, today, exId);
-  const timerHtml = timer ? (() => {
-    const elapsed = formatElapsed(timerElapsedMs(timer, Date.now()));
-    const statusLabel = { running: 'In progress', paused: 'Paused', completed: 'Target hit', gaveup: 'Ended early' }[timer.status];
-    const finishedClock = formatClock(timer.finishedAt);
-    const activeControls = (timer.status === 'running' || timer.status === 'paused')
-      ? `${timer.status === 'running'
-           ? `<button class="timer-btn" data-action="pause-timer" data-id="${exId}">${ICONS.pause}Pause</button>`
-           : `<button class="timer-btn" data-action="resume-timer" data-id="${exId}">${ICONS.play}Resume</button>`}
-         <button class="timer-btn giveup" data-action="giveup-timer" data-id="${exId}">${ICONS.flag}Give up</button>`
-      : '';
-    return `<div class="timer-block status-${timer.status}">
-      <div class="timer-top">
-        <span class="timer-clock" id="timer-display" data-elapsed="${exId}" data-status="${timer.status}">${elapsed}</span>
-        <span class="timer-status">${timer.status === 'completed' ? ICONS.trophy : ''}${statusLabel}${finishedClock ? ` · ${escapeHtml(finishedClock)}` : ''}</span>
-      </div>
-      <div class="timer-controls">
-        ${activeControls}
-        <button class="timer-btn reset" data-action="reset-timer" data-id="${exId}">${ICONS.restore}Reset</button>
-      </div>
-    </div>`;
-  })() : '';
+  const timerHtml = timerBlockHtml(exId, timer);
 
   return `<div class="modal-backdrop" data-action="backdrop">
     <div class="modal-sheet" data-stop>
@@ -1921,9 +1991,11 @@ document.addEventListener('click', async (e) => {
       await resumeTimerHandler(btn.dataset.id);
       break;
     case 'giveup-timer':
-      if (confirm('Give up on today’s target for this exercise? The timer will stop and today won’t count as complete.')) {
-        await giveUpTimerHandler(btn.dataset.id);
-      }
+      state.modal = { type: 'giveup', exId: btn.dataset.id };
+      renderModal();
+      break;
+    case 'confirm-giveup':
+      await giveUpTimerHandler(btn.dataset.id);
       break;
     case 'reset-timer':
       if (confirm('Reset today’s timer back to 0:00? This only clears the clock, not your logged reps.')) {

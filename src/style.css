@@ -226,9 +226,15 @@
   .status-completed .timer-clock{color:var(--success);}
   .timer-controls{display:flex; gap:8px; justify-content:center; margin-top:10px;}
   .timer-btn{
-    display:flex; align-items:center; gap:5px; background:var(--bg-card); border:1px solid var(--border-strong);
-    color:var(--text); font-size:13px; font-weight:600; padding:8px 14px; border-radius:999px;
+    display:flex; align-items:center; justify-content:center; gap:5px;
+    background:var(--bg-card); border:1px solid var(--border-strong);
+    color:var(--text); font-size:13px; font-weight:600; padding:8px 12px; border-radius:999px;
+    min-height:44px; /* these predated the 44px rule and shipped at 36 */
   }
+  /* signage, same slot in every phase — it teaches the clock rather than
+     announcing it once and retiring */
+  .timer-note{margin:10px 0 0; font-size:12.5px; line-height:1.35; color:var(--text-dim);}
+  .status-idle .timer-clock, .status-idle .timer-status{color:var(--text-faint);}
   .timer-btn:active{background:var(--bg-card-hover);}
   .timer-btn.giveup{color:var(--danger); border-color:rgba(228,87,46,0.35);}
   .timer-btn.giveup:active{background:rgba(228,87,46,0.12);}
@@ -1079,6 +1085,33 @@
   .ex-card.complete .tally-bar, .ex-card.complete .tally-strike{background:var(--accent);}
   .timer-block.status-completed{border-color:var(--accent); box-shadow:4px 4px 0 var(--accent);}
   .timer-clock{color:var(--text);}
+
+  /* the clock, phase by phase. Neon stays rationed: it marks the block that is
+     live or won, and never the dormant or abandoned one. */
+  .timer-btn{background:var(--surface); border:2px solid var(--ink); color:var(--text);}
+  .timer-btn.giveup{color:var(--danger); border-color:var(--danger);}
+  .timer-block.status-running{border-color:var(--accent);}
+  .timer-block.status-running .timer-clock, .timer-block.status-running .timer-status{color:var(--accent);}
+  .timer-block.status-idle{border-color:#2A312D; box-shadow:none;}
+  .timer-block.status-gaveup{opacity:1; border-color:var(--danger);}
+  .timer-block.status-gaveup .timer-status{color:var(--danger);}
+  .timer-block.status-gaveup .timer-clock{color:var(--text-dim);}
+
+  /* the note takes the colour of the phase it is explaining */
+  .timer-note{
+    background:#0F1412; border:2px solid var(--accent); color:var(--text-dim);
+    padding:10px 12px; text-align:left;
+  }
+  .status-idle .timer-note{border-color:#2A312D;}
+  .status-paused .timer-note{border-color:var(--silver);}
+  .status-gaveup .timer-note{border-color:var(--danger);}
+
+  /* closed out short of target: kept, not celebrated */
+  /* the icon paths stroke currentColor, so the colour has to be set on the
+     container — stroking the <svg> itself loses to the path's own attribute */
+  .done-row.ended-early .done-tick{color:var(--danger);}
+  .done-row.ended-early .done-num{color:var(--danger);}
+  .primary-btn.danger{background:var(--danger); border-color:var(--danger); color:#0A0C0B;}
   .set-badge{background:#0F1412; border:2px solid var(--ink); color:var(--text);}
 
   /* notes: permanent signage, not a dismissable toast */

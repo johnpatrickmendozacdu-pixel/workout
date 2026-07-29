@@ -1,28 +1,30 @@
 :root{
-    /* Brutalist light: paper, silver, black rule, one dark green.
-       Nothing is soft — no radius, no blur, no gradient. Separation is done
-       with black rule and flat blocks, so where one thing ends and the next
-       begins is never in doubt. */
-    --paper:#EFEFEC;
-    --bg:#EFEFEC;
-    --bg-elevated:#FFFFFF;
-    --bg-card:#FFFFFF;
-    --bg-card-hover:#E4E4DF;
-    --silver:#C9CCC8;
-    --silver-deep:#A8ADA8;
-    --ink:#0A0A0A;
-    --border:#0A0A0A;
-    --border-strong:#0A0A0A;
-    --text:#0A0A0A;
-    --text-dim:#3D423F;
-    --text-faint:#5A615D;
-    --accent:#14532D;          /* dark green */
-    --accent-ink:#FFFFFF;
+    /* Brutalist, but at night. Black ground, silver rule, dark green blocks,
+       and a neon green kept for one job only: what is live or achieved.
+       Structure stays hard — zero radius, 2px rule, hard offset shadow — so
+       separation is built rather than shaded. */
+    --paper:#0A0C0B;
+    --bg:#0A0C0B;
+    --bg-elevated:#141917;
+    --bg-card:#141917;
+    --bg-card-hover:#1B211E;
+    --surface:#141917;
+    --silver:#C3C9C4;
+    --silver-deep:#7C857F;
+    --ink:#D8DEDA;             /* rule and primary text — light on black */
+    --border:#D8DEDA;
+    --border-strong:#D8DEDA;
+    --text:#E9EDEA;
+    --text-dim:#A2AAA5;
+    --text-faint:#828C86;
+    --accent:#3EE07F;          /* neon: live, hit, achieved */
+    --accent-ink:#06120B;
     --accent-2:#14532D;
-    --success:#14532D;
-    --success-ink:#FFFFFF;
-    --record:#14532D;
-    --danger:#A3231B;
+    --green-deep:#14532D;
+    --success:#3EE07F;
+    --success-ink:#06120B;
+    --record:#3EE07F;
+    --danger:#FF6B57;
     --radius-lg:0px;
     --radius-md:0px;
     --radius-sm:0px;
@@ -1126,3 +1128,101 @@
     content:''; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
     width:44px; height:44px;
   }
+
+  /* ============================================================
+     NIGHT BRUTALIST — black ground, silver rule, dark green, neon signal
+     Same hard structure as the light pass; the ink simply inverts. Neon is
+     rationed: it marks what is live or achieved and nothing else, so the eye
+     goes straight to it instead of swimming in a bright field.
+     ============================================================ */
+  body, #app{background:var(--paper);}
+
+  /* surfaces: near-black panel inside a silver rule, hard green offset */
+  .ex-card, .ex-stat, .plan-row, .best-row, .rest-row, .empty-card, .timer-block,
+  .modal-sheet, .day-row, .break-row{
+    background:var(--surface); border:2px solid var(--ink); color:var(--text);
+  }
+  .ex-card, .plan-row{box-shadow:4px 4px 0 var(--green-deep);}
+  .ex-stat{box-shadow:4px 4px 0 var(--green-deep);}
+  .ex-stat.is-open{box-shadow:5px 5px 0 var(--accent);}
+  .modal-sheet{border-top:3px solid var(--accent);}
+  .modal-backdrop{background:rgba(0,0,0,0.72);}
+  #topbar{background:var(--paper); border-bottom:2px solid var(--ink);}
+  .nav-inner{background:var(--paper); border-top:2px solid var(--ink);}
+
+  /* type */
+  .date-heading, .screen-title, .ex-name, .ex-numbers dd, .guide-list dt,
+  .section-label, .set-list-head, .ex-numbers dt{color:var(--text);}
+  .app-title{color:var(--accent);}
+  .streak-best, .exday-when, .guide-list dd{color:var(--text-dim);}
+
+  /* the strip: neon = hit, silver = rest, empty in rule = missed */
+  .dot{border:2px solid var(--silver-deep); background:transparent;}
+  .dot.hit{background:var(--accent); border-color:var(--accent);}
+  .dot.break{background:var(--silver); border-color:var(--silver);}
+  .dot.miss{background:transparent; border-color:var(--silver-deep);}
+  .dot.rest, .dot.none{background:transparent; border-color:#2A312D; opacity:1;}
+  .dot.today{box-shadow:0 3px 0 var(--accent);}
+
+  /* streak heat: silver, then neon, then blocks */
+  .streak-now b{color:var(--text);}
+  .streak-now b[data-tier="1"]{color:var(--accent);}
+  .streak-now b[data-tier="2"]{color:var(--accent); border-bottom:4px solid var(--accent);}
+  .streak-now b[data-tier="3"]{background:var(--green-deep); color:var(--accent); padding:0 8px; border:none;}
+  .streak-now b[data-tier="4"]{background:var(--accent); color:var(--accent-ink); padding:0 8px; border:none;}
+  .streak-flame svg path{fill:var(--accent) !important;}
+
+  /* controls: outline by default, neon only when live */
+  .secondary-btn, .rep-key, .sched-day, .sched-mode, .rest-toggle, .day-num,
+  .icon-btn, .help-chip, .version-chip, .avatar-chip, .streak-pill, .mini-btn,
+  .exday-more, .logger-rest{
+    background:var(--surface); border:2px solid var(--ink); color:var(--text);
+  }
+  .rep-key{box-shadow:3px 3px 0 var(--green-deep); color:var(--text);}
+  .rep-key:active{box-shadow:0 0 0 var(--green-deep); transform:translate(3px,3px);}
+  .rep-pad.subtracting .rep-key{border-color:var(--danger); color:var(--danger); box-shadow:3px 3px 0 #5C2018;}
+  .rep-lever{background:#0F1412; border:2px solid var(--ink);}
+  .lever-opt{color:var(--text-dim);}
+  .lever-opt.on{background:var(--accent); color:var(--accent-ink);}
+  .lever-opt.sub.on{background:var(--danger); color:#0A0C0B;}
+
+  .primary-btn, .add-btn, .nav-btn.active, .sched-mode.on, .sched-day.on,
+  .rest-toggle.on, .avatar-chip.signed-in, .guide-sec h3 em{
+    background:var(--accent); color:var(--accent-ink); border:2px solid var(--accent);
+  }
+  .nav-btn{color:var(--text-dim);}
+  .nav-btn.active{color:var(--accent-ink);}
+  .nav-btn.active svg{stroke:var(--accent-ink);}
+  .sheet-close{background:transparent; border:2px solid var(--danger); color:var(--danger);}
+  .sheet-close svg{stroke:var(--danger);}
+  .streak-pill svg path{fill:var(--accent);}
+  .version-chip.latest{color:var(--accent);}
+
+  /* rows and history */
+  .exday{border-top:2px solid #2A312D;}
+  .day-num{box-shadow:2px 2px 0 var(--green-deep);}
+  .day-num.target{border-style:dashed; color:var(--text-dim);}
+  .ex-history{border-top:2px solid var(--ink);}
+  .exday-more{color:var(--accent); border:none; border-top:2px solid var(--ink); background:none;}
+
+  /* tally + completion */
+  .tally-bar, .tally-strike{background:var(--text);}
+  .ex-card.complete{background:var(--surface); border-color:var(--accent); box-shadow:4px 4px 0 var(--accent);}
+  .ex-card.complete .ex-name{color:var(--accent);}
+  .ex-card.complete .tally-bar, .ex-card.complete .tally-strike{background:var(--accent);}
+  .timer-block.status-completed{border-color:var(--accent); box-shadow:4px 4px 0 var(--accent);}
+  .timer-clock{color:var(--text);}
+  .set-badge{background:#0F1412; border:2px solid var(--ink); color:var(--text);}
+
+  /* notes: permanent signage, not a dismissable toast */
+  .tip{
+    background:#0F1412; border:2px solid var(--accent); color:var(--text-dim);
+    font-size:12.5px; padding:10px 12px;
+  }
+  .rep-pad.subtracting ~ .tip, .tip[data-tip="sub-rep"]{border-color:var(--danger);}
+  .logger-rest{border:2px dashed var(--ink);}
+  .logger-rest.on{background:var(--green-deep); border-style:solid; border-color:var(--accent);}
+  .logger-rest.on span{color:var(--accent);}
+  .logger-rest span{color:var(--text);}
+  .break-nudge{color:var(--text-faint);}
+  .break-nudge.resting{color:var(--accent);}

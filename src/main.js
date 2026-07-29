@@ -937,12 +937,7 @@ async function checkVersion() {
  * about this device's reader, not the workout record.
  */
 function tipHtml(key, text) {
-  if (db.prefs.get('tip:' + key, false)) return '';
-  return `<p class="tip" data-tip="${key}">${escapeHtml(text)}<button class="tip-x" data-action="dismiss-tip" data-key="${key}" aria-label="Got it">${ICONS.close}</button></p>`;
-}
-
-function retireTip(key) {
-  if (!db.prefs.get('tip:' + key, false)) db.prefs.set('tip:' + key, true);
+  return `<p class="tip" data-tip="${key}">${escapeHtml(text)}</p>`;
 }
 
 function helpChipHtml() {
@@ -1423,7 +1418,9 @@ function modalLogger(exId) {
       ${timerHtml}
       <div class="tally-rail logger-tally">${tallyMarks(arr.length)}</div>
 
-      ${tipHtml('log-rep', 'Tap any number to add it straight away.')}
+      ${state.repMode === 'sub'
+        ? tipHtml('sub-rep', 'Tap any number to subtract it straight away.')
+        : tipHtml('log-rep', 'Tap any number to add it straight away.')}
       <div class="rep-lever" role="group" aria-label="Add or subtract reps">
         <button class="lever-opt ${state.repMode === 'add' ? 'on' : ''}" data-action="rep-mode" data-mode="add">Add</button>
         <button class="lever-opt sub ${state.repMode === 'sub' ? 'on' : ''}" data-action="rep-mode" data-mode="sub">Subtract</button>
@@ -1720,7 +1717,7 @@ document.addEventListener('click', async (e) => {
     case 'reorder': await reorder(btn.dataset.id, parseInt(btn.dataset.dir, 10)); rerender(); break;
     case 'toggle-archived': state.showArchived = !state.showArchived; renderView(); break;
 
-    case 'open-logger': retireTip('open-ex'); state.modal = { type: 'logger', exId: btn.dataset.id }; renderModal(); break;
+    case 'open-logger': state.modal = { type: 'logger', exId: btn.dataset.id }; renderModal(); break;
     case 'sched-daily':
       if (state.modal) { state.modal.sched = 'daily'; renderModal(); }
       break;
@@ -1796,12 +1793,10 @@ document.addEventListener('click', async (e) => {
       renderPanels();
       break;
     case 'rep-mode':
-      retireTip('subtract');
       state.repMode = btn.dataset.mode;
       renderModal();
       break;
     case 'rep-tap': {
-      retireTip('log-rep');
       const n = parseFloat(btn.dataset.val);
       if (state.repMode === 'sub') await decrementHandler(btn.dataset.id, n);
       else await logSet(btn.dataset.id, n);
@@ -1938,10 +1933,6 @@ document.addEventListener('click', async (e) => {
       await googleSyncNowHandler();
       break;
 
-    case 'dismiss-tip':
-      retireTip(btn.dataset.key);
-      rerender();
-      break;
     case 'more-days': {
       // Grows geometrically: cheap for the common case of a recent
       // correction, but still reaches years back in a handful of taps rather
@@ -1956,8 +1947,7 @@ document.addEventListener('click', async (e) => {
       renderView();
       break;
     case 'toggle-ex-history':
-      retireTip('progress-open');
-      state.openExercise = state.openExercise === btn.dataset.id ? null : btn.dataset.id;
+          state.openExercise = state.openExercise === btn.dataset.id ? null : btn.dataset.id;
       renderView();
       break;
     case 'toggle-day':

@@ -659,3 +659,61 @@
   .day-detail .inline-target-edit{gap:6px;}
   .day-detail .target-edit-input{width:64px; min-height:44px; font-size:14px;}
   .day-detail .mini-btn{width:40px; height:40px;}
+
+  /* ---------- take a break ---------- */
+  .break-card{
+    width:100%; display:flex; align-items:center; justify-content:space-between; gap:12px;
+    margin-top:18px; padding:14px 16px; min-height:44px; text-align:left;
+    background:var(--bg-card); border:1px dashed var(--border-strong); border-radius:var(--radius-lg);
+    color:var(--text-dim); transition:background .16s ease, border-color .16s ease, transform .09s ease;
+  }
+  .break-card:active{transform:scale(0.985); background:var(--bg-card-hover);}
+  .break-card b{display:block; font-size:14.5px; color:var(--text); font-weight:700;}
+  .break-card span{display:block; font-size:12.5px; color:var(--text-faint); margin-top:2px;}
+  .break-card.taken{border-style:solid; border-color:rgba(110,155,122,0.45); background:rgba(110,155,122,0.07);}
+  .break-card.taken b{color:var(--success);}
+  .secondary-btn.small{padding:8px 14px; font-size:12.5px; min-height:40px;}
+  .break-copy{color:var(--text-dim); font-size:13.5px; line-height:1.55; margin:2px 0 14px;}
+  .break-preview{
+    background:var(--bg); border:1px solid var(--border); border-radius:var(--radius-sm);
+    padding:10px 12px; margin-bottom:18px; font-size:13px; color:var(--text-dim);
+  }
+  .break-preview b{font-family:var(--font-num); font-size:17px; color:var(--text);}
+  .break-preview span{color:var(--text-faint);}
+
+  /* breaks shown beside the streak, never merged into it */
+  .pill-breaks{font-style:normal; font-size:11.5px; color:var(--text-faint); margin-left:5px;}
+  .stat-sub{display:block; font-style:normal; font-size:10.5px; color:var(--text-faint); margin-top:3px; text-transform:none; letter-spacing:0;}
+  .day-dot.break{background:var(--text-faint); box-shadow:inset 0 0 0 2px var(--bg-card);}
+
+  /* ---------- guide ---------- */
+  .help-chip{
+    width:34px; height:34px; border-radius:999px; border:1px solid var(--border); background:transparent;
+    color:var(--text-faint); display:inline-flex; align-items:center; justify-content:center; flex-shrink:0;
+    transition:color .16s ease, border-color .16s ease, transform .09s ease;
+  }
+  .help-chip:hover{color:var(--text); border-color:var(--border-strong);}
+  .help-chip:active{transform:scale(0.92);}
+  .guide-sec{margin-bottom:20px;}
+  .guide-sec h3{
+    display:flex; align-items:center; gap:8px; margin:0 0 9px; font-size:12px; font-weight:700;
+    text-transform:uppercase; letter-spacing:0.1em; color:var(--text-faint);
+  }
+  .guide-sec h3 em{
+    font-style:normal; text-transform:none; letter-spacing:0; font-size:10.5px; font-weight:700;
+    background:var(--accent); color:var(--accent-ink); padding:2px 7px; border-radius:999px;
+  }
+  .guide-sec ul{margin:0; padding:0; list-style:none; display:flex; flex-direction:column; gap:7px;}
+  .guide-sec li{
+    font-size:13.5px; line-height:1.5; color:var(--text-dim);
+    padding-left:15px; position:relative;
+  }
+  .guide-sec li::before{content:''; position:absolute; left:0; top:8px; width:5px; height:5px; border-radius:50%; background:var(--border-strong);}
+
+  /* the chip row must never push the title off-screen on a narrow phone */
+  .topbar-right{gap:6px;}
+  .help-chip, .rail-btn, .version-chip{width:32px; height:32px;}
+  .avatar-chip{width:34px; height:34px;}
+  @media (max-width: 360px){
+    .version-chip{display:none;}   /* still available in Backup & data */
+  }

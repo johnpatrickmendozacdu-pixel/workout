@@ -5,7 +5,7 @@
 // change, and no possibility of stats drifting out of step with the logs they
 // describe: editing a past day recomputes the truth for free.
 
-import { calcTotal, getTimer, getEffectiveTarget, addDays, todayISO, isScheduledOn } from './domain.js';
+import { calcTotal, getTimer, getEffectiveTarget, addDays, todayISO, isScheduledOn, isBreakDay } from './domain.js';
 
 /** Days (sorted) on which this exercise has any logged set. */
 export function workoutDates(exId, setsLog) {
@@ -38,7 +38,7 @@ export function completedTimes(exId, timersLog) {
  * Reported as best/tracked so "11/15" reads as "best run of 11, over 15 days
  * of training".
  */
-export function streakInfo(ex, setsLog, todayOverride) {
+export function streakInfo(ex, setsLog, todayOverride, overrides) {
   const today = todayOverride || todayISO();
   const dates = workoutDates(ex.id, setsLog);
   let first = ex.createdDate || null;
@@ -49,6 +49,7 @@ export function streakInfo(ex, setsLog, todayOverride) {
   let run = 0;
   let current = 0;
   let tracked = 0;
+  let breaks = 0;
   let cursor = first;
   let guard = 0;
 
@@ -57,7 +58,9 @@ export function streakInfo(ex, setsLog, todayOverride) {
     if (target && target > 0 && isScheduledOn(ex, cursor)) {
       tracked++;
       const total = calcTotal((setsLog[cursor] && setsLog[cursor][ex.id]) || []);
-      if (total >= target) {
+      // A claimed rest day keeps the run alive, and is counted as one of its days.
+      if (isBreakDay(overrides, cursor)) { run++; breaks++; if (run > best) best = run; }
+      else if (total >= target) {
         run++;
         if (run > best) best = run;
       } else {
@@ -70,7 +73,7 @@ export function streakInfo(ex, setsLog, todayOverride) {
     guard++;
   }
 
-  return { best, current, tracked };
+  return { best, current, tracked, breaks };
 }
 
 /** Month + year of the first logged rep, e.g. "Jul 2026" — the "since" that
@@ -88,7 +91,7 @@ export function lifetimeSince(exId, setsLog) {
  * topSet  — most reps in a SINGLE set (not a daily total).
  * maxReps — highest daily total ever reached (the biggest day).
  */
-export function exerciseStats(ex, setsLog, timersLog, todayOverride) {
+export function exerciseStats(ex, setsLog, timersLog, todayOverride, overrides) {
   let topSet = 0;
   let topSetDate = null;
   let maxReps = 0;
@@ -114,7 +117,7 @@ export function exerciseStats(ex, setsLog, timersLog, todayOverride) {
   const bestTime = times.reduce((best, t) => (best === null || t.ms < best ? t.ms : best), null);
   const avgTime = times.length ? Math.round(times.reduce((a, t) => a + t.ms, 0) / times.length) : null;
 
-  const streak = streakInfo(ex, setsLog, todayOverride);
+  const streak = streakInfo(ex, setsLog, todayOverride, overrides);
 
   // A manual Top Set is a display correction and nothing more: it never
   // rewrites a logged set, so daily totals, Max, lifetime reps and streaks are
@@ -134,6 +137,7 @@ export function exerciseStats(ex, setsLog, timersLog, todayOverride) {
     bestStreak: streak.best,
     currentStreak: streak.current,
     trackedDays: streak.tracked,
+    breakDays: streak.breaks,
     bestTime,
     avgTime,
     totalWorkouts: dates.length,
@@ -143,10 +147,10 @@ export function exerciseStats(ex, setsLog, timersLog, todayOverride) {
 }
 
 /** Stats for every exercise, keyed by id. */
-export function allStats(exercises, setsLog, timersLog, todayOverride) {
+export function allStats(exercises, setsLog, timersLog, todayOverride, overrides) {
   const out = {};
   exercises.forEach((ex) => {
-    out[ex.id] = exerciseStats(ex, setsLog, timersLog, todayOverride);
+    out[ex.id] = exerciseStats(ex, setsLog, timersLog, todayOverride, overrides);
   });
   return out;
 }

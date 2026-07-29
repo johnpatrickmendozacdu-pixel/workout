@@ -9,6 +9,7 @@ import {
   getEffectiveTarget,
   isScheduledOn,
   scheduleLabel,
+  isBreakDay,
   calcTotal,
   calcDayStats,
   calcStreakInfo,
@@ -688,6 +689,7 @@ const ICONS = {
   archive: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M4 7h16M5 7v11a1 1 0 001 1h12a1 1 0 001-1V7M9 11h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>`,
   restore: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M4 8a8 8 0 111.6 6.4M4 4v4h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
   check: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="var(--success)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  help: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="M9.6 9.2a2.5 2.5 0 114.2 1.9c-.9.7-1.3 1.1-1.3 2.1" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><circle cx="12" cy="17" r="1" fill="currentColor"/></svg>`,
   gear: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 15a3 3 0 100-6 3 3 0 000 6z" stroke="currentColor" stroke-width="1.7"/><path d="M19.4 13.5a1.7 1.7 0 000-3l-1-.2a6.6 6.6 0 00-.7-1.6l.6-.9a1.7 1.7 0 00-2.4-2.4l-.9.6a6.6 6.6 0 00-1.6-.7l-.2-1a1.7 1.7 0 00-3 0l-.2 1a6.6 6.6 0 00-1.6.7l-.9-.6a1.7 1.7 0 00-2.4 2.4l.6.9a6.6 6.6 0 00-.7 1.6l-1 .2a1.7 1.7 0 000 3l1 .2a6.6 6.6 0 00.7 1.6l-.6.9a1.7 1.7 0 002.4 2.4l.9-.6a6.6 6.6 0 001.6.7l.2 1a1.7 1.7 0 003 0l.2-1a6.6 6.6 0 001.6-.7l.9.6a1.7 1.7 0 002.4-2.4l-.6-.9a6.6 6.6 0 00.7-1.6l1-.2z" stroke="currentColor" stroke-width="1.3"/></svg>`,
   play: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M7 5.5v13l11-6.5-11-6.5z" fill="currentColor"/></svg>`,
   pause: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M8 5.5h3v13H8v-13zM13 5.5h3v13h-3v-13z" fill="currentColor"/></svg>`,
@@ -885,6 +887,10 @@ async function checkVersion() {
 }
 
 /** Stats drawer toggle — phone only; at desktop width the rail is always visible. */
+function helpChipHtml() {
+  return `<button class="help-chip" data-action="open-guide" aria-label="How this works">${ICONS.help}</button>`;
+}
+
 function railButtonsHtml() {
   return `<button class="rail-btn" data-action="toggle-panel" data-panel="stats" aria-label="Performance">${ICONS.progress}</button>`;
 }
@@ -893,7 +899,7 @@ function versionChipHtml() {
   const { local, status } = state.version;
   const label = { latest: 'Up to date', stale: 'Update ready — tap to reload', unknown: 'Version unknown (offline?)' }[status];
   return `<button class="version-chip ${status}" data-action="${status === 'stale' ? 'apply-update' : 'check-version'}"
-    title="Build ${escapeHtml(local)} · ${label}" aria-label="${label}">${status === 'latest' ? '\u2713' : status === 'stale' ? '\u21bb' : '?'}</button>`;
+    title="Build ${escapeHtml(local)} · ${label}" aria-label="${label}">${status === 'latest' ? '\u2713' : status === 'stale' ? '\u21bb' : '\u2022'}</button>`;
 }
 
 function avatarChipHtml() {
@@ -911,7 +917,8 @@ function renderTopbar() {
   const el = document.getElementById('topbar');
   if (!el) return;
   if (state.view === 'today') {
-    const streak = calcStreakInfo(state.exercises, state.setsLog, null, state.streakOverrides).current;
+    const si = calcStreakInfo(state.exercises, state.setsLog, null, state.streakOverrides);
+    const streak = si.current;
     const uname = state.profile && state.profile.username;
     el.innerHTML = `
       <div class="topbar-row">
@@ -920,7 +927,8 @@ function renderTopbar() {
           <div class="date-heading">${formatDisplayDate(todayISO())}</div>
         </div>
         <div class="topbar-right">
-          <div class="streak-pill">${ICONS.flame}${streak}</div>
+          <div class="streak-pill">${ICONS.flame}${streak}${si.breaks ? `<em class="pill-breaks">${si.breaks}\u00a0🌙</em>` : ''}</div>
+          ${helpChipHtml()}
           ${railButtonsHtml()}
           ${versionChipHtml()}
           ${avatarChipHtml()}
@@ -932,6 +940,7 @@ function renderTopbar() {
         <div class="screen-title">Plan</div>
         <div class="topbar-right">
           <button class="add-btn" data-action="open-add-exercise">${ICONS.plus} Add</button>
+          ${helpChipHtml()}
           ${railButtonsHtml()}
           ${versionChipHtml()}
           ${avatarChipHtml()}
@@ -943,6 +952,7 @@ function renderTopbar() {
         <div class="screen-title">Progress</div>
         <div class="topbar-right">
           <button class="icon-btn" data-action="open-data">${ICONS.gear}</button>
+          ${helpChipHtml()}
           ${railButtonsHtml()}
           ${versionChipHtml()}
           ${avatarChipHtml()}
@@ -1020,7 +1030,17 @@ function viewToday() {
       </div>`).join('')
     : '';
 
-  return `<div>${rows}${restHtml}</div>`;
+  const onBreak = isBreakDay(state.streakOverrides, today);
+  const breakHtml = onBreak
+    ? `<div class="break-card taken">
+        <div><b>Rest day</b><span>Your streak keeps counting.</span></div>
+        <button class="secondary-btn small" data-action="undo-break">Undo</button>
+      </div>`
+    : `<button class="break-card" data-action="take-break">
+        <div><b>Take a break</b><span>Rest today without losing your streak.</span></div>
+      </button>`;
+
+  return `<div>${rows}${restHtml}${breakHtml}</div>`;
 }
 
 /* ============================= VIEW: PLAN ============================= */
@@ -1095,10 +1115,10 @@ function renderDayTargetPart(dt, dateStr, isToday) {
 }
 
 function viewProgress() {
-  const { current, longest } = calcStreakInfo(state.exercises, state.setsLog, null, state.streakOverrides);
+  const { current, longest, breaks } = calcStreakInfo(state.exercises, state.setsLog, null, state.streakOverrides);
   const weekly = calcWeeklyCompletion(state.exercises, state.setsLog, null, state.streakOverrides);
   let html = `<div class="stat-grid three">
-    <div class="stat-card"><div class="stat-num">${current}</div><div class="stat-label">Current streak</div></div>
+    <div class="stat-card"><div class="stat-num">${current}</div><div class="stat-label">Current streak${breaks ? `<em class="stat-sub">${breaks} break${breaks === 1 ? '' : 's'} inside it</em>` : ''}</div></div>
     <div class="stat-card"><div class="stat-num">${longest}</div><div class="stat-label">Longest streak</div></div>
     <div class="stat-card"><div class="stat-num">${weekly === null ? '—' : weekly + '%'}</div><div class="stat-label">This week</div></div>
   </div>`;
@@ -1120,7 +1140,7 @@ function viewProgress() {
   for (let i = 0; i < 14; i++) {
     const d = addDays(today, -i);
     const stats = calcDayStats(state.exercises, state.setsLog, d, state.streakOverrides);
-    const dotClass = stats.targetedCount === 0 && !stats.overridden ? 'none' : (stats.allComplete ? 'complete' : 'incomplete');
+    const dotClass = stats.isBreak ? 'break' : (stats.targetedCount === 0 && !stats.overridden ? 'none' : (stats.allComplete ? 'complete' : 'incomplete'));
     const expanded = state.expandedDay === d;
     html += `<div class="day-row">
       <div class="day-row-head">
@@ -1129,7 +1149,7 @@ function viewProgress() {
         </button>
         <button class="day-row-main" data-action="toggle-day" data-date="${d}">
           <span class="day-label">${i === 0 ? 'Today' : formatDisplayDate(d)}</span>
-          <span class="day-frac">${stats.targetedCount > 0 ? `${stats.completedCount}/${stats.targetedCount}` : '—'}</span>
+          <span class="day-frac">${stats.isBreak ? 'Rest' : (stats.targetedCount > 0 ? `${stats.completedCount}/${stats.targetedCount}` : '—')}</span>
         </button>
       </div>
       ${expanded ? `<div class="day-detail">${
@@ -1220,6 +1240,77 @@ function setBodyScrollLock(locked) {
   }
 }
 
+/**
+ * A guide that only tells you what applies right now. Entries are filtered by
+ * what actually exists in your data, and the screen you're on is listed first
+ * and marked — so it reads as "what can I do here", not a manual.
+ */
+function modalGuide() {
+  const has = state.exercises.filter((e) => e.active && !e.archived);
+  const anyTarget = has.some((e) => getEffectiveTarget(e, todayISO()));
+  const anyHistory = Object.keys(state.setsLog).length > 0;
+  const anySchedule = has.some((e) => Array.isArray(e.schedule));
+
+  const sections = [
+    { view: 'today', title: 'Today', items: [
+      has.length && 'Tap an exercise to open the logger.',
+      has.length && 'In the logger, tap any number to add it instantly. Flip the lever to Subtract to take reps off.',
+      has.length && 'The clock starts on your first set and keeps running while you move around the app.',
+      anyTarget && 'Hit your target and you choose: take the win, or keep going with the clock still running.',
+      anyTarget && 'Need a rest day? Take a break keeps your streak alive and marks the day as rest.',
+      anySchedule && 'Exercises not scheduled for today appear under Resting today.',
+      !has.length && 'Add your first exercise to start logging.',
+    ] },
+    { view: 'plan', title: 'Plan', items: [
+      'Tap any exercise to edit it — name, icon, unit, target and schedule.',
+      'Schedule is either every day or the weekdays you pick. A rest day never counts as missed.',
+      'Quick-add buttons set the three values you reach for most.',
+      has.length && 'Archive keeps history without cluttering Today. Delete removes it for good.',
+    ] },
+    { view: 'progress', title: 'Progress', items: [
+      'Top set is your best single set. Max is your biggest day. They answer different questions.',
+      anyHistory && 'Tap a day to expand it, then tap either number to correct that day\u2019s total or its target.',
+      anyHistory && 'Correcting a past target changes that day only — later days keep what they had.',
+      'Best streak counts consecutive days you hit the target, shown over the days you were training.',
+      'Tap Top set to correct it by hand. That changes the displayed number and nothing else.',
+    ] },
+  ];
+
+  const ordered = [...sections].sort((a) => (a.view === state.view ? -1 : 1));
+
+  return `<div class="modal-backdrop" data-action="backdrop">
+    <div class="modal-sheet" data-stop>
+      <div class="sheet-handle"></div>
+      <div class="sheet-head">
+        <h2>How this works</h2>
+        <button class="sheet-close" data-action="close-modal">${ICONS.close}</button>
+      </div>
+      ${ordered.map((sec) => `
+        <section class="guide-sec">
+          <h3>${sec.title}${sec.view === state.view ? '<em>you\u2019re here</em>' : ''}</h3>
+          <ul>${sec.items.filter(Boolean).map((t) => `<li>${escapeHtml(t)}</li>`).join('')}</ul>
+        </section>`).join('')}
+      <div class="hint">Everything is stored on this device. Sign in from your profile to sync it to your own Google Drive.</div>
+    </div>
+  </div>`;
+}
+
+function modalConfirmBreak() {
+  const { current, breaks } = calcStreakInfo(state.exercises, state.setsLog, null, state.streakOverrides);
+  return `<div class="modal-backdrop" data-action="backdrop">
+    <div class="modal-sheet center" data-stop>
+      <div class="celebrate-glyph">🌙</div>
+      <h2>Take a break today?</h2>
+      <p class="break-copy">Today counts as rest. Your streak carries on, and the day is marked so you can still see it was a break.</p>
+      ${current > 0 ? `<div class="break-preview">Streak becomes <b>${current + 1}</b> <span>with ${breaks + 1} break${breaks + 1 === 1 ? '' : 's'}</span></div>` : ''}
+      <div class="celebrate-actions">
+        <button class="primary-btn" data-action="confirm-break">Take the break</button>
+        <button class="secondary-btn" data-action="close-modal">Not today</button>
+      </div>
+    </div>
+  </div>`;
+}
+
 function closeModal() { state.modal = null; renderModal(); }
 let lastModalKey = null;
 function renderModal() {
@@ -1228,6 +1319,8 @@ function renderModal() {
   if (!state.modal) { root.innerHTML = ''; lastModalKey = null; setBodyScrollLock(false); ensureGlobalTick(); return; }
   const m = state.modal;
   if (m.type === 'complete') root.innerHTML = modalComplete();
+  else if (m.type === 'confirmBreak') root.innerHTML = modalConfirmBreak();
+  else if (m.type === 'guide') root.innerHTML = modalGuide();
   else if (m.type === 'logger') root.innerHTML = modalLogger(m.exId);
   else if (m.type === 'exerciseForm') root.innerHTML = modalExerciseForm(m.exId);
   else if (m.type === 'confirmDeleteSet') root.innerHTML = modalConfirm(m);
@@ -1637,6 +1730,31 @@ document.addEventListener('click', async (e) => {
     case 'cancel-day-total':
       state.editingDayTotal = null;
       renderView();
+      break;
+    case 'take-break':
+      state.modal = { type: 'confirmBreak' };
+      renderModal();
+      break;
+    case 'confirm-break': {
+      state.streakOverrides = { ...state.streakOverrides, [todayISO()]: 'break' };
+      await persistStreakOverrides();
+      closeModal();
+      rerender();
+      showToast('Rest day claimed. Your streak keeps counting.');
+      break;
+    }
+    case 'undo-break': {
+      const next = { ...state.streakOverrides };
+      delete next[todayISO()];
+      state.streakOverrides = next;
+      await persistStreakOverrides();
+      rerender();
+      showToast('Rest day removed');
+      break;
+    }
+    case 'open-guide':
+      state.modal = { type: 'guide' };
+      renderModal();
       break;
     case 'edit-top-set':
       state.editingTopSet = btn.dataset.id;

@@ -26,6 +26,7 @@ import {
   bumpTargetIfPR,
   setTargetForDay,
   isScheduledOn,
+  isBreakDay,
   scheduleLabel,
   versionStatus,
   validateBackup,
@@ -198,6 +199,48 @@ describe('workout timer', () => {
 
   it('getTimer returns null when nothing has been logged yet', () => {
     expect(getTimer({}, TODAY, 'a')).toBeNull();
+  });
+});
+
+describe('take a break', () => {
+  const ex = makeExercise({ createdDate: '2026-07-20', targetHistory: [{ effectiveDate: '2026-07-20', target: 100 }] });
+  const log = {
+    '2026-07-24': { a: [100] },
+    '2026-07-25': { a: [100] },
+    // 26th missed entirely — claimed as a break
+    '2026-07-27': { a: [100] },
+  };
+  const overrides = { '2026-07-26': 'break' };
+
+  it('recognises a claimed rest day', () => {
+    expect(isBreakDay(overrides, '2026-07-26')).toBe(true);
+    expect(isBreakDay(overrides, '2026-07-25')).toBe(false);
+    expect(isBreakDay(undefined, '2026-07-26')).toBe(false);
+  });
+
+  it('keeps the streak alive across the break', () => {
+    const withBreak = calcStreakInfo([ex], log, '2026-07-27', overrides);
+    expect(withBreak.current).toBe(4);
+    // without it, the missed day ends the run
+    expect(calcStreakInfo([ex], log, '2026-07-27').current).toBe(1);
+  });
+
+  it('counts the break as one of the streak days, reported separately', () => {
+    const info = calcStreakInfo([ex], log, '2026-07-27', overrides);
+    expect(info.current).toBe(4);
+    expect(info.breaks).toBe(1);   // 4 days, 1 of them a break
+  });
+
+  it('marks the day itself as a break', () => {
+    const stats = calcDayStats([ex], log, '2026-07-26', overrides);
+    expect(stats.isBreak).toBe(true);
+    expect(stats.allComplete).toBe(true);
+  });
+
+  it('a normal manual override is not a break', () => {
+    const stats = calcDayStats([ex], log, '2026-07-26', { '2026-07-26': true });
+    expect(stats.isBreak).toBe(false);
+    expect(stats.allComplete).toBe(true);
   });
 });
 

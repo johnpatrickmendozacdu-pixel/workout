@@ -90,6 +90,13 @@ export function calcTotal(arr) {
  * reflect the REAL logged data (so "3/5" stays accurate); only allComplete
  * and countsForStreak are affected by an override.
  */
+/** A day the person explicitly claimed as rest. Stored in the same overrides
+ *  map as a manual "count this day", carrying its reason rather than needing a
+ *  parallel store — so it syncs and backs up with everything else. */
+export function isBreakDay(overrides, dateStr) {
+  return !!overrides && overrides[dateStr] === 'break';
+}
+
 export function calcDayStats(exercises, setsLog, dateStr, overrides) {
   let targetedCount = 0;
   let completedCount = 0;
@@ -116,12 +123,15 @@ export function calcDayStats(exercises, setsLog, dateStr, overrides) {
 
   const override = overrides && Object.prototype.hasOwnProperty.call(overrides, dateStr) ? overrides[dateStr] : null;
 
+  const isBreak = override === 'break';
+
   return {
     targetedCount,
     completedCount,
-    allComplete: override != null ? override : (targetedCount > 0 && completedCount === targetedCount),
+    allComplete: override != null ? (override === 'break' ? true : override) : (targetedCount > 0 && completedCount === targetedCount),
     countsForStreak: override != null ? true : targetedCount > 0,
     overridden: override != null,
+    isBreak,
     details,
   };
 }
@@ -136,6 +146,7 @@ export function calcStreakInfo(exercises, setsLog, todayOverride, overrides) {
   const today = todayOverride || todayISO();
 
   let streak = 0;
+  let breaks = 0;
   let cursor = today;
   while (true) {
     const stats = calcDayStats(exercises, setsLog, cursor, overrides);
@@ -148,6 +159,7 @@ export function calcStreakInfo(exercises, setsLog, todayOverride, overrides) {
     }
     if (stats.allComplete) {
       streak++;
+      if (stats.isBreak) breaks++;
       cursor = addDays(cursor, -1);
     } else {
       break;
@@ -188,7 +200,7 @@ export function calcStreakInfo(exercises, setsLog, todayOverride, overrides) {
   }
   longest = Math.max(longest, streak);
 
-  return { current: streak, longest };
+  return { current: streak, longest, breaks };
 }
 
 export function calcWeeklyCompletion(exercises, setsLog, todayOverride, overrides) {

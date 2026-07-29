@@ -59,7 +59,7 @@ export function streakInfo(ex, setsLog, todayOverride, overrides) {
       tracked++;
       const total = calcTotal((setsLog[cursor] && setsLog[cursor][ex.id]) || []);
       // A claimed rest day keeps the run alive, and is counted as one of its days.
-      if (isBreakDay(overrides, cursor)) { run++; breaks++; if (run > best) best = run; }
+      if (isBreakDay(overrides, cursor, ex.id)) { run++; breaks++; if (run > best) best = run; }
       else if (total >= target) {
         run++;
         if (run > best) best = run;

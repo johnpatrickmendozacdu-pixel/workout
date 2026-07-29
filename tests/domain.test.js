@@ -27,6 +27,8 @@ import {
   setTargetForDay,
   isScheduledOn,
   isBreakDay,
+  setDayOverride,
+  migrateOverrides,
   scheduleLabel,
   versionStatus,
   validateBackup,
@@ -241,6 +243,46 @@ describe('take a break', () => {
     const stats = calcDayStats([ex], log, '2026-07-26', { '2026-07-26': true });
     expect(stats.isBreak).toBe(false);
     expect(stats.allComplete).toBe(true);
+  });
+});
+
+describe('breaks are per exercise', () => {
+  const push = makeExercise({ id: 'push', createdDate: '2026-07-20', targetHistory: [{ effectiveDate: '2026-07-20', target: 100 }] });
+  const squat = makeExercise({ id: 'squat', createdDate: '2026-07-20', targetHistory: [{ effectiveDate: '2026-07-20', target: 50 }] });
+  const log = { '2026-07-26': {} }; // neither trained
+
+  it('resting one exercise does not excuse another', () => {
+    const ov = setDayOverride({}, '2026-07-26', 'push', 'break');
+    expect(isBreakDay(ov, '2026-07-26', 'push')).toBe(true);
+    expect(isBreakDay(ov, '2026-07-26', 'squat')).toBe(false);
+
+    const stats = calcDayStats([push, squat], log, '2026-07-26', ov);
+    expect(stats.allComplete).toBe(false);  // squats were still missed
+    const pushDetail = stats.details.find((d) => d.ex.id === 'push');
+    const squatDetail = stats.details.find((d) => d.ex.id === 'squat');
+    expect(pushDetail.isBreak).toBe(true);
+    expect(squatDetail.isBreak).toBe(false);
+  });
+
+  it('resting every exercise makes the whole day rest', () => {
+    let ov = setDayOverride({}, '2026-07-26', 'push', 'break');
+    ov = setDayOverride(ov, '2026-07-26', 'squat', 'break');
+    const stats = calcDayStats([push, squat], log, '2026-07-26', ov);
+    expect(stats.allComplete).toBe(true);
+    expect(stats.isBreak).toBe(true);
+  });
+
+  it('removing a break restores the miss', () => {
+    let ov = setDayOverride({}, '2026-07-26', 'push', 'break');
+    ov = setDayOverride(ov, '2026-07-26', 'push', null);
+    expect(isBreakDay(ov, '2026-07-26', 'push')).toBe(false);
+    expect(ov['2026-07-26']).toBeUndefined();
+  });
+
+  it('migrates an old day-level break to apply to every exercise', () => {
+    const migrated = migrateOverrides({ '2026-07-26': 'break' });
+    expect(isBreakDay(migrated, '2026-07-26', 'push')).toBe(true);
+    expect(isBreakDay(migrated, '2026-07-26', 'squat')).toBe(true);
   });
 });
 

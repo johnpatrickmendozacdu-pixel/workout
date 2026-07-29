@@ -90,11 +90,45 @@ export function calcTotal(arr) {
  * reflect the REAL logged data (so "3/5" stays accurate); only allComplete
  * and countsForStreak are affected by an override.
  */
-/** A day the person explicitly claimed as rest. Stored in the same overrides
- *  map as a manual "count this day", carrying its reason rather than needing a
- *  parallel store — so it syncs and backs up with everything else. */
-export function isBreakDay(overrides, dateStr) {
-  return !!overrides && overrides[dateStr] === 'break';
+/**
+ * Overrides are per-exercise per-day: { '2026-07-28': { ex_1: 'break' } }.
+ * Streaks belong to an exercise, so resting from push-ups must not quietly
+ * excuse squats. The key '*' means "every exercise that day", which is what
+ * older day-level entries migrate to.
+ */
+export function getDayOverride(overrides, dateStr, exId) {
+  const day = overrides && overrides[dateStr];
+  if (day == null) return null;
+  if (typeof day !== 'object') return day;              // legacy day-level value
+  if (exId && Object.prototype.hasOwnProperty.call(day, exId)) return day[exId];
+  if (Object.prototype.hasOwnProperty.call(day, '*')) return day['*'];
+  return null;
+}
+
+export function isBreakDay(overrides, dateStr, exId) {
+  return getDayOverride(overrides, dateStr, exId) === 'break';
+}
+
+/** Upgrade any day-level override to the per-exercise shape, so old data keeps
+ *  working: a break taken before streaks were per-exercise applied to the whole
+ *  day, and still does. */
+export function migrateOverrides(overrides) {
+  const next = {};
+  for (const d in overrides || {}) {
+    const v = overrides[d];
+    next[d] = (v != null && typeof v === 'object') ? { ...v } : { '*': v };
+  }
+  return next;
+}
+
+export function setDayOverride(overrides, dateStr, exId, value) {
+  const next = { ...(overrides || {}) };
+  const day = { ...(next[dateStr] && typeof next[dateStr] === 'object' ? next[dateStr] : {}) };
+  if (value == null) delete day[exId];
+  else day[exId] = value;
+  if (Object.keys(day).length === 0) delete next[dateStr];
+  else next[dateStr] = day;
+  return next;
 }
 
 export function calcDayStats(exercises, setsLog, dateStr, overrides) {
@@ -112,26 +146,32 @@ export function calcDayStats(exercises, setsLog, dateStr, overrides) {
     const total = calcTotal(arr);
     const hasTarget = !!target && target > 0;
 
+    const ov = getDayOverride(overrides, dateStr, ex.id);
+    const exBreak = ov === 'break';
+
     let complete = null;
-    if (hasTarget) {
+    let counts = false;
+    if (hasTarget || ov != null) {
       targetedCount++;
-      complete = total >= target;
+      counts = true;
+      // completedCount stays truthful — it reports what was actually logged, so
+      // "3/5" never lies. Only `effective` (what the streak sees) is overridden.
+      complete = hasTarget ? total >= target : false;
       if (complete) completedCount++;
     }
-    details.push({ ex, total, target, hasTarget, complete });
+    const effective = ov != null ? (exBreak ? true : !!ov) : complete;
+    details.push({ ex, total, target, hasTarget, complete, isBreak: exBreak, effective, counts });
   }
 
-  const override = overrides && Object.prototype.hasOwnProperty.call(overrides, dateStr) ? overrides[dateStr] : null;
-
-  const isBreak = override === 'break';
+  const counted = details.filter((d) => d.counts);
 
   return {
     targetedCount,
     completedCount,
-    allComplete: override != null ? (override === 'break' ? true : override) : (targetedCount > 0 && completedCount === targetedCount),
-    countsForStreak: override != null ? true : targetedCount > 0,
-    overridden: override != null,
-    isBreak,
+    allComplete: counted.length > 0 && counted.every((d) => d.effective),
+    countsForStreak: counted.length > 0,
+    overridden: counted.some((d) => getDayOverride(overrides, dateStr, d.ex.id) != null),
+    isBreak: counted.length > 0 && counted.some((d) => d.isBreak) && counted.every((d) => d.effective),
     details,
   };
 }

@@ -717,3 +717,33 @@
   @media (max-width: 360px){
     .version-chip{display:none;}   /* still available in Backup & data */
   }
+
+  /* ---------- per-exercise streaks ---------- */
+  .streak-row{
+    display:flex; align-items:center; gap:11px; padding:12px 14px; margin-bottom:8px;
+    background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-md);
+  }
+  .streak-row-icon{font-size:18px; flex-shrink:0;}
+  .streak-row-name{flex:1; min-width:0; font-weight:700; font-size:14.5px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .streak-row-nums{display:flex; flex-direction:column; align-items:flex-end; min-width:56px;}
+  .streak-row-nums b{font-family:var(--font-num); font-size:18px; font-weight:700; letter-spacing:-0.03em; line-height:1;}
+  .streak-row-nums em{font-style:normal; font-size:10px; text-transform:uppercase; letter-spacing:0.08em; color:var(--text-faint); margin-top:3px;}
+  .streak-row-nums.best b{color:var(--text-dim); font-size:15px;}
+  .stat-grid.one{display:block; margin-top:14px;}
+
+  /* ---------- break picker ---------- */
+  .break-list{display:flex; flex-direction:column; gap:8px;}
+  .break-row{
+    display:flex; align-items:center; gap:11px; width:100%; text-align:left; min-height:60px;
+    padding:11px 13px; background:var(--bg-card); border:1px solid var(--border-strong);
+    border-radius:var(--radius-md); color:var(--text);
+    transition:background .16s ease, border-color .16s ease, transform .09s ease;
+  }
+  .break-row:active{transform:scale(0.98);}
+  .break-row.on{border-color:rgba(110,155,122,0.5); background:rgba(110,155,122,0.08);}
+  .break-row-icon{font-size:19px; flex-shrink:0;}
+  .break-row-body{flex:1; min-width:0;}
+  .break-row-body b{display:block; font-size:14.5px; font-weight:700;}
+  .break-row-body em{display:block; font-style:normal; font-size:11.5px; color:var(--text-faint); margin-top:2px;}
+  .break-row-state{font-size:12px; font-weight:700; color:var(--text-dim); flex-shrink:0;}
+  .break-row.on .break-row-state{color:var(--success);}

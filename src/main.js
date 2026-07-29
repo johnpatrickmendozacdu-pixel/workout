@@ -10,6 +10,8 @@ import {
   isScheduledOn,
   scheduleLabel,
   isBreakDay,
+  setDayOverride,
+  migrateOverrides,
   calcTotal,
   calcDayStats,
   calcStreakInfo,
@@ -125,7 +127,7 @@ async function loadAll() {
   state.meta = meta || { lastExportAt: null };
   state.timersLog = timersLog || {};
   state.profile = profile || { username: '', weight: null, height: null };
-  state.streakOverrides = streakOverrides || {};
+  state.streakOverrides = migrateOverrides(streakOverrides || {});
 }
 /** Called by every persist* that changes real data. Bumps a timestamp (used to
  * decide who "wins" during Drive sync) and, if signed in, schedules a push. */
@@ -917,8 +919,13 @@ function renderTopbar() {
   const el = document.getElementById('topbar');
   if (!el) return;
   if (state.view === 'today') {
-    const si = calcStreakInfo(state.exercises, state.setsLog, null, state.streakOverrides);
-    const streak = si.current;
+    const perEx = allStats(
+      state.exercises.filter((e) => e.active && !e.archived),
+      state.setsLog, state.timersLog, null, state.streakOverrides,
+    );
+    const runs = Object.values(perEx);
+    const streak = runs.reduce((m, s2) => Math.max(m, s2.currentStreak), 0);
+    const si = { breaks: runs.reduce((m, s2) => Math.max(m, s2.breakDays || 0), 0) };
     const uname = state.profile && state.profile.username;
     el.innerHTML = `
       <div class="topbar-row">
@@ -1030,15 +1037,13 @@ function viewToday() {
       </div>`).join('')
     : '';
 
-  const onBreak = isBreakDay(state.streakOverrides, today);
-  const breakHtml = onBreak
-    ? `<div class="break-card taken">
-        <div><b>Rest day</b><span>Your streak keeps counting.</span></div>
-        <button class="secondary-btn small" data-action="undo-break">Undo</button>
-      </div>`
-    : `<button class="break-card" data-action="take-break">
-        <div><b>Take a break</b><span>Rest today without losing your streak.</span></div>
-      </button>`;
+  const onBreak = active.filter((ex) => isBreakDay(state.streakOverrides, today, ex.id));
+  const breakHtml = `<button class="break-card ${onBreak.length ? 'taken' : ''}" data-action="take-break">
+      <div>
+        <b>${onBreak.length ? `Resting: ${onBreak.map((e) => escapeHtml(e.name)).join(', ')}` : 'Take a break'}</b>
+        <span>${onBreak.length ? 'Those streaks keep counting. Tap to change.' : 'Rest an exercise today without losing its streak.'}</span>
+      </div>
+    </button>`;
 
   return `<div>${rows}${restHtml}${breakHtml}</div>`;
 }
@@ -1115,12 +1120,30 @@ function renderDayTargetPart(dt, dateStr, isToday) {
 }
 
 function viewProgress() {
-  const { current, longest, breaks } = calcStreakInfo(state.exercises, state.setsLog, null, state.streakOverrides);
   const weekly = calcWeeklyCompletion(state.exercises, state.setsLog, null, state.streakOverrides);
-  let html = `<div class="stat-grid three">
-    <div class="stat-card"><div class="stat-num">${current}</div><div class="stat-label">Current streak${breaks ? `<em class="stat-sub">${breaks} break${breaks === 1 ? '' : 's'} inside it</em>` : ''}</div></div>
-    <div class="stat-card"><div class="stat-num">${longest}</div><div class="stat-label">Longest streak</div></div>
-    <div class="stat-card"><div class="stat-num">${weekly === null ? '—' : weekly + '%'}</div><div class="stat-label">This week</div></div>
+  const activeEx = state.exercises.filter((e) => e.active && !e.archived).sort((a, b) => a.order - b.order);
+  const stats = allStats(activeEx, state.setsLog, state.timersLog, null, state.streakOverrides);
+
+  // Streaks belong to an exercise, so there is no single number here to show.
+  let html = `<div class="section-label">Streaks</div>`;
+  html += activeEx.length
+    ? activeEx.map((ex) => {
+        const s = stats[ex.id];
+        return `<div class="streak-row">
+          <span class="streak-row-icon">${escapeHtml(ex.icon)}</span>
+          <span class="streak-row-name">${escapeHtml(ex.name)}</span>
+          <span class="streak-row-nums">
+            <b>${s.currentStreak}</b><em>now${s.breakDays ? ` · ${s.breakDays}\u00a0🌙` : ''}</em>
+          </span>
+          <span class="streak-row-nums best">
+            <b>${s.bestStreak}</b><em>best</em>
+          </span>
+        </div>`;
+      }).join('')
+    : `<p class="rail-empty">Add an exercise to start a streak.</p>`;
+
+  html += `<div class="stat-grid one">
+    <div class="stat-card"><div class="stat-num">${weekly === null ? '—' : weekly + '%'}</div><div class="stat-label">Days completed this week</div></div>
   </div>`;
 
   const withHistory = state.exercises.filter((ex) => bestDayForExercise(ex, state.setsLog));
@@ -1295,18 +1318,36 @@ function modalGuide() {
   </div>`;
 }
 
+/** Streaks belong to an exercise, so a break has to name one. */
 function modalConfirmBreak() {
-  const { current, breaks } = calcStreakInfo(state.exercises, state.setsLog, null, state.streakOverrides);
+  const today = todayISO();
+  const active = state.exercises
+    .filter((e) => e.active && !e.archived && isScheduledOn(e, today))
+    .sort((a, b) => a.order - b.order);
+
+  const rows = active.map((ex) => {
+    const resting = isBreakDay(state.streakOverrides, today, ex.id);
+    const s = exerciseStats(ex, state.setsLog, state.timersLog, null, state.streakOverrides);
+    return `<button class="break-row ${resting ? 'on' : ''}" data-action="toggle-break" data-id="${ex.id}" aria-pressed="${resting}">
+      <span class="break-row-icon">${escapeHtml(ex.icon)}</span>
+      <span class="break-row-body">
+        <b>${escapeHtml(ex.name)}</b>
+        <em>${s.currentStreak} day streak${s.breakDays ? ` · ${s.breakDays} break${s.breakDays === 1 ? '' : 's'}` : ''}</em>
+      </span>
+      <span class="break-row-state">${resting ? '🌙 Resting' : 'Rest'}</span>
+    </button>`;
+  }).join('');
+
   return `<div class="modal-backdrop" data-action="backdrop">
-    <div class="modal-sheet center" data-stop>
-      <div class="celebrate-glyph">🌙</div>
-      <h2>Take a break today?</h2>
-      <p class="break-copy">Today counts as rest. Your streak carries on, and the day is marked so you can still see it was a break.</p>
-      ${current > 0 ? `<div class="break-preview">Streak becomes <b>${current + 1}</b> <span>with ${breaks + 1} break${breaks + 1 === 1 ? '' : 's'}</span></div>` : ''}
-      <div class="celebrate-actions">
-        <button class="primary-btn" data-action="confirm-break">Take the break</button>
-        <button class="secondary-btn" data-action="close-modal">Not today</button>
+    <div class="modal-sheet" data-stop>
+      <div class="sheet-handle"></div>
+      <div class="sheet-head">
+        <h2>Take a break</h2>
+        <button class="sheet-close" data-action="close-modal">${ICONS.close}</button>
       </div>
+      <p class="break-copy">Pick what you're resting today. That exercise keeps its streak, and the day is recorded as a break rather than a workout.</p>
+      ${active.length ? `<div class="break-list">${rows}</div>` : '<p class="rail-empty">Nothing scheduled today.</p>'}
+      ${active.length > 1 ? `<button class="secondary-btn" style="width:100%;margin-top:12px" data-action="rest-all">Rest everything today</button>` : ''}
     </div>
   </div>`;
 }
@@ -1735,21 +1776,26 @@ document.addEventListener('click', async (e) => {
       state.modal = { type: 'confirmBreak' };
       renderModal();
       break;
-    case 'confirm-break': {
-      state.streakOverrides = { ...state.streakOverrides, [todayISO()]: 'break' };
+    case 'toggle-break': {
+      const d = todayISO();
+      const id = btn.dataset.id;
+      const was = isBreakDay(state.streakOverrides, d, id);
+      state.streakOverrides = setDayOverride(state.streakOverrides, d, id, was ? null : 'break');
       await persistStreakOverrides();
-      closeModal();
+      renderModal();
       rerender();
-      showToast('Rest day claimed. Your streak keeps counting.');
       break;
     }
-    case 'undo-break': {
-      const next = { ...state.streakOverrides };
-      delete next[todayISO()];
+    case 'rest-all': {
+      const d = todayISO();
+      let next = state.streakOverrides;
+      state.exercises.filter((e) => e.active && !e.archived && isScheduledOn(e, d))
+        .forEach((ex) => { next = setDayOverride(next, d, ex.id, 'break'); });
       state.streakOverrides = next;
       await persistStreakOverrides();
+      renderModal();
       rerender();
-      showToast('Rest day removed');
+      showToast('Resting everything today');
       break;
     }
     case 'open-guide':

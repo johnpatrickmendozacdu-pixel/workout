@@ -494,6 +494,40 @@ export function timerElapsedMs(timer, nowMs) {
   return timer.elapsedMs + runningBit;
 }
 
+export const EMOM_DEFAULT_WORK_SEC = 60;
+export const EMOM_DEFAULT_REST_SEC = 60;
+
+/**
+ * Where you are in an every-minute-on-the-minute cycle.
+ *
+ * EMOM stores nothing. It is a pure function of the workout clock's elapsed
+ * time, and elapsedMs already excludes paused time — so pausing for the
+ * bathroom freezes the cycle, resetting puts it back to round 1, and closing
+ * the session stops it, all without a line of new logic. A separate EMOM start
+ * timestamp would have had to re-earn every one of those behaviours, and the
+ * pause case is the exact reason the pause button exists.
+ *
+ * A rest of 0 is legal: continuous work with rounds still counting. A cycle
+ * that cannot be divided by returns null rather than dividing by zero.
+ */
+export function emomPhase(elapsedMs, workSec, restSec) {
+  const work = Number(workSec);
+  const rest = Number(restSec);
+  if (!(work > 0) || !(rest >= 0)) return null;
+  const cycleSec = work + rest;
+  if (!(cycleSec > 0)) return null;
+
+  const t = Math.floor(Math.max(0, elapsedMs) / 1000);
+  const pos = t % cycleSec;
+  const working = pos < work;
+  return {
+    phase: working ? 'work' : 'rest',
+    round: Math.floor(t / cycleSec) + 1,
+    secondsLeft: working ? work - pos : cycleSec - pos,
+    cycleSec,
+  };
+}
+
 /** Starts a fresh timer for this exercise today. No-op if one already exists
  * (so logging more sets later in the day never resets progress). */
 export function startTimer(timersLog, dateStr, exId, nowMs) {

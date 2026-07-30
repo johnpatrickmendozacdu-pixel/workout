@@ -39,6 +39,7 @@ import {
   mergeBackup,
   buildBackup,
   mergeSyncSnapshots,
+  emomPhase,
 } from '../src/domain/domain.js';
 
 const TODAY = '2026-07-26';
@@ -920,5 +921,67 @@ describe('mergeSyncSnapshots', () => {
     const keys = (s) => Object.keys(s.setsLog).sort().map((d) => d + ':' + Object.keys(s.setsLog[d]).sort().join(',')).join('|');
     expect(keys(ab)).toBe(keys(ba));
     expect(ab.exercises.map((e) => e.id).sort()).toEqual(ba.exercises.map((e) => e.id).sort());
+  });
+});
+
+describe('emomPhase', () => {
+  const S = 1000;
+
+  it('opens in work on round one', () => {
+    expect(emomPhase(0, 60, 60)).toEqual({ phase: 'work', round: 1, secondsLeft: 60, cycleSec: 120 });
+  });
+
+  it('counts down the work period to its last second', () => {
+    expect(emomPhase(59 * S, 60, 60)).toMatchObject({ phase: 'work', round: 1, secondsLeft: 1 });
+  });
+
+  it('crosses into rest exactly on the minute', () => {
+    expect(emomPhase(60 * S, 60, 60)).toMatchObject({ phase: 'rest', round: 1, secondsLeft: 60 });
+  });
+
+  it('counts down rest to its last second, still round one', () => {
+    expect(emomPhase(119 * S, 60, 60)).toMatchObject({ phase: 'rest', round: 1, secondsLeft: 1 });
+  });
+
+  it('rolls into round two at the top of the next cycle', () => {
+    expect(emomPhase(120 * S, 60, 60)).toMatchObject({ phase: 'work', round: 2, secondsLeft: 60 });
+  });
+
+  it('handles an asymmetric cycle', () => {
+    expect(emomPhase(0, 40, 20)).toMatchObject({ phase: 'work', round: 1, secondsLeft: 40, cycleSec: 60 });
+    expect(emomPhase(39 * S, 40, 20)).toMatchObject({ phase: 'work', secondsLeft: 1 });
+    expect(emomPhase(40 * S, 40, 20)).toMatchObject({ phase: 'rest', secondsLeft: 20 });
+    expect(emomPhase(59 * S, 40, 20)).toMatchObject({ phase: 'rest', secondsLeft: 1 });
+    expect(emomPhase(60 * S, 40, 20)).toMatchObject({ phase: 'work', round: 2 });
+  });
+
+  it('treats a zero rest as continuous work that still counts rounds', () => {
+    expect(emomPhase(0, 30, 0)).toMatchObject({ phase: 'work', round: 1, secondsLeft: 30 });
+    expect(emomPhase(29 * S, 30, 0)).toMatchObject({ phase: 'work', round: 1, secondsLeft: 1 });
+    expect(emomPhase(30 * S, 30, 0)).toMatchObject({ phase: 'work', round: 2, secondsLeft: 30 });
+  });
+
+  it('ignores sub-second time rather than flickering', () => {
+    expect(emomPhase(59_900, 60, 60)).toMatchObject({ phase: 'work', secondsLeft: 1 });
+    expect(emomPhase(60_100, 60, 60)).toMatchObject({ phase: 'rest', secondsLeft: 60 });
+  });
+
+  it('refuses a cycle it cannot divide by', () => {
+    expect(emomPhase(0, 0, 0)).toBeNull();
+    expect(emomPhase(0, -5, 0)).toBeNull();
+    expect(emomPhase(0, 60, -60)).toBeNull();
+    expect(emomPhase(0, null, null)).toBeNull();
+  });
+
+  it('follows the workout clock, so a paused clock holds its phase', () => {
+    // The whole design rests on this: EMOM stores nothing and reads elapsedMs,
+    // which already excludes paused time.
+    let timers = startTimer({}, TODAY, 'a', 0);
+    timers = pauseTimer(timers, TODAY, 'a', 70 * S); // 70s of work done, then paused
+    const t = getTimer(timers, TODAY, 'a');
+    const held = emomPhase(timerElapsedMs(t, 70 * S), 60, 60);
+    const muchLater = emomPhase(timerElapsedMs(t, 999 * S), 60, 60);
+    expect(held).toMatchObject({ phase: 'rest', round: 1, secondsLeft: 50 });
+    expect(muchLater).toEqual(held);
   });
 });

@@ -1244,3 +1244,38 @@
   /* a sealed day is a record, not a live surface: silver, never the neon that
      marks what is running or winnable */
   .tip.sealed-note{border-left-color:var(--silver); color:var(--text);}
+
+  /* ---------- EMOM round band ----------
+     The phase word leads because the beep cannot be relied on: iOS mutes Web
+     Audio on the silent switch and suspends it in the background, so the screen
+     is the signal and the sound is a bonus. Neon marks WORK because that is
+     what is live; rest takes silver, keeping green rationed to one job. */
+  .emom-band{
+    display:flex; align-items:baseline; justify-content:space-between; gap:10px;
+    margin-top:10px; padding:9px 12px; border:2px solid var(--ink); background:#0F1412;
+  }
+  .emom-phase{
+    font-family:var(--font-mono); font-size:15px; font-weight:700;
+    letter-spacing:0.12em; text-transform:uppercase;
+  }
+  .emom-left{font-family:var(--font-mono); font-size:13px; color:var(--text-dim);}
+  .emom-left b{font-size:22px; color:var(--text);}
+  .emom-round{
+    font-family:var(--font-mono); font-size:11px; letter-spacing:0.08em;
+    text-transform:uppercase; color:var(--text-faint);
+  }
+  .emom-band.phase-work{border-color:var(--accent);}
+  .emom-band.phase-work .emom-phase, .emom-band.phase-work .emom-left b{color:var(--accent);}
+  .emom-band.phase-rest{border-color:var(--silver);}
+  .emom-band.phase-rest .emom-phase{color:var(--silver);}
+
+  /* work/rest inputs in Plan, greyed until EMOM is chosen */
+  .emom-fields{display:flex; gap:8px; margin-top:8px;}
+  .emom-sub{
+    flex:1; display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--text-dim);
+  }
+  .emom-sub input{
+    flex:1; min-width:0; min-height:44px; text-align:center;
+    font-family:var(--font-mono); font-weight:700;
+  }
+  .emom-fields.disabled{opacity:0.4; pointer-events:none;}

@@ -43,6 +43,9 @@ import {
   validateBackup,
   mergeBackup,
   mergeSyncSnapshots,
+  emomPhase,
+  EMOM_DEFAULT_WORK_SEC,
+  EMOM_DEFAULT_REST_SEC,
 } from './domain/domain.js';
 import * as gsync from './sync/googleSync.js';
 import { allStats, exerciseStats, recentDayStates, streakTier, dayHistory, formatDuration, formatCount, formatClock } from './domain/stats.js';
@@ -666,6 +669,9 @@ async function addExercise(data) {
     order: maxOrder + 1,
     createdDate: now,
     schedule: data.schedule || 'daily',
+    timerMode: data.timerMode === 'emom' ? 'emom' : 'normal',
+    emomWorkSec: data.emomWorkSec || EMOM_DEFAULT_WORK_SEC,
+    emomRestSec: data.emomRestSec != null ? data.emomRestSec : EMOM_DEFAULT_REST_SEC,
     targetHistory: [{ effectiveDate: now, target: data.target || null }],
   };
   state.exercises.push(ex);
@@ -687,6 +693,9 @@ async function updateExercise(id, data) {
   ex.icon = data.icon || ex.icon;
   ex.unit = (data.unit || 'reps').trim();
   ex.schedule = data.schedule || 'daily';
+  if (data.timerMode !== undefined) ex.timerMode = data.timerMode === 'emom' ? 'emom' : 'normal';
+  if (data.emomWorkSec != null) ex.emomWorkSec = data.emomWorkSec;
+  if (data.emomRestSec != null) ex.emomRestSec = data.emomRestSec;
   applyTargetChange(ex, data.target || null);
   await persistExercises();
 }
@@ -1342,6 +1351,7 @@ function ensureGlobalTick() {
       const t = getTimerPure(state.timersLog, todayISO(), el.dataset.elapsed);
       if (t) el.textContent = formatElapsed(timerElapsedMs(t, now));
     });
+    tickEmomBands(now);
   }, 1000);
 }
 
@@ -1395,8 +1405,94 @@ function timerBlockHtml(exId, timer, sealed) {
       <span class="timer-clock" id="timer-display" data-elapsed="${exId}" data-status="${phase}">${elapsed}</span>
       <span class="timer-status">${phase === 'completed' ? ICONS.trophy : ''}${statusLabel}${finishedClock ? ` · ${escapeHtml(finishedClock)}` : ''}</span>
     </div>
+    ${live ? emomBandHtml(exId, timer) : ''}
     ${controls}
     <p class="timer-note">${escapeHtml(note)}</p>
+  </div>`;
+}
+
+/**
+ * A short generated tone — no audio files, no network, no permissions, nothing
+ * to maintain. Two notes so WORK and REST are distinguishable without looking.
+ *
+ * The context is created lazily and resumed on a real gesture because iOS will
+ * not let a page make sound otherwise; the tap that logs a rep or starts the
+ * clock is the gesture that unlocks it.
+ */
+let audioCtx = null;
+function unlockAudio() {
+  try {
+    const Ctor = window.AudioContext || window.webkitAudioContext;
+    if (!Ctor) return;
+    if (!audioCtx) audioCtx = new Ctor();
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+  } catch (e) { /* no audio available; the band on screen is the real signal */ }
+}
+
+function beep(kind) {
+  if (!audioCtx || audioCtx.state !== 'running') return;
+  try {
+    const t0 = audioCtx.currentTime;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'square';
+    osc.frequency.value = kind === 'work' ? 880 : 440;
+    // Short, with a quick fade so it reads as a cue and not an alarm.
+    gain.gain.setValueAtTime(0.0001, t0);
+    gain.gain.exponentialRampToValueAtTime(0.18, t0 + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.16);
+    osc.connect(gain).connect(audioCtx.destination);
+    osc.start(t0);
+    osc.stop(t0 + 0.18);
+  } catch (e) { /* ignore — never let a cue break the workout */ }
+}
+
+/**
+ * Repaints any EMOM band in place, and beeps when the phase actually changes.
+ * Text-only updates, so a running EMOM session costs no re-renders — the same
+ * approach the elapsed clock already uses.
+ */
+const emomLastPhase = {};
+function tickEmomBands(now) {
+  document.querySelectorAll('[data-emom]').forEach((el) => {
+    const exId = el.dataset.emom;
+    const ex = state.exercises.find((e) => e.id === exId);
+    const t = getTimerPure(state.timersLog, todayISO(), exId);
+    if (!ex || !t) return;
+    const e = emomPhase(timerElapsedMs(t, now), ex.emomWorkSec, ex.emomRestSec);
+    if (!e) return;
+
+    el.className = `emom-band phase-${e.phase}`;
+    const phaseEl = el.querySelector('.emom-phase');
+    const leftEl = el.querySelector('.emom-left b');
+    const roundEl = el.querySelector('.emom-round');
+    if (phaseEl) phaseEl.textContent = e.phase === 'work' ? 'Work' : 'Rest';
+    if (leftEl) leftEl.textContent = e.secondsLeft;
+    if (roundEl) roundEl.textContent = `Round ${e.round}`;
+
+    const key = `${exId}:${e.phase}:${e.round}`;
+    if (emomLastPhase[exId] && emomLastPhase[exId] !== key) beep(e.phase);
+    emomLastPhase[exId] = key;
+  });
+}
+
+/**
+ * The EMOM round, shown only while a session is live on an EMOM exercise.
+ *
+ * The phase word is the largest element on purpose: the beep cannot be relied
+ * on (iOS mutes Web Audio on the silent switch, and a backgrounded tab has its
+ * audio suspended), so the screen has to be the primary signal and the sound
+ * only a bonus.
+ */
+function emomBandHtml(exId, timer) {
+  const ex = state.exercises.find((e) => e.id === exId);
+  if (!ex || ex.timerMode !== 'emom') return '';
+  const e = emomPhase(timerElapsedMs(timer, Date.now()), ex.emomWorkSec, ex.emomRestSec);
+  if (!e) return '';
+  return `<div class="emom-band phase-${e.phase}" data-emom="${exId}">
+    <span class="emom-phase">${e.phase === 'work' ? 'Work' : 'Rest'}</span>
+    <span class="emom-left"><b>${e.secondsLeft}</b>s</span>
+    <span class="emom-round">Round ${e.round}</span>
   </div>`;
 }
 
@@ -1698,6 +1794,14 @@ function modalExerciseForm(exId) {
   const draftSched = state.modal ? state.modal.sched : 'daily';
   const schedIsDaily = draftSched === 'daily';
   const schedDays = Array.isArray(draftSched) ? draftSched : [];
+  // Timer mode is a draft too, so toggling it reveals the work/rest fields
+  // without saving anything yet.
+  if (state.modal && state.modal.tmode === undefined) {
+    state.modal.tmode = (ex && ex.timerMode === 'emom') ? 'emom' : 'normal';
+  }
+  const isEmom = state.modal ? state.modal.tmode === 'emom' : false;
+  const workSec = (ex && ex.emomWorkSec) || EMOM_DEFAULT_WORK_SEC;
+  const restSec = (ex && ex.emomRestSec != null) ? ex.emomRestSec : EMOM_DEFAULT_REST_SEC;
   return `<div class="modal-backdrop" data-action="backdrop">
     <div class="modal-sheet" data-stop>
       <div class="sheet-handle"></div>
@@ -1735,6 +1839,20 @@ function modalExerciseForm(exId) {
         <label>Daily target (optional)</label>
         <input id="f-target" type="number" min="0" step="any" placeholder="Leave blank for no target" value="${target ? target : ''}">
         <div class="hint">${editing ? 'Changing this only affects today onward — past days keep their original target.' : 'Untargeted exercises still track totals but don’t count toward your streak.'}</div>
+      </div>
+      <div class="field">
+        <label>Timer</label>
+        <div class="sched-modes">
+          <button type="button" class="sched-mode ${isEmom ? '' : 'on'}" data-action="timer-mode" data-mode="normal">Normal</button>
+          <button type="button" class="sched-mode ${isEmom ? 'on' : ''}" data-action="timer-mode" data-mode="emom">EMOM</button>
+        </div>
+        <div class="emom-fields ${isEmom ? '' : 'disabled'}">
+          <label class="emom-sub">Work<input id="f-emom-work" type="number" min="1" max="3600" step="1" value="${workSec}"></label>
+          <label class="emom-sub">Rest<input id="f-emom-rest" type="number" min="0" max="3600" step="1" value="${restSec}"></label>
+        </div>
+        <div class="hint">${isEmom
+          ? 'Seconds. Work then rest, on repeat, while the normal clock keeps running. Pausing freezes the round too.'
+          : 'Normal runs one clock from your first rep. EMOM adds work/rest rounds on top of it.'}</div>
       </div>
       <div class="form-actions">
         <button class="secondary-btn" data-action="close-modal">Cancel</button>
@@ -1943,8 +2061,16 @@ document.addEventListener('click', async (e) => {
       const icon = iconEl ? iconEl.dataset.emoji : '💪';
       const id = btn.dataset.id;
       const schedule = state.modal && state.modal.sched ? state.modal.sched : 'daily';
-      if (id) await updateExercise(id, { name, unit, target, schedule });
-      else await addExercise({ name, unit, target, icon, schedule });
+      const timerMode = state.modal && state.modal.tmode === 'emom' ? 'emom' : 'normal';
+      // Read the fields even in normal mode so switching back to EMOM later
+      // remembers what you had typed rather than snapping to the defaults.
+      const rawWork = parseInt(document.getElementById('f-emom-work').value, 10);
+      const rawRest = parseInt(document.getElementById('f-emom-rest').value, 10);
+      const emomWorkSec = rawWork > 0 ? Math.min(3600, rawWork) : EMOM_DEFAULT_WORK_SEC;
+      const emomRestSec = rawRest >= 0 ? Math.min(3600, rawRest) : EMOM_DEFAULT_REST_SEC;
+      const timer = { timerMode, emomWorkSec, emomRestSec };
+      if (id) await updateExercise(id, { name, unit, target, schedule, ...timer });
+      else await addExercise({ name, unit, target, icon, schedule, ...timer });
       closeModal(); rerender();
       break;
     }
@@ -1955,6 +2081,9 @@ document.addEventListener('click', async (e) => {
     case 'toggle-archived': state.showArchived = !state.showArchived; renderView(); break;
 
     case 'open-logger': state.modal = { type: 'logger', exId: btn.dataset.id }; renderModal(); break;
+    case 'timer-mode':
+      if (state.modal) { state.modal.tmode = btn.dataset.mode; renderModal(); }
+      break;
     case 'sched-daily':
       if (state.modal) { state.modal.sched = 'daily'; renderModal(); }
       break;
@@ -2035,6 +2164,8 @@ document.addEventListener('click', async (e) => {
       renderModal();
       break;
     case 'rep-tap': {
+      // This tap is the gesture iOS requires before a page may make sound.
+      unlockAudio();
       const n = parseFloat(btn.dataset.val);
       if (state.repMode === 'sub') await decrementHandler(btn.dataset.id, n);
       else await logSet(btn.dataset.id, n);
@@ -2141,6 +2272,7 @@ document.addEventListener('click', async (e) => {
       await pauseTimerHandler(btn.dataset.id);
       break;
     case 'resume-timer':
+      unlockAudio();
       await resumeTimerHandler(btn.dataset.id);
       break;
     case 'giveup-timer':

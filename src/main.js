@@ -1513,80 +1513,109 @@ function timerBlockHtml(exId, timer, sealed) {
 }
 
 /**
- * A short generated tone — no audio files, no network, no permissions, nothing
- * to maintain. Two notes so WORK and REST are distinguishable without looking.
+ * ===================== CUE SOUNDS =====================
+ * Tones are generated as WAV data in code and played through <audio> elements
+ * rather than Web Audio.
  *
- * The context is created lazily and resumed on a real gesture because iOS will
- * not let a page make sound otherwise; the tap that logs a rep or starts the
- * clock is the gesture that unlocks it.
+ * That choice is the whole fix. On iOS, Web Audio is silenced by the physical
+ * ring/silent switch, while media elements play on the media channel — the same
+ * one that carries video and music. The symptom that led here was a phone where
+ * every other sound worked, the app reported the beep as played, and nothing was
+ * audible: that is precisely what a muted Web Audio output looks like, and no
+ * amount of unlocking fixes it.
+ *
+ * Still free and still offline: nothing is fetched, the waveform is written a
+ * sample at a time and handed over as a data URI.
  */
-let audioCtx = null;
-let audioPrimed = false;
-function unlockAudio() {
-  try {
-    const Ctor = window.AudioContext || window.webkitAudioContext;
-    if (!Ctor) return;
-    if (!audioCtx) audioCtx = new Ctor();
-    if (audioCtx.state === 'suspended') audioCtx.resume();
-    // iOS opens the audio output only when a source actually STARTS while the
-    // gesture is still active. Resuming alone leaves the context looking
-    // "running" while every later sound plays into nothing — which is exactly
-    // how this failed: the timer worked and no beep was ever heard. One silent
-    // sample, started inside the tap, is what actually unlocks it.
-    if (!audioPrimed) {
-      const buf = audioCtx.createBuffer(1, 1, audioCtx.sampleRate);
-      const src = audioCtx.createBufferSource();
-      src.buffer = buf;
-      src.connect(audioCtx.destination);
-      src.start(0);
-      audioPrimed = true;
-    }
-  } catch (e) { /* no audio available; the band on screen is the real signal */ }
+const TONE_SPECS = {
+  tick: { freq: 660, len: 0.09, gain: 0.35 },  // counting down
+  work: { freq: 990, len: 0.22, gain: 0.55 },  // go
+  rest: { freq: 420, len: 0.22, gain: 0.45 },  // ease off
+};
+
+function toneDataUri({ freq, len, gain }) {
+  const rate = 11025;
+  const n = Math.floor(rate * len);
+  const buf = new ArrayBuffer(44 + n * 2);
+  const dv = new DataView(buf);
+  const str = (off, v) => { for (let i = 0; i < v.length; i++) dv.setUint8(off + i, v.charCodeAt(i)); };
+  str(0, 'RIFF'); dv.setUint32(4, 36 + n * 2, true); str(8, 'WAVE');
+  str(12, 'fmt '); dv.setUint32(16, 16, true); dv.setUint16(20, 1, true);
+  dv.setUint16(22, 1, true); dv.setUint32(24, rate, true);
+  dv.setUint32(28, rate * 2, true); dv.setUint16(32, 2, true); dv.setUint16(34, 16, true);
+  str(36, 'data'); dv.setUint32(40, n * 2, true);
+  for (let i = 0; i < n; i++) {
+    const t = i / rate;
+    // short attack and release so it reads as a cue, not a click or an alarm
+    const env = Math.max(0, Math.min(1, t / 0.006, (len - t) / 0.03));
+    const square = Math.sin(2 * Math.PI * freq * t) >= 0 ? 1 : -1;
+    dv.setInt16(44 + i * 2, Math.round(square * gain * env * 32767), true);
+  }
+  const bytes = new Uint8Array(buf);
+  let bin = '';
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return 'data:audio/wav;base64,' + btoa(bin);
 }
 
-/** Whether sound can actually play right now, for the Test sound button. */
-function audioReady() {
-  return !!(audioCtx && audioCtx.state === 'running' && audioPrimed);
+const toneEls = {};
+let audioPrimed = false;
+
+function toneEl(kind) {
+  if (!toneEls[kind]) {
+    const el = new Audio(toneDataUri(TONE_SPECS[kind] || TONE_SPECS.tick));
+    el.preload = 'auto';
+    toneEls[kind] = el;
+  }
+  return toneEls[kind];
 }
 
 /**
- * One short tone at a precise moment on the audio clock. Scheduling ahead
- * rather than playing "now" is what makes a countdown trustworthy: the audio
- * thread keeps time even when the main thread is busy or throttled.
+ * iOS will not play a media element that has never been started from a gesture.
+ * Starting each one muted inside the tap, then rewinding it, buys the right to
+ * play it later from a timer.
  */
-function scheduleBeep(kind, whenSec) {
-  if (!audioCtx || audioCtx.state !== 'running') return;
+function unlockAudio() {
   try {
-    const t0 = Math.max(audioCtx.currentTime, whenSec);
-    const spec = kind === 'tick'
-      ? { freq: 660, len: 0.07, gain: 0.10 }   // counting down: quiet and quick
-      : kind === 'work'
-        ? { freq: 990, len: 0.20, gain: 0.20 } // go
-        : { freq: 420, len: 0.20, gain: 0.18 }; // ease off
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
-    osc.type = 'square';
-    osc.frequency.value = spec.freq;
-    gain.gain.setValueAtTime(0.0001, t0);
-    gain.gain.exponentialRampToValueAtTime(spec.gain, t0 + 0.008);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + spec.len);
-    osc.connect(gain).connect(audioCtx.destination);
-    osc.start(t0);
-    osc.stop(t0 + spec.len + 0.02);
+    Object.keys(TONE_SPECS).forEach((kind) => {
+      const el = toneEl(kind);
+      if (audioPrimed) return;
+      el.muted = true;
+      const p = el.play();
+      const settle = () => { el.pause(); el.currentTime = 0; el.muted = false; };
+      if (p && p.then) p.then(settle).catch(() => { el.muted = false; });
+      else settle();
+    });
+    audioPrimed = true;
+  } catch (e) { /* no audio available; the band on screen is the real signal */ }
+}
+
+/** Whether a cue can actually be played, for the Test sound button. */
+function audioReady() {
+  return audioPrimed && !!toneEls.tick;
+}
+
+function playTone(kind) {
+  try {
+    const el = toneEl(kind);
+    el.currentTime = 0;
+    const p = el.play();
+    if (p && p.catch) p.catch(() => {});
   } catch (e) { /* never let a cue break the workout */ }
 }
 
 /**
- * Books upcoming beeps on the audio clock. Reads state rather than the DOM, so
- * the count-in and the round cues keep sounding after you close the card and
- * carry on somewhere else in the app — the clock does, so the beeps must too.
+ * Books upcoming beeps. Reads state rather than the DOM, so the count-in and
+ * the round cues keep sounding after you close the card and carry on elsewhere
+ * in the app — the clock does, so the beeps must too.
+ *
+ * Each cue is booked once, on a timer set to its exact millisecond, rather than
+ * played when a tick happens to notice the phase changed: that could be a full
+ * second late, which is useless for a countdown.
  */
 const BEEP_LOOKAHEAD_MS = 2500;
 let beepBooked = new Set();
 function scheduleEmomBeeps(now) {
-  if (!audioCtx) return;
-  if (audioCtx.state === 'suspended') { audioCtx.resume(); return; }
-  if (audioCtx.state !== 'running') return;
+  if (!audioPrimed) return;
   if (beepBooked.size > 400) beepBooked = new Set();
   const day = state.timersLog[todayISO()] || {};
   Object.keys(day).forEach((exId) => {
@@ -1598,7 +1627,7 @@ function scheduleEmomBeeps(now) {
       const key = `${exId}:${ev.atMs}`;
       if (beepBooked.has(key)) return;
       beepBooked.add(key);
-      scheduleBeep(ev.kind, audioCtx.currentTime + (ev.atMs - now) / 1000);
+      setTimeout(() => playTone(ev.kind), Math.max(0, ev.atMs - Date.now()));
     });
   });
 }
@@ -2344,15 +2373,9 @@ document.addEventListener('click', async (e) => {
       unlockAudio();
       // Give resume() a moment, then say what is true rather than assuming it
       // worked — if this stays silent the reason is off the web platform.
-      setTimeout(() => {
-        if (audioReady()) {
-          scheduleBeep('tick', audioCtx.currentTime + 0.02);
-          scheduleBeep('work', audioCtx.currentTime + 0.35);
-          showToast('Played two beeps. Silent? Check the ring/silent switch.');
-        } else {
-          showToast('This device is blocking sound for web apps.');
-        }
-      }, 120);
+      playTone('tick');
+      setTimeout(() => playTone('work'), 400);
+      showToast(audioReady() ? 'Played two beeps.' : 'This device is blocking sound for web apps.');
       break;
     }
     case 'timer-mode':

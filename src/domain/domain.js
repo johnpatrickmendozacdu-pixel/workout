@@ -600,6 +600,76 @@ export function versionStatus(localBuild, remoteBuild) {
   return localBuild === remoteBuild ? 'latest' : 'stale';
 }
 
+/**
+ * ===================== SYNC MERGE =====================
+ * Combines this device's snapshot with the one in the cloud.
+ *
+ * The merge is a UNION, not a choice. Sync used to compare one timestamp and
+ * keep a whole side, so training offline and then syncing after any other copy
+ * had written meant your session was replaced outright. Anything present on
+ * only one side is now always kept — that single property is the fix, because
+ * the damaging case is always "these reps exist in exactly one place".
+ *
+ * A genuine conflict — both sides holding a different record for the SAME day
+ * and the SAME exercise — still needs a winner, and that is the snapshot with
+ * the newer updatedAt. Local wins ties: preferring the device in your hand is
+ * the less surprising default.
+ *
+ * Two properties make repeated syncs converge rather than oscillate, and both
+ * are covered by tests: merging a merged snapshot again changes nothing
+ * (idempotent), and merging in either order reaches the same set of days and
+ * exercises.
+ *
+ * Known limits, accepted deliberately and documented in the spec: two devices
+ * editing the same exercise on the same day resolve to the later writer for
+ * that day, and union has no tombstones, so an exercise deleted on one device
+ * comes back from a device that still has it. Deleting again is cheap; losing a
+ * history is not.
+ */
+function mergeByDayKey(winner, loser) {
+  const out = {};
+  const dates = new Set([...Object.keys(loser || {}), ...Object.keys(winner || {})]);
+  dates.forEach((d) => {
+    const merged = { ...((loser || {})[d] || {}), ...((winner || {})[d] || {}) };
+    if (Object.keys(merged).length) out[d] = merged;
+  });
+  return out;
+}
+
+/** Union by id, keeping the winner's ordering and appending ids it lacks. */
+function mergeExerciseLists(winner, loser) {
+  const out = (winner || []).slice();
+  const seen = new Set(out.map((e) => e.id));
+  (loser || []).forEach((e) => { if (!seen.has(e.id)) out.push(e); });
+  return out;
+}
+
+/** A device that never set a username must not blank one that did. */
+function hasProfileContent(p) {
+  return !!(p && (p.username || p.weight != null || p.height != null || p.avatar));
+}
+
+export function mergeSyncSnapshots(local, remote) {
+  if (!remote) return local;
+  const localAt = local.updatedAt || 0;
+  const remoteAt = remote.updatedAt || 0;
+  const remoteWins = remoteAt > localAt;
+  const winner = remoteWins ? remote : local;
+  const loser = remoteWins ? local : remote;
+
+  return {
+    version: 1,
+    updatedAt: Math.max(localAt, remoteAt),
+    exercises: mergeExerciseLists(winner.exercises, loser.exercises),
+    setsLog: mergeByDayKey(winner.setsLog, loser.setsLog),
+    timersLog: mergeByDayKey(winner.timersLog, loser.timersLog),
+    streakOverrides: mergeByDayKey(winner.streakOverrides, loser.streakOverrides),
+    profile: hasProfileContent(winner.profile) || !hasProfileContent(loser.profile)
+      ? winner.profile
+      : loser.profile,
+  };
+}
+
 export function buildBackup(exercises, setsLog) {
   return {
     version: 1,

@@ -38,6 +38,7 @@ import {
   validateBackup,
   mergeBackup,
   buildBackup,
+  mergeSyncSnapshots,
 } from '../src/domain/domain.js';
 
 const TODAY = '2026-07-26';
@@ -788,5 +789,136 @@ describe('backup validation and merge', () => {
     expect(result.exercises.map((e) => e.id).sort()).toEqual(['a', 'z']);
     expect(result.setsLog[TODAY].a).toEqual([10]); // local kept, not overwritten
     expect(result.setsLog[TODAY].z).toEqual([5]); // new data added
+  });
+});
+
+describe('mergeSyncSnapshots', () => {
+  const snap = (overrides = {}) => ({
+    version: 1,
+    updatedAt: 1000,
+    exercises: [makeExercise()],
+    setsLog: {},
+    timersLog: {},
+    streakOverrides: {},
+    profile: { username: '', weight: null, height: null },
+    ...overrides,
+  });
+
+  it('keeps a day that exists only locally, even when the remote is newer', () => {
+    // The exact bug: trained offline on the phone, another copy wrote later.
+    const local = snap({ updatedAt: 5000, setsLog: { '2026-07-30': { a: [40, 60] } } });
+    const remote = snap({ updatedAt: 9000, setsLog: { '2026-07-29': { a: [20] } } });
+    const merged = mergeSyncSnapshots(local, remote);
+    expect(merged.setsLog['2026-07-30'].a).toEqual([40, 60]);
+    expect(merged.setsLog['2026-07-29'].a).toEqual([20]);
+  });
+
+  it('unions two exercises logged on the same day by different devices', () => {
+    const local = snap({ updatedAt: 5000, setsLog: { '2026-07-30': { a: [10] } } });
+    const remote = snap({ updatedAt: 9000, setsLog: { '2026-07-30': { b: [7] } } });
+    const merged = mergeSyncSnapshots(local, remote);
+    expect(merged.setsLog['2026-07-30']).toEqual({ a: [10], b: [7] });
+  });
+
+  it('gives a genuine conflict to the more recently written side', () => {
+    const local = snap({ updatedAt: 5000, setsLog: { '2026-07-30': { a: [10] } } });
+    const remote = snap({ updatedAt: 9000, setsLog: { '2026-07-30': { a: [99] } } });
+    expect(mergeSyncSnapshots(local, remote).setsLog['2026-07-30'].a).toEqual([99]);
+
+    const localNewer = snap({ updatedAt: 9000, setsLog: { '2026-07-30': { a: [10] } } });
+    const remoteOlder = snap({ updatedAt: 5000, setsLog: { '2026-07-30': { a: [99] } } });
+    expect(mergeSyncSnapshots(localNewer, remoteOlder).setsLog['2026-07-30'].a).toEqual([10]);
+  });
+
+  it('prefers the device in your hand when timestamps tie', () => {
+    const local = snap({ updatedAt: 5000, setsLog: { '2026-07-30': { a: [10] } } });
+    const remote = snap({ updatedAt: 5000, setsLog: { '2026-07-30': { a: [99] } } });
+    expect(mergeSyncSnapshots(local, remote).setsLog['2026-07-30'].a).toEqual([10]);
+  });
+
+  it('carries the newest updatedAt forward so the merge is never stale', () => {
+    expect(mergeSyncSnapshots(snap({ updatedAt: 5000 }), snap({ updatedAt: 9000 })).updatedAt).toBe(9000);
+    expect(mergeSyncSnapshots(snap({ updatedAt: 9000 }), snap({ updatedAt: 5000 })).updatedAt).toBe(9000);
+  });
+
+  it('unions exercises by id and keeps ones only the other device has', () => {
+    const mine = makeExercise({ id: 'a', name: 'Push-ups' });
+    const theirs = makeExercise({ id: 'z', name: 'Dips' });
+    const merged = mergeSyncSnapshots(
+      snap({ updatedAt: 5000, exercises: [mine] }),
+      snap({ updatedAt: 9000, exercises: [theirs] }),
+    );
+    expect(merged.exercises.map((e) => e.id).sort()).toEqual(['a', 'z']);
+  });
+
+  it('takes the newer side\'s version of an exercise they both have', () => {
+    const merged = mergeSyncSnapshots(
+      snap({ updatedAt: 5000, exercises: [makeExercise({ id: 'a', name: 'Old name' })] }),
+      snap({ updatedAt: 9000, exercises: [makeExercise({ id: 'a', name: 'New name' })] }),
+    );
+    expect(merged.exercises).toHaveLength(1);
+    expect(merged.exercises[0].name).toBe('New name');
+  });
+
+  it('unions timers and rest days the same way as sets', () => {
+    const local = snap({
+      updatedAt: 5000,
+      timersLog: { '2026-07-30': { a: { status: 'completed', elapsedMs: 60000, runStartedAt: null } } },
+      streakOverrides: { '2026-07-29': { a: 'break' } },
+    });
+    const remote = snap({
+      updatedAt: 9000,
+      timersLog: { '2026-07-29': { a: { status: 'gaveup', elapsedMs: 1000, runStartedAt: null } } },
+      streakOverrides: { '2026-07-28': { b: 'break' } },
+    });
+    const merged = mergeSyncSnapshots(local, remote);
+    expect(merged.timersLog['2026-07-30'].a.elapsedMs).toBe(60000);
+    expect(merged.timersLog['2026-07-29'].a.status).toBe('gaveup');
+    expect(merged.streakOverrides['2026-07-29'].a).toBe('break');
+    expect(merged.streakOverrides['2026-07-28'].b).toBe('break');
+  });
+
+  it('never blanks a filled profile with an empty newer one', () => {
+    const local = snap({ updatedAt: 5000, profile: { username: 'Johnny', weight: 70, height: 175 } });
+    const remote = snap({ updatedAt: 9000, profile: { username: '', weight: null, height: null } });
+    expect(mergeSyncSnapshots(local, remote).profile.username).toBe('Johnny');
+  });
+
+  it('takes a newer profile when it actually has something in it', () => {
+    const local = snap({ updatedAt: 5000, profile: { username: 'Old', weight: null, height: null } });
+    const remote = snap({ updatedAt: 9000, profile: { username: 'New', weight: 80, height: 180 } });
+    expect(mergeSyncSnapshots(local, remote).profile.username).toBe('New');
+  });
+
+  it('returns local untouched when there is nothing in the cloud yet', () => {
+    const local = snap({ updatedAt: 5000, setsLog: { '2026-07-30': { a: [10] } } });
+    expect(mergeSyncSnapshots(local, null)).toBe(local);
+    expect(mergeSyncSnapshots(local, undefined)).toBe(local);
+  });
+
+  it('survives a remote snapshot with missing sections', () => {
+    const local = snap({ updatedAt: 5000, setsLog: { '2026-07-30': { a: [10] } } });
+    const merged = mergeSyncSnapshots(local, { updatedAt: 9000 });
+    expect(merged.setsLog['2026-07-30'].a).toEqual([10]);
+    expect(merged.exercises.map((e) => e.id)).toEqual(['a']);
+    expect(merged.timersLog).toEqual({});
+  });
+
+  it('is idempotent, so repeated syncs settle instead of oscillating', () => {
+    const local = snap({ updatedAt: 5000, setsLog: { '2026-07-30': { a: [40] } } });
+    const remote = snap({ updatedAt: 9000, setsLog: { '2026-07-29': { a: [20] }, '2026-07-30': { b: [5] } } });
+    const once = mergeSyncSnapshots(local, remote);
+    expect(mergeSyncSnapshots(once, remote)).toEqual(once);
+    expect(mergeSyncSnapshots(once, local)).toEqual(once);
+  });
+
+  it('reaches the same days and exercises whichever order it merges in', () => {
+    const local = snap({ updatedAt: 5000, setsLog: { '2026-07-30': { a: [40] } }, exercises: [makeExercise({ id: 'a' })] });
+    const remote = snap({ updatedAt: 9000, setsLog: { '2026-07-29': { z: [20] } }, exercises: [makeExercise({ id: 'z' })] });
+    const ab = mergeSyncSnapshots(local, remote);
+    const ba = mergeSyncSnapshots(remote, local);
+    const keys = (s) => Object.keys(s.setsLog).sort().map((d) => d + ':' + Object.keys(s.setsLog[d]).sort().join(',')).join('|');
+    expect(keys(ab)).toBe(keys(ba));
+    expect(ab.exercises.map((e) => e.id).sort()).toEqual(ba.exercises.map((e) => e.id).sort());
   });
 });

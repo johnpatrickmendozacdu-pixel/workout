@@ -42,6 +42,7 @@ import {
   buildBackup,
   validateBackup,
   mergeBackup,
+  mergeSyncSnapshots,
 } from './domain/domain.js';
 import * as gsync from './sync/googleSync.js';
 import { allStats, exerciseStats, recentDayStates, streakTier, dayHistory, formatDuration, formatCount, formatClock } from './domain/stats.js';
@@ -59,7 +60,7 @@ const state = {
   timersLog: {},
   meta: { lastExportAt: null },
   profile: { username: '', weight: null, height: null },
-  sync: { status: 'signed-out', email: null, error: null },
+  sync: { status: 'signed-out', email: null, error: null, pending: false },
   streakOverrides: {},
   storageError: false,
   updateAvailable: false,
@@ -217,14 +218,16 @@ function buildSyncSnapshot() {
   };
 }
 
-async function applyRemoteSnapshot(remote) {
+/** Writes an already-merged snapshot down. Never called with a raw remote: what
+ *  lands here is always the union of both sides, so nothing local is dropped. */
+async function applyMergedSnapshot(merged) {
   applyingRemote = true;
-  state.exercises = remote.exercises || [];
-  state.setsLog = remote.setsLog || {};
-  state.timersLog = remote.timersLog || {};
-  state.profile = remote.profile || { username: '', weight: null, height: null };
-  state.streakOverrides = remote.streakOverrides || {};
-  state.meta.updatedAt = remote.updatedAt || Date.now();
+  state.exercises = merged.exercises || [];
+  state.setsLog = merged.setsLog || {};
+  state.timersLog = merged.timersLog || {};
+  state.profile = merged.profile || { username: '', weight: null, height: null };
+  state.streakOverrides = merged.streakOverrides || {};
+  state.meta.updatedAt = merged.updatedAt || Date.now();
   await Promise.all([
     db.setItem('exercises', state.exercises),
     db.setItem('sets-log', state.setsLog),
@@ -274,7 +277,15 @@ function beginSyncing() {
   clearTimeout(syncWatchdog);
   syncWatchdog = setTimeout(() => {
     if (state.sync.status !== 'syncing') return;
-    state.sync.status = state.sync.email ? 'reconnect' : 'signed-out';
+    // A stalled sync with no network is waiting, not a consent problem. Only
+    // one of these statuses asks the person to do something, so it matters
+    // which one a hang falls back to.
+    if (!isOnline()) {
+      markSyncPending();
+      state.sync.status = 'pending';
+    } else {
+      state.sync.status = state.sync.email ? 'reconnect' : 'signed-out';
+    }
     state.sync.error = null;
     renderSyncUI();
   }, SYNC_WATCHDOG_MS);
@@ -287,10 +298,37 @@ function endSyncing(status, error) {
   state.sync.error = error || null;
 }
 
+/**
+ * Offline is a normal state for a local-first app, not a failure. Work done
+ * without a connection is recorded as pending and flushed by the `online`
+ * listener; the flag is persisted so closing the app while offline does not
+ * lose the fact that there is something to send.
+ */
+function markSyncPending() {
+  state.sync.pending = true;
+  db.setItem('sync-pending', true).catch(() => {});
+}
+
+async function clearSyncPending() {
+  state.sync.pending = false;
+  await db.setItem('sync-pending', false).catch(() => {});
+}
+
+function isOnline() {
+  return typeof navigator === 'undefined' || navigator.onLine !== false;
+}
+
 function scheduleSyncPush() {
   if (applyingRemote || !hasSyncAccount()) return;
+  if (!isOnline()) {
+    // Don't burn a request we know will fail — queue it and say so.
+    markSyncPending();
+    endSyncing('pending');
+    renderSyncUI();
+    return;
+  }
   clearTimeout(syncPushTimer);
-  syncPushTimer = setTimeout(() => { pushToDrive(); }, 2500);
+  syncPushTimer = setTimeout(() => { syncNow(); }, 2500);
 }
 
 function renderSyncUI() {
@@ -298,39 +336,39 @@ function renderSyncUI() {
   renderTopbar();
 }
 
-async function pushToDrive() {
+/**
+ * One sync cycle: take what is in the cloud, union it with what is here, keep
+ * the result locally, and put the same result back. Both devices therefore
+ * converge on the union instead of one of them winning and the other's work
+ * disappearing.
+ *
+ * Pushing what was just merged is the part that matters: without it, the other
+ * device re-introduces the same conflict on its next pull.
+ */
+async function syncNow() {
   if (!hasSyncAccount()) { endSyncing(state.sync.connected ? 'reconnect' : 'signed-out'); renderSyncUI(); return; }
+  if (!isOnline()) { markSyncPending(); endSyncing('pending'); renderSyncUI(); return; }
   try {
     beginSyncing(); renderSyncUI();
-    await gsync.uploadBackup(buildSyncSnapshot());
+    const remote = await gsync.downloadBackup();
+    const merged = mergeSyncSnapshots(buildSyncSnapshot(), remote);
+    // Only rewrite local state when the cloud actually contributed something.
+    if (remote) await applyMergedSnapshot(merged);
+    await gsync.uploadBackup(merged);
+    await clearSyncPending();
     endSyncing('synced');
   } catch (e) {
+    // The work is still safe on this device; remember that it needs sending.
+    markSyncPending();
     noteSyncFailure(e);
   }
   renderSyncUI();
 }
 
-async function pullAndMerge() {
-  if (!hasSyncAccount()) { endSyncing(state.sync.connected ? 'reconnect' : 'signed-out'); renderSyncUI(); return; }
-  try {
-    beginSyncing(); renderSyncUI();
-    const remote = await gsync.downloadBackup();
-    if (!remote) {
-      await pushToDrive(); // nothing synced yet from any device — seed the cloud copy
-      return;
-    }
-    if ((remote.updatedAt || 0) > (state.meta.updatedAt || 0)) {
-      await applyRemoteSnapshot(remote);
-    } else if ((remote.updatedAt || 0) < (state.meta.updatedAt || 0)) {
-      await pushToDrive();
-      return;
-    }
-    endSyncing('synced');
-  } catch (e) {
-    noteSyncFailure(e);
-  }
-  renderSyncUI();
-}
+/* Kept as names the rest of the app already calls. Both now mean "run a full
+ * merge cycle" — there is no longer a push-only path that could clobber the
+ * cloud with a snapshot that never saw it. */
+const pullAndMerge = syncNow;
 
 async function googleSignInHandler() {
   beginSyncing(); state.sync.error = null; renderModal();
@@ -375,19 +413,30 @@ async function googleSyncNowHandler() {
 /** Attempted once on app load — reconnects silently (no popup) if this browser
  * signed in before and still has an active Google session. */
 async function tryResumeSync() {
-  const [savedEmail, enabled] = await Promise.all([
+  const [savedEmail, enabled, pending] = await Promise.all([
     db.getItem('sync-account').catch(() => null),
     db.getItem('sync-enabled').catch(() => null),
+    db.getItem('sync-pending').catch(() => null),
   ]);
   // Resume on either signal: the email may never have been captured (the
   // userinfo lookup can fail while sync itself works fine), so the connection
   // flag is the authoritative one.
   if (!savedEmail && !enabled) return;
+  // Queued work survives being closed while offline.
+  state.sync.pending = !!pending;
 
   // Show the account immediately, before the handshake — the person never
   // signed out, so the app shouldn't flash a signed-out avatar on every load.
   state.sync.email = savedEmail || null;
   state.sync.connected = true;
+
+  // Offline on launch is not a handshake failure: say what is true and wait for
+  // the network rather than reporting Drive as unreachable.
+  if (!isOnline()) {
+    endSyncing('pending');
+    renderSyncUI();
+    return;
+  }
   beginSyncing();
   renderSyncUI();
 
@@ -1730,6 +1779,17 @@ function modalProfile() {
       return `<button class="secondary-btn" style="width:100%" data-action="google-sign-in">${ICONS.google || ''} Sign in with Google</button>
         <div class="hint">Syncs your data to a private, hidden spot in your own Google Drive — free, and readable only by this app.</div>`;
     }
+    // Offline is not an error and needs no action — the work is already safe
+    // here and will go up on its own. Saying "waiting" instead of "couldn't
+    // reach Drive" is the difference between information and a false alarm.
+    if (sync.status === 'pending') {
+      return `<div class="sync-status pending">Waiting for connection${sync.email ? ` · ${escapeHtml(sync.email)}` : ''}</div>
+        <div class="sync-actions">
+          <button class="secondary-btn" data-action="google-sync-now">Try now</button>
+          <button class="secondary-btn" data-action="google-sign-out">Sign out</button>
+        </div>
+        <div class="hint">Everything you log is saved on this device. It syncs by itself as soon as you're back online.</div>`;
+    }
     if (sync.status === 'syncing') {
       // Keep the account and an escape hatch on screen — a bare spinner with no
       // way out is what made a slow handshake feel like a hang.
@@ -2323,7 +2383,20 @@ async function init() {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState !== 'visible') return;
     checkVersion();
-    if (hasSyncAccount()) pullAndMerge();
+    if (hasSyncAccount() && isOnline()) syncNow();
+  });
+
+  // Coming back onto the network is the moment queued work should leave the
+  // device. Without this, a push that failed offline waited for some unrelated
+  // later edit to happen to trigger another one.
+  window.addEventListener('online', () => {
+    if (!hasSyncAccount()) return;
+    syncNow();
+  });
+  window.addEventListener('offline', () => {
+    if (!hasSyncAccount()) return;
+    endSyncing(state.sync.pending ? 'pending' : state.sync.status);
+    renderSyncUI();
   });
 }
 init();

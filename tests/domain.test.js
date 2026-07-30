@@ -1031,6 +1031,14 @@ describe('EMOM count-in and beep schedule', () => {
     expect(ev[ev.length - 1]).toMatchObject({ kind: 'work', atMs: NOW + 120 * S });
   });
 
+  it('still sounds the tick that lands on the tap that started the count-in', () => {
+    const timers = startTimer({}, TODAY, 'a', NOW, 5 * S);
+    const t = getTimer(timers, TODAY, 'a');
+    // scheduling runs a few ms after the tap, as it does in the app
+    const ev = emomBeepSchedule(t, 60, 60, NOW + 40, 3 * S);
+    expect(ev[0]).toMatchObject({ kind: 'tick', atMs: NOW });
+  });
+
   it('never books a beep twice, and never one already past', () => {
     const timers = startTimer({}, TODAY, 'a', NOW, 0);
     const t = getTimer(timers, TODAY, 'a');

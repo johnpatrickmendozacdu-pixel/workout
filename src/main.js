@@ -508,6 +508,9 @@ async function logSet(exId, value) {
   }
 
   await Promise.all([persistSets(), persistTimers(), newPR ? persistExercises() : Promise.resolve()]);
+  // Book the count-in immediately. Waiting for the next tick would let its
+  // first beep fall into the past unheard.
+  scheduleEmomBeeps(Date.now());
 
   const unit = ex && ex.unit ? ' ' + ex.unit : '';
   if (crossed) {
@@ -1518,13 +1521,32 @@ function timerBlockHtml(exId, timer, sealed) {
  * clock is the gesture that unlocks it.
  */
 let audioCtx = null;
+let audioPrimed = false;
 function unlockAudio() {
   try {
     const Ctor = window.AudioContext || window.webkitAudioContext;
     if (!Ctor) return;
     if (!audioCtx) audioCtx = new Ctor();
     if (audioCtx.state === 'suspended') audioCtx.resume();
+    // iOS opens the audio output only when a source actually STARTS while the
+    // gesture is still active. Resuming alone leaves the context looking
+    // "running" while every later sound plays into nothing — which is exactly
+    // how this failed: the timer worked and no beep was ever heard. One silent
+    // sample, started inside the tap, is what actually unlocks it.
+    if (!audioPrimed) {
+      const buf = audioCtx.createBuffer(1, 1, audioCtx.sampleRate);
+      const src = audioCtx.createBufferSource();
+      src.buffer = buf;
+      src.connect(audioCtx.destination);
+      src.start(0);
+      audioPrimed = true;
+    }
   } catch (e) { /* no audio available; the band on screen is the real signal */ }
+}
+
+/** Whether sound can actually play right now, for the Test sound button. */
+function audioReady() {
+  return !!(audioCtx && audioCtx.state === 'running' && audioPrimed);
 }
 
 /**
@@ -1562,7 +1584,9 @@ function scheduleBeep(kind, whenSec) {
 const BEEP_LOOKAHEAD_MS = 2500;
 let beepBooked = new Set();
 function scheduleEmomBeeps(now) {
-  if (!audioCtx || audioCtx.state !== 'running') return;
+  if (!audioCtx) return;
+  if (audioCtx.state === 'suspended') { audioCtx.resume(); return; }
+  if (audioCtx.state !== 'running') return;
   if (beepBooked.size > 400) beepBooked = new Set();
   const day = state.timersLog[todayISO()] || {};
   Object.keys(day).forEach((exId) => {
@@ -2008,8 +2032,9 @@ function modalExerciseForm(exId) {
           <label class="emom-sub">Work<input id="f-emom-work" type="number" min="1" max="3600" step="1" value="${draft.work !== undefined ? escapeHtml(draft.work) : workSec}"></label>
           <label class="emom-sub">Rest<input id="f-emom-rest" type="number" min="0" max="3600" step="1" value="${draft.rest !== undefined ? escapeHtml(draft.rest) : restSec}"></label>
         </div>
+        ${isEmom ? '<button type="button" class="secondary-btn test-sound" data-action="test-sound">Test sound</button>' : ''}
         <div class="hint">${isEmom
-          ? 'Seconds. Work then rest, on repeat, while the normal clock keeps running. Pausing freezes the round too.'
+          ? 'Seconds. Work then rest, on repeat, while the normal clock keeps running. Pausing freezes the round too. Counts you in 5-4-3-2-1, and beeps the last five seconds of every round.'
           : 'Normal runs one clock from your first rep. EMOM adds work/rest rounds on top of it.'}</div>
       </div>
       <div class="form-actions">
@@ -2314,6 +2339,22 @@ document.addEventListener('click', async (e) => {
     case 'toggle-archived': state.showArchived = !state.showArchived; renderView(); break;
 
     case 'open-logger': state.modal = { type: 'logger', exId: btn.dataset.id }; renderModal(); break;
+    case 'test-sound': {
+      captureExerciseDraft();
+      unlockAudio();
+      // Give resume() a moment, then say what is true rather than assuming it
+      // worked — if this stays silent the reason is off the web platform.
+      setTimeout(() => {
+        if (audioReady()) {
+          scheduleBeep('tick', audioCtx.currentTime + 0.02);
+          scheduleBeep('work', audioCtx.currentTime + 0.35);
+          showToast('Played two beeps. Silent? Check the ring/silent switch.');
+        } else {
+          showToast('This device is blocking sound for web apps.');
+        }
+      }, 120);
+      break;
+    }
     case 'timer-mode':
       captureExerciseDraft();
       if (state.modal) { state.modal.tmode = btn.dataset.mode; renderModal(); }

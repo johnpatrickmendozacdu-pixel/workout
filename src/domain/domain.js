@@ -530,8 +530,13 @@ export function emomBeepSchedule(timer, workSec, restSec, nowMs, lookaheadMs) {
 
   const until = nowMs + (lookaheadMs > 0 ? lookaheadMs : 0);
   const start = timer.runStartedAt - timer.elapsedMs; // wall time of elapsed 0
+  // A small grace window backwards: the first tick of a count-in lands on the
+  // very tap that started it, and would otherwise be a few milliseconds stale
+  // by the time anything looks — costing the "5" of 5-4-3-2-1. The caller
+  // clamps a slightly-past time to "now", so it still sounds on the beat.
+  const GRACE_MS = 300;
   const add = (atMs, kind, notBefore) => {
-    if (atMs < nowMs || atMs > until) return;
+    if (atMs < nowMs - GRACE_MS || atMs > until) return;
     if (notBefore != null && atMs < notBefore) return;
     out.push({ atMs, kind });
   };

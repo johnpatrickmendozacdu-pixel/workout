@@ -1310,3 +1310,20 @@
   .traj-swatch.hit{background:var(--accent); border-color:var(--accent);}
   .traj-swatch.short{background:transparent;}
   .traj-swatch.target{height:0; width:12px; border:none; border-top:2px dashed #3A423C;}
+
+  /* ---------- profile photo ----------
+     Square, like everything else here: a circular crop would be the only
+     rounded thing in a zero-radius design. */
+  .avatar-photo{width:100%; height:100%; object-fit:cover; display:block;}
+  .avatar-chip.has-photo{padding:0; overflow:hidden; background:var(--surface);}
+  .profile-photo-block{margin-bottom:16px; text-align:center;}
+  /* square, like every other surface here — the circle was the one rounded
+     thing left in a zero-radius design */
+  .profile-avatar-big{border-radius:0; margin-bottom:0;}
+  .profile-avatar-big.has-photo{padding:0; overflow:hidden; background:var(--surface); border:2px solid var(--ink);}
+  .profile-avatar-big.has-photo img{width:100%; height:100%; object-fit:cover; display:block;}
+  .profile-photo-actions{display:flex; gap:8px; justify-content:center; margin-top:10px;}
+  .photo-btn{
+    min-height:44px; display:inline-flex; align-items:center; justify-content:center;
+    padding:0 16px; cursor:pointer;
+  }

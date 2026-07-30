@@ -1176,8 +1176,11 @@ function avatarChipHtml() {
   const signedIn = sync.status !== 'signed-out';
   const source = p.username || sync.email;
   const initial = source ? escapeHtml(source[0].toUpperCase()) : '';
-  return `<button class="avatar-chip ${signedIn ? 'signed-in' : 'signed-out'}" data-action="open-profile" aria-label="Profile">
-    ${initial || ICONS.user}
+  const photo = p.avatar
+    ? `<img class="avatar-photo" src="${p.avatar}" alt="">`
+    : (initial || ICONS.user);
+  return `<button class="avatar-chip ${signedIn ? 'signed-in' : 'signed-out'}${p.avatar ? ' has-photo' : ''}" data-action="open-profile" aria-label="Profile">
+    ${photo}
   </button>`;
 }
 
@@ -2027,7 +2030,17 @@ function modalProfile() {
       <div class="sheet-handle"></div>
       <div class="sheet-head"><h2>Profile</h2><button class="sheet-close" data-action="close-modal">${ICONS.close}</button></div>
 
-      <div class="profile-avatar-big">${initial}</div>
+      <div class="profile-photo-block">
+        <div class="profile-avatar-big${p.avatar ? ' has-photo' : ''}">${p.avatar ? `<img src="${p.avatar}" alt="">` : initial}</div>
+        <div class="profile-photo-actions">
+          <label class="secondary-btn photo-btn">
+            ${p.avatar ? 'Change photo' : 'Add photo'}
+            <input type="file" id="profile-photo" accept="image/*" style="display:none">
+          </label>
+          ${p.avatar ? '<button class="secondary-btn photo-btn" data-action="remove-avatar">Remove</button>' : ''}
+        </div>
+        <div class="hint">Kept on this device and in your own Drive backup. It is shrunk to a small square first, so it never bloats a sync.</div>
+      </div>
 
       <div class="field">
         <label>Cross-device sync</label>
@@ -2091,8 +2104,73 @@ function modalImportChoice() {
   </div>`;
 }
 
+/**
+ * Turns a chosen photo into a small square data URL, entirely in the browser.
+ *
+ * It is downscaled hard on purpose. The picture is stored inside the profile,
+ * and the profile rides in the Drive sync snapshot, so a full-size phone photo
+ * would bloat every future sync by megabytes. 192px square at JPEG quality 0.82
+ * lands around 15KB, which is invisible next to the workout log and still sharp
+ * on a 34px chip at 3x.
+ *
+ * Centre-cropped rather than squashed, because a squashed face is worse than a
+ * cropped one. Nothing is uploaded anywhere: the file never leaves the device.
+ */
+const AVATAR_PX = 192;
+function fileToAvatarDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    if (!file.type || !file.type.startsWith('image/')) { reject(new Error('not-an-image')); return; }
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const side = Math.min(img.naturalWidth, img.naturalHeight);
+        const sx = (img.naturalWidth - side) / 2;
+        const sy = (img.naturalHeight - side) / 2;
+        const canvas = document.createElement('canvas');
+        canvas.width = AVATAR_PX;
+        canvas.height = AVATAR_PX;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, sx, sy, side, side, 0, 0, AVATAR_PX, AVATAR_PX);
+        resolve(canvas.toDataURL('image/jpeg', 0.82));
+      } catch (e) { reject(e); } finally { URL.revokeObjectURL(url); }
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('decode-failed')); };
+    img.src = url;
+  });
+}
+
+async function setAvatarHandler(file) {
+  try {
+    const dataUrl = await fileToAvatarDataUrl(file);
+    state.profile = { ...state.profile, avatar: dataUrl };
+    await persistProfile();
+    renderModal();
+    renderTopbar();
+    showToast('Photo updated');
+  } catch (e) {
+    showToast(e && e.message === 'not-an-image' ? 'That file is not an image.' : "That photo couldn't be read.");
+  }
+}
+
+async function removeAvatarHandler() {
+  state.profile = { ...state.profile, avatar: null };
+  await persistProfile();
+  renderModal();
+  renderTopbar();
+  showToast('Photo removed');
+}
+
 /* ============================= EVENTS ============================= */
 function bindModalEvents() {
+  const photoInput = document.getElementById('profile-photo');
+  if (photoInput) {
+    photoInput.onchange = (e) => {
+      const file = e.target.files[0];
+      if (file) setAvatarHandler(file);
+      e.target.value = '';
+    };
+  }
   const fileInput = document.getElementById('import-file');
   if (fileInput) {
     fileInput.onchange = async (e) => {
@@ -2391,6 +2469,9 @@ document.addEventListener('click', async (e) => {
       break;
     case 'google-sign-out':
       await googleSignOutHandler();
+      break;
+    case 'remove-avatar':
+      await removeAvatarHandler();
       break;
     case 'google-sync-now':
       await googleSyncNowHandler();

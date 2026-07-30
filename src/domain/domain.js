@@ -508,6 +508,20 @@ export function countInLeft(timer, nowMs) {
 }
 
 /**
+ * Whether a token kept from a previous run can still be used.
+ *
+ * Access tokens live about an hour and, with no backend, there is no refresh
+ * token — so the one already in hand is worth keeping across launches rather
+ * than asking Google for another every time the app opens. A 30 second floor
+ * means a sync cannot start on a token that dies mid-flight.
+ */
+export const TOKEN_MIN_LIFE_MS = 30000;
+export function storedTokenUsable(record, nowMs) {
+  if (!record || !record.token || !record.expiresAt) return false;
+  return record.expiresAt - nowMs > TOKEN_MIN_LIFE_MS;
+}
+
+/**
  * The running EMOM sessions that would have to yield to `keepExId`.
  * Separate from enforcing it so the app can name what it paused.
  */

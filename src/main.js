@@ -47,6 +47,7 @@ import {
   emomBeepSchedule,
   countInLeft,
   activeEmomId,
+  storedTokenUsable,
   enforceSingleEmom,
   emomSessionsToPause,
   EMOM_COUNT_IN_SEC,
@@ -279,7 +280,14 @@ function noteSyncFailure(err) {
  * fine offline, so it should always fall through to something actionable.
  */
 let syncWatchdog = null;
-const SYNC_WATCHDOG_MS = 20000;
+/**
+ * Longer than the work it guards. One cycle is three Drive requests — find,
+ * download, upload — each allowed 15s, so a slow-but-healthy sync can run to
+ * ~45s. At 20s this fired routinely on mobile data and reported "Sync paused",
+ * which is why sync kept appearing to drop out: the watchdog was faster than
+ * the network, and it blamed consent for what was only slowness.
+ */
+const SYNC_WATCHDOG_MS = 60000;
 
 function beginSyncing() {
   state.sync.status = 'syncing';
@@ -292,10 +300,14 @@ function beginSyncing() {
     if (!isOnline()) {
       markSyncPending();
       state.sync.status = 'pending';
+      state.sync.error = null;
     } else {
-      state.sync.status = state.sync.email ? 'reconnect' : 'signed-out';
+      // Do not ask for consent over a slow network. Nothing is known to be
+      // wrong with the account, so say what is true and keep the work queued.
+      markSyncPending();
+      state.sync.status = 'pending';
+      state.sync.error = null;
     }
-    state.sync.error = null;
     renderSyncUI();
   }, SYNC_WATCHDOG_MS);
 }
@@ -354,7 +366,28 @@ function renderSyncUI() {
  * Pushing what was just merged is the part that matters: without it, the other
  * device re-introduces the same conflict on its next pull.
  */
+let syncInFlight = null;
+let syncQueued = false;
+
+/**
+ * One cycle at a time. Without this, a rep logged mid-sync started a second
+ * overlapping cycle that re-armed the watchdog and could report a failure for
+ * work the first cycle had already done. A request arriving during a sync is
+ * coalesced into a single follow-up run.
+ */
 async function syncNow() {
+  if (syncInFlight) { syncQueued = true; return syncInFlight; }
+  syncInFlight = runSyncCycle();
+  try {
+    await syncInFlight;
+  } finally {
+    syncInFlight = null;
+    if (syncQueued) { syncQueued = false; syncNow(); }
+  }
+  return undefined;
+}
+
+async function runSyncCycle() {
   if (!hasSyncAccount()) { endSyncing(state.sync.connected ? 'reconnect' : 'signed-out'); renderSyncUI(); return; }
   if (!isOnline()) { markSyncPending(); endSyncing('pending'); renderSyncUI(); return; }
   try {
@@ -412,6 +445,7 @@ async function googleSignOutHandler() {
   await Promise.all([
     db.setItem('sync-account', null).catch(() => {}),
     db.setItem('sync-enabled', false).catch(() => {}),
+    db.setItem('sync-token', null).catch(() => {}),
   ]);
   renderModal();
   renderTopbar();
@@ -422,10 +456,11 @@ async function googleSyncNowHandler() {
 /** Attempted once on app load — reconnects silently (no popup) if this browser
  * signed in before and still has an active Google session. */
 async function tryResumeSync() {
-  const [savedEmail, enabled, pending] = await Promise.all([
+  const [savedEmail, enabled, pending, token] = await Promise.all([
     db.getItem('sync-account').catch(() => null),
     db.getItem('sync-enabled').catch(() => null),
     db.getItem('sync-pending').catch(() => null),
+    db.getItem('sync-token').catch(() => null),
   ]);
   // Resume on either signal: the email may never have been captured (the
   // userinfo lookup can fail while sync itself works fine), so the connection
@@ -449,7 +484,10 @@ async function tryResumeSync() {
   beginSyncing();
   renderSyncUI();
 
-  const ok = await gsync.trySilentSignIn(savedEmail);
+  // A token still in date is worth more than a silent re-auth Safari will
+  // block: reuse it and sync immediately rather than asking to reconnect.
+  const restored = storedTokenUsable(token, Date.now()) && gsync.restoreSession(token);
+  const ok = restored || await gsync.trySilentSignIn(savedEmail);
   if (ok) {
     state.sync.email = gsync.getSignedInEmail() || savedEmail || null;
     if (state.sync.email) db.setItem('sync-account', state.sync.email).catch(() => {});
@@ -2864,6 +2902,9 @@ const updateSW = registerSW({
 
 /* ============================= INIT ============================= */
 async function init() {
+  gsync.setTokenListener((record) => {
+    db.setItem('sync-token', record).catch(() => {});
+  });
   await loadAll();
   db.requestPersistence();
   render();

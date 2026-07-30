@@ -43,6 +43,7 @@ import {
   emomBeepSchedule,
   countInLeft,
   activeEmomId,
+  storedTokenUsable,
   enforceSingleEmom,
   emomSessionsToPause,
 } from '../src/domain/domain.js';
@@ -1202,5 +1203,23 @@ describe('merging profiles field by field', () => {
   it('survives a snapshot with no profile at all', () => {
     const local = snap(5000, { username: 'Johnny', avatar: 'data:x' });
     expect(mergeSyncSnapshots(local, snap(9000, undefined)).profile).toMatchObject({ username: 'Johnny', avatar: 'data:x' });
+  });
+});
+
+describe('storedTokenUsable', () => {
+  const NOW = 1_000_000;
+  it('accepts a token with real life left in it', () => {
+    expect(storedTokenUsable({ token: 't', expiresAt: NOW + 10 * 60000 }, NOW)).toBe(true);
+  });
+  it('rejects one that has expired', () => {
+    expect(storedTokenUsable({ token: 't', expiresAt: NOW - 1 }, NOW)).toBe(false);
+  });
+  it('rejects one about to expire, so a sync cannot die mid-flight', () => {
+    expect(storedTokenUsable({ token: 't', expiresAt: NOW + 5000 }, NOW)).toBe(false);
+  });
+  it('rejects junk', () => {
+    expect(storedTokenUsable(null, NOW)).toBe(false);
+    expect(storedTokenUsable({ expiresAt: NOW + 60000 }, NOW)).toBe(false);
+    expect(storedTokenUsable({ token: 't' }, NOW)).toBe(false);
   });
 });

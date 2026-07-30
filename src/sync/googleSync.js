@@ -19,7 +19,11 @@ let signedInEmail = null;
 
 /** Milliseconds before actual expiry at which we treat a token as stale and
  *  renew it, so a Drive call never races the expiry boundary. */
-const TOKEN_REFRESH_MARGIN_MS = 5 * 60 * 1000;
+/** Only renew when the token is genuinely about to die. Renewing five minutes
+ *  early meant every sync in that window first attempted a silent re-auth —
+ *  which Safari's tracking prevention blocks — turning a perfectly usable token
+ *  into a "Sync paused" prompt. A 401 replay already covers dying mid-flight. */
+const TOKEN_REFRESH_MARGIN_MS = 30 * 1000;
 const GIS_WAIT_TIMEOUT_MS = 10000;
 /** Silent auth is a background round-trip — fail fast so the UI never lingers.
  *  Interactive auth waits on a human in a popup, so it gets much longer. */
@@ -28,6 +32,20 @@ const INTERACTIVE_AUTH_TIMEOUT_MS = 45000;
 const NETWORK_TIMEOUT_MS = 15000;
 
 let lastEmailHint = null;
+let onTokenStored = null;
+
+/** The app persists the token so a relaunch inside its lifetime syncs straight
+ *  away instead of attempting a silent re-auth that Safari will block. */
+export function setTokenListener(cb) { onTokenStored = cb; }
+
+export function restoreSession(record) {
+  if (!record || !record.token || !record.expiresAt) return false;
+  if (record.expiresAt - Date.now() <= 30000) return false;
+  accessToken = record.token;
+  tokenExpiresAt = record.expiresAt;
+  if (record.email) { signedInEmail = record.email; lastEmailHint = record.email; }
+  return true;
+}
 
 function gisReady() {
   return typeof window !== 'undefined' && window.google && window.google.accounts && window.google.accounts.oauth2;
@@ -78,6 +96,7 @@ function ensureTokenClient(onToken) {
         if (resp && resp.access_token) {
           accessToken = resp.access_token;
           tokenExpiresAt = Date.now() + (resp.expires_in ? resp.expires_in * 1000 : 3500 * 1000);
+          if (onTokenStored) onTokenStored({ token: accessToken, expiresAt: tokenExpiresAt, email: signedInEmail });
           // Deliberately not awaited: the address is only used for display, so
           // holding sync behind an extra round-trip just makes it feel slow.
           fetchEmail();
@@ -181,6 +200,7 @@ export function signOut() {
   accessToken = null;
   tokenExpiresAt = 0;
   signedInEmail = null;
+  if (onTokenStored) onTokenStored(null);
 }
 
 async function driveFetch(url, options = {}, isRetry = false) {

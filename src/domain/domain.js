@@ -496,6 +496,76 @@ export function timerElapsedMs(timer, nowMs) {
 
 export const EMOM_DEFAULT_WORK_SEC = 60;
 export const EMOM_DEFAULT_REST_SEC = 60;
+/** Five, like every other EMOM timer. Long enough to put the phone down. */
+export const EMOM_COUNT_IN_SEC = 5;
+
+/** Seconds of count-in still to run, or 0. Derived from runStartedAt sitting in
+ *  the future — see startTimer. */
+export function countInLeft(timer, nowMs) {
+  if (!timer || timer.status !== 'running' || !timer.runStartedAt) return 0;
+  const ms = timer.runStartedAt - nowMs;
+  return ms > 0 ? Math.ceil(ms / 1000) : 0;
+}
+
+/**
+ * The beeps due between now and now+lookahead, each with the exact millisecond
+ * it should sound at.
+ *
+ * Returning times rather than firing on detection is the point. A beep fired
+ * when a one-second tick *notices* the phase changed can be a full second late,
+ * and vanishes entirely if the tab is throttled — useless for a count-in, whose
+ * only value is being exactly on time. Every boundary here is arithmetic on
+ * timestamps, so the caller can hand these to the audio clock in advance.
+ *
+ * Ticks belong to the phase they end: a rest shorter than the countdown emits
+ * only the ticks that fit inside it, instead of spraying beeps back through the
+ * work period.
+ */
+export function emomBeepSchedule(timer, workSec, restSec, nowMs, lookaheadMs) {
+  const out = [];
+  if (!timer || timer.status !== 'running') return out;
+  const work = Number(workSec);
+  const rest = Number(restSec);
+  if (!(work > 0) || !(rest >= 0)) return out;
+
+  const until = nowMs + (lookaheadMs > 0 ? lookaheadMs : 0);
+  const start = timer.runStartedAt - timer.elapsedMs; // wall time of elapsed 0
+  const add = (atMs, kind, notBefore) => {
+    if (atMs < nowMs || atMs > until) return;
+    if (notBefore != null && atMs < notBefore) return;
+    out.push({ atMs, kind });
+  };
+
+  // The count-in: five ticks, then the tone that starts round 1.
+  if (timer.runStartedAt > nowMs) {
+    for (let k = EMOM_COUNT_IN_SEC; k >= 1; k--) add(timer.runStartedAt - k * 1000, 'tick');
+    add(timer.runStartedAt, 'work');
+  }
+
+  // Phase boundaries, walked forward from whichever cycle the window touches.
+  const cycle = work + rest;
+  const elapsedAtUntil = Math.max(0, until - start);
+  let n = Math.max(0, Math.floor((Math.max(0, nowMs - start) - cycle * 1000) / (cycle * 1000)));
+  for (; n * cycle * 1000 <= elapsedAtUntil + cycle * 1000; n++) {
+    const cycleStart = start + n * cycle * 1000;
+    // work -> rest, and the rest period is skipped entirely when it is zero
+    if (rest > 0) {
+      const boundary = cycleStart + work * 1000;
+      for (let k = Math.min(EMOM_COUNT_IN_SEC, work); k >= 1; k--) add(boundary - k * 1000, 'tick', cycleStart);
+      add(boundary, 'rest');
+    }
+    // -> next work
+    const nextWork = cycleStart + cycle * 1000;
+    const phaseStart = rest > 0 ? cycleStart + work * 1000 : cycleStart;
+    const room = rest > 0 ? rest : work;
+    for (let k = Math.min(EMOM_COUNT_IN_SEC, room); k >= 1; k--) add(nextWork - k * 1000, 'tick', phaseStart);
+    add(nextWork, 'work');
+  }
+
+  out.sort((a, b) => a.atMs - b.atMs);
+  // The count-in's final tone and a boundary can land together; keep one.
+  return out.filter((e, i) => i === 0 || e.atMs !== out[i - 1].atMs);
+}
 
 /**
  * Where you are in an every-minute-on-the-minute cycle.
@@ -528,11 +598,21 @@ export function emomPhase(elapsedMs, workSec, restSec) {
   };
 }
 
-/** Starts a fresh timer for this exercise today. No-op if one already exists
- * (so logging more sets later in the day never resets progress). */
-export function startTimer(timersLog, dateStr, exId, nowMs) {
+/**
+ * Starts a fresh timer for this exercise today. No-op if one already exists
+ * (so logging more sets later in the day never resets progress).
+ *
+ * delayMs holds both clocks at zero for a count-in. It needs no extra state:
+ * runStartedAt is simply set in the future, and timerElapsedMs already clamps
+ * its running portion at zero, so the workout clock reads 0:00 throughout and
+ * begins moving at the precise instant the first round does. "A count-in is
+ * running" is therefore derivable — runStartedAt is ahead of now — rather than
+ * being a second piece of state that could drift out of step.
+ */
+export function startTimer(timersLog, dateStr, exId, nowMs, delayMs) {
   if (getTimer(timersLog, dateStr, exId)) return timersLog;
-  return setTimerRecord(timersLog, dateStr, exId, { status: 'running', elapsedMs: 0, runStartedAt: nowMs });
+  const delay = delayMs > 0 ? delayMs : 0;
+  return setTimerRecord(timersLog, dateStr, exId, { status: 'running', elapsedMs: 0, runStartedAt: nowMs + delay });
 }
 
 /* Transitions spread the existing record rather than rebuilding it, so a flag

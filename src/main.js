@@ -44,6 +44,9 @@ import {
   mergeBackup,
   mergeSyncSnapshots,
   emomPhase,
+  emomBeepSchedule,
+  countInLeft,
+  EMOM_COUNT_IN_SEC,
   EMOM_DEFAULT_WORK_SEC,
   EMOM_DEFAULT_REST_SEC,
 } from './domain/domain.js';
@@ -479,8 +482,11 @@ async function logSet(exId, value) {
   const total = calcTotal(getSetsFor(exId, d));
   const now = Date.now();
 
-  // First logged set of the day for this exercise auto-starts its timer.
-  state.timersLog = startTimerPure(state.timersLog, d, exId, now);
+  // First logged set of the day for this exercise auto-starts its timer. On an
+  // EMOM exercise it starts a count-in instead: the workout clock and the first
+  // round then begin together, five seconds later.
+  const countIn = ex && ex.timerMode === 'emom' ? EMOM_COUNT_IN_SEC * 1000 : 0;
+  state.timersLog = startTimerPure(state.timersLog, d, exId, now, countIn);
 
   let newPR = false;
   if (ex) {
@@ -1443,6 +1449,7 @@ function ensureGlobalTick() {
       if (t) el.textContent = formatElapsed(timerElapsedMs(t, now));
     });
     tickEmomBands(now);
+    scheduleEmomBeeps(now);
   }, 1000);
 }
 
@@ -1520,51 +1527,87 @@ function unlockAudio() {
   } catch (e) { /* no audio available; the band on screen is the real signal */ }
 }
 
-function beep(kind) {
+/**
+ * One short tone at a precise moment on the audio clock. Scheduling ahead
+ * rather than playing "now" is what makes a countdown trustworthy: the audio
+ * thread keeps time even when the main thread is busy or throttled.
+ */
+function scheduleBeep(kind, whenSec) {
   if (!audioCtx || audioCtx.state !== 'running') return;
   try {
-    const t0 = audioCtx.currentTime;
+    const t0 = Math.max(audioCtx.currentTime, whenSec);
+    const spec = kind === 'tick'
+      ? { freq: 660, len: 0.07, gain: 0.10 }   // counting down: quiet and quick
+      : kind === 'work'
+        ? { freq: 990, len: 0.20, gain: 0.20 } // go
+        : { freq: 420, len: 0.20, gain: 0.18 }; // ease off
     const osc = audioCtx.createOscillator();
     const gain = audioCtx.createGain();
     osc.type = 'square';
-    osc.frequency.value = kind === 'work' ? 880 : 440;
-    // Short, with a quick fade so it reads as a cue and not an alarm.
+    osc.frequency.value = spec.freq;
     gain.gain.setValueAtTime(0.0001, t0);
-    gain.gain.exponentialRampToValueAtTime(0.18, t0 + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.16);
+    gain.gain.exponentialRampToValueAtTime(spec.gain, t0 + 0.008);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + spec.len);
     osc.connect(gain).connect(audioCtx.destination);
     osc.start(t0);
-    osc.stop(t0 + 0.18);
-  } catch (e) { /* ignore — never let a cue break the workout */ }
+    osc.stop(t0 + spec.len + 0.02);
+  } catch (e) { /* never let a cue break the workout */ }
 }
 
 /**
- * Repaints any EMOM band in place, and beeps when the phase actually changes.
- * Text-only updates, so a running EMOM session costs no re-renders — the same
- * approach the elapsed clock already uses.
+ * Books upcoming beeps on the audio clock. Reads state rather than the DOM, so
+ * the count-in and the round cues keep sounding after you close the card and
+ * carry on somewhere else in the app — the clock does, so the beeps must too.
  */
-const emomLastPhase = {};
+const BEEP_LOOKAHEAD_MS = 2500;
+let beepBooked = new Set();
+function scheduleEmomBeeps(now) {
+  if (!audioCtx || audioCtx.state !== 'running') return;
+  if (beepBooked.size > 400) beepBooked = new Set();
+  const day = state.timersLog[todayISO()] || {};
+  Object.keys(day).forEach((exId) => {
+    const t = day[exId];
+    if (!t || t.status !== 'running') return;
+    const ex = state.exercises.find((e) => e.id === exId);
+    if (!ex || ex.timerMode !== 'emom') return;
+    emomBeepSchedule(t, ex.emomWorkSec, ex.emomRestSec, now, BEEP_LOOKAHEAD_MS).forEach((ev) => {
+      const key = `${exId}:${ev.atMs}`;
+      if (beepBooked.has(key)) return;
+      beepBooked.add(key);
+      scheduleBeep(ev.kind, audioCtx.currentTime + (ev.atMs - now) / 1000);
+    });
+  });
+}
+
+/**
+ * Repaints any EMOM band in place. Text-only updates, so a running EMOM session
+ * costs no re-renders — the same approach the elapsed clock already uses.
+ */
 function tickEmomBands(now) {
   document.querySelectorAll('[data-emom]').forEach((el) => {
     const exId = el.dataset.emom;
     const ex = state.exercises.find((e) => e.id === exId);
     const t = getTimerPure(state.timersLog, todayISO(), exId);
     if (!ex || !t) return;
-    const e = emomPhase(timerElapsedMs(t, now), ex.emomWorkSec, ex.emomRestSec);
-    if (!e) return;
-
-    el.className = `emom-band phase-${e.phase}`;
+    const view = emomBandView(ex, t, now);
+    if (!view) return;
+    el.className = `emom-band phase-${view.phase}`;
     const phaseEl = el.querySelector('.emom-phase');
     const leftEl = el.querySelector('.emom-left b');
     const roundEl = el.querySelector('.emom-round');
-    if (phaseEl) phaseEl.textContent = e.phase === 'work' ? 'Work' : 'Rest';
-    if (leftEl) leftEl.textContent = e.secondsLeft;
-    if (roundEl) roundEl.textContent = `Round ${e.round}`;
-
-    const key = `${exId}:${e.phase}:${e.round}`;
-    if (emomLastPhase[exId] && emomLastPhase[exId] !== key) beep(e.phase);
-    emomLastPhase[exId] = key;
+    if (phaseEl) phaseEl.textContent = view.label;
+    if (leftEl) leftEl.textContent = view.secondsLeft;
+    if (roundEl) roundEl.textContent = view.round;
   });
+}
+
+/** What the band should say right now: the count-in, or the live round. */
+function emomBandView(ex, timer, now) {
+  const ready = countInLeft(timer, now);
+  if (ready > 0) return { phase: 'ready', label: 'Get ready', secondsLeft: ready, round: 'Starting' };
+  const e = emomPhase(timerElapsedMs(timer, now), ex.emomWorkSec, ex.emomRestSec);
+  if (!e) return null;
+  return { phase: e.phase, label: e.phase === 'work' ? 'Work' : 'Rest', secondsLeft: e.secondsLeft, round: `Round ${e.round}` };
 }
 
 /**
@@ -1578,12 +1621,12 @@ function tickEmomBands(now) {
 function emomBandHtml(exId, timer) {
   const ex = state.exercises.find((e) => e.id === exId);
   if (!ex || ex.timerMode !== 'emom') return '';
-  const e = emomPhase(timerElapsedMs(timer, Date.now()), ex.emomWorkSec, ex.emomRestSec);
-  if (!e) return '';
-  return `<div class="emom-band phase-${e.phase}" data-emom="${exId}">
-    <span class="emom-phase">${e.phase === 'work' ? 'Work' : 'Rest'}</span>
-    <span class="emom-left"><b>${e.secondsLeft}</b>s</span>
-    <span class="emom-round">Round ${e.round}</span>
+  const view = emomBandView(ex, timer, Date.now());
+  if (!view) return '';
+  return `<div class="emom-band phase-${view.phase}" data-emom="${exId}">
+    <span class="emom-phase">${view.label}</span>
+    <span class="emom-left"><b>${view.secondsLeft}</b>s</span>
+    <span class="emom-round">${view.round}</span>
   </div>`;
 }
 
@@ -1873,11 +1916,35 @@ function modalLogger(exId) {
   </div>`;
 }
 
+/**
+ * Snapshots whatever is typed in the exercise form.
+ *
+ * Every toggle in this form re-renders it, and a re-render rebuilds the inputs
+ * from the saved exercise — so typing a name and then changing the schedule
+ * threw the name away. That was true of the schedule toggles long before the
+ * Timer field existed; adding a third toggle just made it easier to hit.
+ */
+function captureExerciseDraft() {
+  if (!state.modal) return;
+  const val = (id) => { const el = document.getElementById(id); return el ? el.value : undefined; };
+  const picked = document.querySelector('.emoji-chip.selected');
+  const d = state.modal.draft || {};
+  const set = (k, v) => { if (v !== undefined) d[k] = v; };
+  set('name', val('f-name'));
+  set('unit', val('f-unit'));
+  set('target', val('f-target'));
+  set('work', val('f-emom-work'));
+  set('rest', val('f-emom-rest'));
+  if (picked) d.icon = picked.dataset.emoji;
+  state.modal.draft = d;
+}
+
 function modalExerciseForm(exId) {
   const editing = !!exId;
   const ex = editing ? state.exercises.find((e) => e.id === exId) : null;
   const target = ex ? getEffectiveTarget(ex, todayISO()) : null;
-  const chosenIcon = ex ? ex.icon : EMOJI_PRESETS[0];
+  const draft = (state.modal && state.modal.draft) || {};
+  const chosenIcon = draft.icon !== undefined ? draft.icon : (ex ? ex.icon : EMOJI_PRESETS[0]);
   // Draft lives in modal state so toggling days re-renders without saving.
   if (state.modal && state.modal.sched === undefined) {
     state.modal.sched = ex && Array.isArray(ex.schedule) ? ex.schedule.slice() : 'daily';
@@ -1902,7 +1969,7 @@ function modalExerciseForm(exId) {
       </div>
       <div class="field">
         <label>Name</label>
-        <input id="f-name" type="text" placeholder="e.g. Push-ups" value="${escapeHtml(ex ? ex.name : '')}" autocomplete="off">
+        <input id="f-name" type="text" placeholder="e.g. Push-ups" value="${escapeHtml(draft.name !== undefined ? draft.name : (ex ? ex.name : ''))}" autocomplete="off">
       </div>
       <div class="field">
         <label>Icon</label>
@@ -1912,7 +1979,7 @@ function modalExerciseForm(exId) {
       </div>
       <div class="field">
         <label>Unit</label>
-        <input id="f-unit" type="text" list="unit-options" placeholder="reps" value="${escapeHtml(ex ? ex.unit : 'reps')}" autocomplete="off">
+        <input id="f-unit" type="text" list="unit-options" placeholder="reps" value="${escapeHtml(draft.unit !== undefined ? draft.unit : (ex ? ex.unit : 'reps'))}" autocomplete="off">
         <datalist id="unit-options"><option value="reps"><option value="kg"><option value="lb"><option value="sec"><option value="min"><option value="km"><option value="mi"></datalist>
       </div>
       <div class="field">
@@ -1928,7 +1995,7 @@ function modalExerciseForm(exId) {
       </div>
       <div class="field">
         <label>Daily target (optional)</label>
-        <input id="f-target" type="number" min="0" step="any" placeholder="Leave blank for no target" value="${target ? target : ''}">
+        <input id="f-target" type="number" min="0" step="any" placeholder="Leave blank for no target" value="${draft.target !== undefined ? escapeHtml(draft.target) : (target ? target : '')}">
         <div class="hint">${editing ? 'Changing this only affects today onward — past days keep their original target.' : 'Untargeted exercises still track totals but don’t count toward your streak.'}</div>
       </div>
       <div class="field">
@@ -1938,8 +2005,8 @@ function modalExerciseForm(exId) {
           <button type="button" class="sched-mode ${isEmom ? 'on' : ''}" data-action="timer-mode" data-mode="emom">EMOM</button>
         </div>
         <div class="emom-fields ${isEmom ? '' : 'disabled'}">
-          <label class="emom-sub">Work<input id="f-emom-work" type="number" min="1" max="3600" step="1" value="${workSec}"></label>
-          <label class="emom-sub">Rest<input id="f-emom-rest" type="number" min="0" max="3600" step="1" value="${restSec}"></label>
+          <label class="emom-sub">Work<input id="f-emom-work" type="number" min="1" max="3600" step="1" value="${draft.work !== undefined ? escapeHtml(draft.work) : workSec}"></label>
+          <label class="emom-sub">Rest<input id="f-emom-rest" type="number" min="0" max="3600" step="1" value="${draft.rest !== undefined ? escapeHtml(draft.rest) : restSec}"></label>
         </div>
         <div class="hint">${isEmom
           ? 'Seconds. Work then rest, on repeat, while the normal clock keeps running. Pausing freezes the round too.'
@@ -2248,18 +2315,22 @@ document.addEventListener('click', async (e) => {
 
     case 'open-logger': state.modal = { type: 'logger', exId: btn.dataset.id }; renderModal(); break;
     case 'timer-mode':
+      captureExerciseDraft();
       if (state.modal) { state.modal.tmode = btn.dataset.mode; renderModal(); }
       break;
     case 'sched-daily':
+      captureExerciseDraft();
       if (state.modal) { state.modal.sched = 'daily'; renderModal(); }
       break;
     case 'sched-custom':
+      captureExerciseDraft();
       if (state.modal && state.modal.sched === 'daily') {
         state.modal.sched = [new Date().getDay()]; // seed with today
         renderModal();
       }
       break;
     case 'sched-toggle': {
+      captureExerciseDraft();
       if (!state.modal) break;
       const day = parseInt(btn.dataset.day, 10);
       const cur = Array.isArray(state.modal.sched) ? state.modal.sched.slice() : [];

@@ -1337,3 +1337,8 @@
   .topbar-titles .app-title, .topbar-titles .date-heading{
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
   }
+
+  /* Count-in: nothing is live yet, so it takes silver like rest rather than the
+     neon reserved for what is actually running. */
+  .emom-band.phase-ready{border-color:var(--silver);}
+  .emom-band.phase-ready .emom-phase{color:var(--silver);}

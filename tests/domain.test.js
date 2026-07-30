@@ -40,6 +40,8 @@ import {
   buildBackup,
   mergeSyncSnapshots,
   emomPhase,
+  emomBeepSchedule,
+  countInLeft,
 } from '../src/domain/domain.js';
 
 const TODAY = '2026-07-26';
@@ -983,5 +985,90 @@ describe('emomPhase', () => {
     const muchLater = emomPhase(timerElapsedMs(t, 999 * S), 60, 60);
     expect(held).toMatchObject({ phase: 'rest', round: 1, secondsLeft: 50 });
     expect(muchLater).toEqual(held);
+  });
+});
+
+describe('EMOM count-in and beep schedule', () => {
+  const S = 1000;
+  const NOW = 1_000_000;
+
+  it('holds both clocks at zero through the count-in, then starts them together', () => {
+    const timers = startTimer({}, TODAY, 'a', NOW, 5 * S);
+    const t = getTimer(timers, TODAY, 'a');
+
+    // during the count-in nothing has started yet
+    expect(timerElapsedMs(t, NOW)).toBe(0);
+    expect(timerElapsedMs(t, NOW + 4 * S)).toBe(0);
+    expect(emomPhase(timerElapsedMs(t, NOW + 4 * S), 60, 60)).toMatchObject({ phase: 'work', round: 1, secondsLeft: 60 });
+
+    // the instant it ends, the workout clock moves and round 1 begins in full
+    expect(timerElapsedMs(t, NOW + 5 * S)).toBe(0);
+    expect(timerElapsedMs(t, NOW + 6 * S)).toBe(1000);
+    expect(emomPhase(timerElapsedMs(t, NOW + 65 * S), 60, 60)).toMatchObject({ phase: 'rest', round: 1 });
+  });
+
+  it('counts the count-in down five to one and then says go', () => {
+    const timers = startTimer({}, TODAY, 'a', NOW, 5 * S);
+    const t = getTimer(timers, TODAY, 'a');
+    const ev = emomBeepSchedule(t, 60, 60, NOW, 6 * S);
+    expect(ev.map((e) => e.kind)).toEqual(['tick', 'tick', 'tick', 'tick', 'tick', 'work']);
+    expect(ev.map((e) => e.atMs - NOW)).toEqual([0, 1000, 2000, 3000, 4000, 5000]);
+  });
+
+  it('ticks the last five seconds of work and sounds the rest tone at the change', () => {
+    const timers = startTimer({}, TODAY, 'a', NOW, 0);
+    const t = getTimer(timers, TODAY, 'a');
+    // 54s in: the work period ends at 60s
+    const ev = emomBeepSchedule(t, 60, 60, NOW + 54 * S, 7 * S);
+    expect(ev.map((e) => e.kind)).toEqual(['tick', 'tick', 'tick', 'tick', 'tick', 'rest']);
+    expect(ev.map((e) => (e.atMs - NOW) / 1000)).toEqual([55, 56, 57, 58, 59, 60]);
+  });
+
+  it('sounds the work tone coming out of rest', () => {
+    const timers = startTimer({}, TODAY, 'a', NOW, 0);
+    const t = getTimer(timers, TODAY, 'a');
+    const ev = emomBeepSchedule(t, 60, 60, NOW + 114 * S, 7 * S);
+    expect(ev[ev.length - 1]).toMatchObject({ kind: 'work', atMs: NOW + 120 * S });
+  });
+
+  it('never books a beep twice, and never one already past', () => {
+    const timers = startTimer({}, TODAY, 'a', NOW, 0);
+    const t = getTimer(timers, TODAY, 'a');
+    const ev = emomBeepSchedule(t, 60, 60, NOW + 57 * S, 10 * S);
+    const times = ev.map((e) => e.atMs);
+    expect(new Set(times).size).toBe(times.length);
+    expect(Math.min(...times)).toBeGreaterThanOrEqual(NOW + 57 * S);
+  });
+
+  it('looks only as far ahead as it is asked to', () => {
+    const timers = startTimer({}, TODAY, 'a', NOW, 0);
+    const t = getTimer(timers, TODAY, 'a');
+    expect(emomBeepSchedule(t, 60, 60, NOW, 2 * S)).toEqual([]);
+    expect(emomBeepSchedule(t, 60, 60, NOW + 56 * S, 2 * S).length).toBeGreaterThan(0);
+  });
+
+  it('clips the countdown to a phase too short to hold it', () => {
+    const timers = startTimer({}, TODAY, 'a', NOW, 0);
+    const t = getTimer(timers, TODAY, 'a');
+    // work 30, rest 2: the rest period can only hold two ticks
+    const ev = emomBeepSchedule(t, 30, 2, NOW + 30 * S, 3 * S);
+    const ticks = ev.filter((e) => e.kind === 'tick');
+    expect(ticks.length).toBeLessThanOrEqual(2);
+    expect(ev[ev.length - 1].kind).toBe('work');
+  });
+
+  it('stays silent while the session is paused', () => {
+    let timers = startTimer({}, TODAY, 'a', NOW, 0);
+    timers = pauseTimer(timers, TODAY, 'a', NOW + 54 * S);
+    expect(emomBeepSchedule(getTimer(timers, TODAY, 'a'), 60, 60, NOW + 54 * S, 8 * S)).toEqual([]);
+  });
+
+  it('reports how much count-in is left, and nothing once it has run', () => {
+    const timers = startTimer({}, TODAY, 'a', NOW, 5 * S);
+    const t = getTimer(timers, TODAY, 'a');
+    expect(countInLeft(t, NOW)).toBe(5);
+    expect(countInLeft(t, NOW + 4200)).toBe(1);
+    expect(countInLeft(t, NOW + 5 * S)).toBe(0);
+    expect(countInLeft(getTimer(startTimer({}, TODAY, 'b', NOW, 0), TODAY, 'b'), NOW)).toBe(0);
   });
 });

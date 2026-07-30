@@ -468,7 +468,14 @@ async function saveProfile() {
   const heightRaw = document.getElementById('f-height').value;
   const weight = weightRaw === '' ? null : Math.max(0, parseFloat(weightRaw));
   const height = heightRaw === '' ? null : Math.max(0, parseFloat(heightRaw));
-  state.profile = { username, weight: isNaN(weight) ? null : weight, height: isNaN(height) ? null : height };
+  // Spread what is already there: this form does not edit the photo, and
+  // rebuilding the object from its fields alone silently deleted it.
+  state.profile = {
+    ...state.profile,
+    username,
+    weight: isNaN(weight) ? null : weight,
+    height: isNaN(height) ? null : height,
+  };
   await persistProfile();
   renderTopbar();
   showToast('Profile saved');

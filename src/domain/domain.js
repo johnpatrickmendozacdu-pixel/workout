@@ -817,9 +817,32 @@ function mergeExerciseLists(winner, loser) {
   return out;
 }
 
-/** A device that never set a username must not blank one that did. */
-function hasProfileContent(p) {
-  return !!(p && (p.username || p.weight != null || p.height != null || p.avatar));
+/**
+ * Profiles merge field by field, never as a whole object.
+ *
+ * Swapping the whole object meant any field the newer side happened not to
+ * carry was destroyed — a device that had never set a picture would silently
+ * delete one that had. Each field is taken from the newer side only where it
+ * actually holds something, and otherwise kept from the other.
+ *
+ * The trade-off, taken knowingly and consistent with the rest of this merge:
+ * clearing a field is not a tombstone, so removing a picture on one device can
+ * be undone by another that still has it. Removing it again is a tap; losing a
+ * photo without noticing is not.
+ */
+function mergeProfiles(winner, loser) {
+  const w = winner || {};
+  const l = loser || {};
+  const has = (v) => v !== undefined && v !== null && v !== '';
+  const pick = (k) => (has(w[k]) ? w[k] : (has(l[k]) ? l[k] : w[k]));
+  return {
+    ...l,
+    ...w,
+    username: pick('username'),
+    weight: pick('weight'),
+    height: pick('height'),
+    avatar: pick('avatar'),
+  };
 }
 
 export function mergeSyncSnapshots(local, remote) {
@@ -837,9 +860,7 @@ export function mergeSyncSnapshots(local, remote) {
     setsLog: mergeByDayKey(winner.setsLog, loser.setsLog),
     timersLog: mergeByDayKey(winner.timersLog, loser.timersLog),
     streakOverrides: mergeByDayKey(winner.streakOverrides, loser.streakOverrides),
-    profile: hasProfileContent(winner.profile) || !hasProfileContent(loser.profile)
-      ? winner.profile
-      : loser.profile,
+    profile: mergeProfiles(winner.profile, loser.profile),
   };
 }
 

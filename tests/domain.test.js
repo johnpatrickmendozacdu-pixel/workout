@@ -1167,3 +1167,40 @@ describe('one EMOM session at a time', () => {
     expect(emomSessionsToPause(timers, [emom('a'), emom('b')], TODAY, 'a')).toEqual(['b']);
   });
 });
+
+describe('merging profiles field by field', () => {
+  const snap = (updatedAt, profile) => ({
+    version: 1, updatedAt, exercises: [], setsLog: {}, timersLog: {}, streakOverrides: {}, profile,
+  });
+
+  it('keeps a photo the newer side simply does not carry', () => {
+    // the exact loss: one copy has the picture, a later write elsewhere does not
+    const local = snap(5000, { username: 'Johnny', weight: 70, height: 175, avatar: 'data:image/jpeg;base64,AAA' });
+    const remote = snap(9000, { username: 'Johnny', weight: 70, height: 175 });
+    expect(mergeSyncSnapshots(local, remote).profile.avatar).toBe('data:image/jpeg;base64,AAA');
+  });
+
+  it('lets the newer side replace a photo it actually has', () => {
+    const local = snap(5000, { username: 'Johnny', avatar: 'data:image/jpeg;base64,OLD' });
+    const remote = snap(9000, { username: 'Johnny', avatar: 'data:image/jpeg;base64,NEW' });
+    expect(mergeSyncSnapshots(local, remote).profile.avatar).toBe('data:image/jpeg;base64,NEW');
+  });
+
+  it('keeps a username, weight and height the newer side has not set', () => {
+    const local = snap(5000, { username: 'Johnny', weight: 70, height: 175 });
+    const remote = snap(9000, { username: '', weight: null, height: null, avatar: 'data:x' });
+    const p = mergeSyncSnapshots(local, remote).profile;
+    expect(p).toMatchObject({ username: 'Johnny', weight: 70, height: 175, avatar: 'data:x' });
+  });
+
+  it('prefers the newer side wherever it has actually filled a field in', () => {
+    const local = snap(5000, { username: 'Old', weight: 70, height: 175 });
+    const remote = snap(9000, { username: 'New', weight: 80, height: 180 });
+    expect(mergeSyncSnapshots(local, remote).profile).toMatchObject({ username: 'New', weight: 80, height: 180 });
+  });
+
+  it('survives a snapshot with no profile at all', () => {
+    const local = snap(5000, { username: 'Johnny', avatar: 'data:x' });
+    expect(mergeSyncSnapshots(local, snap(9000, undefined)).profile).toMatchObject({ username: 'Johnny', avatar: 'data:x' });
+  });
+});

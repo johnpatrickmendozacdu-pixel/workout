@@ -1327,3 +1327,13 @@
     min-height:44px; display:inline-flex; align-items:center; justify-content:center;
     padding:0 16px; cursor:pointer;
   }
+
+  /* The topbar must never clip its controls. The greeting is decorative and the
+     chips are functional — including the build chip, which is how you check
+     which version you are running — so the text truncates and the controls
+     always keep their full width, at any screen width. */
+  .topbar-right{flex:0 0 auto !important;}
+  .topbar-titles{overflow:hidden;}
+  .topbar-titles .app-title, .topbar-titles .date-heading{
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }

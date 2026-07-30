@@ -1208,6 +1208,7 @@ function renderTopbar() {
         <div class="topbar-right">
           <div class="streak-pill" title="Longest run currently going">${ICONS.flame}${streak}</div>
           ${helpChipHtml()}
+          ${versionChipHtml()}
           ${avatarChipHtml()}
         </div>
       </div>`;

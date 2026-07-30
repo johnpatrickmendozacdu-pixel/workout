@@ -6,7 +6,6 @@ import {
   calcDayStats,
   calcStreakInfo,
   calcWeeklyCompletion,
-  bestDayForExercise,
   addSet,
   removeSetAt,
   undoLastSet,
@@ -759,21 +758,6 @@ describe('calcWeeklyCompletion', () => {
     }
     const pct = calcWeeklyCompletion([ex], setsLog, TODAY);
     expect(pct).toBe(57); // 4/7 complete, rounded
-  });
-});
-
-describe('bestDayForExercise', () => {
-  it('finds the highest single-day total', () => {
-    const ex = makeExercise();
-    const setsLog = {
-      '2026-07-20': { a: [10] },
-      '2026-07-21': { a: [15, 15] },
-      '2026-07-22': { a: [5] },
-    };
-    expect(bestDayForExercise(ex, setsLog)).toEqual({ date: '2026-07-21', total: 30 });
-  });
-  it('returns null when the exercise has never been logged', () => {
-    expect(bestDayForExercise(makeExercise(), {})).toBe(null);
   });
 });
 

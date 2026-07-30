@@ -317,8 +317,6 @@
     font-size:19px; display:flex; align-items:center; justify-content:center;
   }
   .emoji-chip.selected{border-color:var(--accent); background:rgba(242,194,48,0.14);}
-  .chip-input-row{display:flex; gap:8px;}
-  .chip-input-row input{text-align:center; font-family:var(--font-mono); font-weight:700;}
   .form-actions{display:flex; gap:10px; margin-top:6px;}
   .form-actions > *{flex:1;}
   .hint{font-size:12px; color:var(--text-faint); margin-top:6px; line-height:1.4;}
@@ -1120,8 +1118,21 @@
   /* The mark rides on the wordmark line, not beside the whole block: the date
      below is the widest thing in the bar, so this costs the row no width and
      leaves the chips on the right where they were. */
-  .app-title{display:flex; align-items:center; gap:7px;}
-  .brand-mark{width:21px; height:21px; flex:none; color:var(--accent);}
+  /* The mark is the app's identity, not an ornament on the greeting: its own
+     slot at the far left of every screen's bar, so it does not move as you
+     navigate and never sits inside the text flow of "Hey, <name>". */
+  .topbar-left{display:flex; align-items:center; gap:9px; min-width:0; flex:1 1 auto;}
+  .topbar-titles{min-width:0;}
+  .topbar-right{flex:none;}
+  .brand-mark{width:24px; height:24px; flex:none; color:var(--accent);}
+  /* the mark now shares this row, so the date gives back the few pixels it
+     needs — it is still far and away the largest thing in the bar */
+  .date-heading{font-size:21px;}
+  /* The greeting is the only thing here allowed to truncate. The date is the
+     heading you actually read, so it keeps its full width and a long username
+     yields instead — measured at 375px with a three-digit streak. */
+  .app-title{max-width:190px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .date-heading, .screen-title{white-space:nowrap;}
 
   .sealed-note{display:flex; align-items:center; justify-content:space-between; gap:12px;}
   .sealed-note span{flex:1;}

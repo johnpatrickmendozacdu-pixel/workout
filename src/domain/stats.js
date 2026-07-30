@@ -5,7 +5,7 @@
 // change, and no possibility of stats drifting out of step with the logs they
 // describe: editing a past day recomputes the truth for free.
 
-import { calcTotal, getTimer, getEffectiveTarget, addDays, todayISO, isScheduledOn, isBreakDay } from './domain.js';
+import { calcTotal, getTimer, getEffectiveTarget, workoutSealed, addDays, todayISO, isScheduledOn, isBreakDay } from './domain.js';
 
 /** Days (sorted) on which this exercise has any logged set. */
 export function workoutDates(exId, setsLog) {
@@ -123,6 +123,17 @@ export function lifetimeSince(exId, setsLog) {
  *
  * topSet  — most reps in a SINGLE set (not a daily total).
  * maxReps — highest daily total ever reached (the biggest day).
+ *
+ * Records wait for the day to close; counters do not. Today is left out of
+ * Top Set and Best day until it is sealed, so a record never means "best so
+ * far this afternoon" — it climbed with every set you logged, which made it
+ * provisional for the whole session. Lifetime reps, total sets and streaks all
+ * keep counting today live, because those are running counts, not records.
+ *
+ * Best time already worked this way (completedTimes admits only closed
+ * sessions), so this makes one rule out of two behaviours rather than adding
+ * a new idea. "Sealed" is the existing definition from domain.js — no second,
+ * weaker notion of done.
  */
 export function exerciseStats(ex, setsLog, timersLog, todayOverride, overrides) {
   let topSet = 0;
@@ -132,6 +143,7 @@ export function exerciseStats(ex, setsLog, timersLog, todayOverride, overrides) 
   let totalSets = 0;
   let totalReps = 0;
 
+  const today = todayOverride || todayISO();
   const dates = workoutDates(ex.id, setsLog);
   dates.forEach((d) => {
     const arr = setsLog[d][ex.id];
@@ -139,8 +151,13 @@ export function exerciseStats(ex, setsLog, timersLog, todayOverride, overrides) 
 
     const dayTotal = calcTotal(arr);
     totalReps += dayTotal;
-    if (dayTotal > maxReps) { maxReps = dayTotal; maxRepsDate = d; }
 
+    // An unfinished today is still a running total, not a result to beat.
+    const provisional = d === today
+      && !workoutSealed(getTimer(timersLog || {}, d, ex.id), dayTotal, getEffectiveTarget(ex, d));
+    if (provisional) return;
+
+    if (dayTotal > maxReps) { maxReps = dayTotal; maxRepsDate = d; }
     arr.forEach((v) => {
       if (v > topSet) { topSet = v; topSetDate = d; }
     });

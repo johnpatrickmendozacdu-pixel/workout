@@ -258,17 +258,6 @@ export function calcWeeklyCompletion(exercises, setsLog, todayOverride, override
   return counted > 0 ? Math.round((completed / counted) * 100) : null;
 }
 
-export function bestDayForExercise(ex, setsLog) {
-  let best = null;
-  for (const d in setsLog) {
-    const arr = setsLog[d][ex.id];
-    if (!arr || !arr.length) continue;
-    const total = calcTotal(arr);
-    if (!best || total > best.total) best = { date: d, total };
-  }
-  return best;
-}
-
 /** Pure reducer: returns a NEW setsLog with a set appended. Does not mutate input. */
 export function addSet(setsLog, dateStr, exId, value) {
   if (!(value > 0)) return setsLog;

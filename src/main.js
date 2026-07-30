@@ -16,7 +16,6 @@ import {
   calcDayStats,
   calcStreakInfo,
   calcWeeklyCompletion,
-  bestDayForExercise,
   addSet as addSetPure,
   removeSetAt as removeSetAtPure,
   undoLastSet as undoLastSetPure,
@@ -47,7 +46,6 @@ import {
 import * as gsync from './sync/googleSync.js';
 import { allStats, exerciseStats, recentDayStates, streakTier, dayHistory, formatDuration, formatCount, formatClock } from './domain/stats.js';
 
-const DEFAULT_CHIPS = [5, 10, 12];
 // Every number is on screen — no hunting, no typing. One tap applies it in
 // whichever direction the lever is set to.
 const DAY_PAGE = 7;   // a week at a time — the list grows only on request
@@ -618,7 +616,6 @@ async function addExercise(data) {
     archived: false,
     order: maxOrder + 1,
     createdDate: now,
-    chips: data.chips && data.chips.length === 3 ? data.chips : DEFAULT_CHIPS.slice(),
     schedule: data.schedule || 'daily',
     targetHistory: [{ effectiveDate: now, target: data.target || null }],
   };
@@ -640,7 +637,6 @@ async function updateExercise(id, data) {
   ex.name = data.name.trim();
   ex.icon = data.icon || ex.icon;
   ex.unit = (data.unit || 'reps').trim();
-  ex.chips = data.chips && data.chips.length === 3 ? data.chips : (ex.chips || DEFAULT_CHIPS.slice());
   ex.schedule = data.schedule || 'daily';
   applyTargetChange(ex, data.target || null);
   await persistExercises();
@@ -898,16 +894,19 @@ function exerciseCard(ex, s, opts = {}) {
 function exerciseHistory(ex, s) {
   const u = escapeHtml(ex.unit);
   const today = todayISO();
-  const best = bestDayForExercise(ex, state.setsLog);
 
+  // "Max" and "Best day" were the same question — biggest daily total — asked
+  // twice from two code paths, one of which could not see whether the day was
+  // sealed. One tile now, dated, straight from the derived stats.
   const num = (label, value) => `<div><dt>${label}</dt><dd>${value}</dd></div>`;
   const numbers = `<dl class="ex-numbers">
     ${num('Top set', s.topSet != null ? `<button class="mini-num" data-action="edit-top-set" data-id="${ex.id}">${s.topSet}</button>` : '—')}
-    ${num('Max', s.maxReps != null ? s.maxReps : '—')}
+    ${num('Best day', s.maxReps != null
+      ? `${s.maxReps}${s.maxRepsDate ? ` <i>${escapeHtml(formatDisplayDate(s.maxRepsDate, { month: 'short', day: 'numeric' }))}</i>` : ''}`
+      : '—')}
     ${num('Lifetime', `${formatCount(s.totalReps)}${s.since ? ` <i>since ${escapeHtml(s.since)}</i>` : ''}`)}
     ${num('Best time', formatDuration(s.bestTime))}
     ${num('Average', formatDuration(s.avgTime))}
-    ${num('Best day', best ? `${best.total} <i>${escapeHtml(formatDisplayDate(best.date, { month: 'short', day: 'numeric' }))}</i>` : '—')}
   </dl>`;
 
   // Reach is unbounded; only the rendered slice grows, and only when asked.
@@ -1051,21 +1050,23 @@ function renderTopbar() {
     const uname = state.profile && state.profile.username;
     el.innerHTML = `
       <div class="topbar-row">
-        <div>
-          <div class="app-title">${LOGO_MARK}${uname ? `Hey, ${escapeHtml(uname)}` : 'Sets'}</div>
-          <div class="date-heading">${formatDisplayDate(todayISO())}</div>
+        <div class="topbar-left">
+          ${LOGO_MARK}
+          <div class="topbar-titles">
+            <div class="app-title">${uname ? `Hey, ${escapeHtml(uname)}` : 'Sets'}</div>
+            <div class="date-heading">${formatDisplayDate(todayISO())}</div>
+          </div>
         </div>
         <div class="topbar-right">
           <div class="streak-pill" title="Longest run currently going">${ICONS.flame}${streak}</div>
           ${helpChipHtml()}
-          ${versionChipHtml()}
           ${avatarChipHtml()}
         </div>
       </div>`;
   } else if (state.view === 'plan') {
     el.innerHTML = `
-      <div class="plan-title-row">
-        <div class="screen-title">Plan</div>
+      <div class="topbar-row">
+        <div class="topbar-left">${LOGO_MARK}<div class="screen-title">Plan</div></div>
         <div class="topbar-right">
           <button class="add-btn" data-action="open-add-exercise">${ICONS.plus} Add</button>
           ${helpChipHtml()}
@@ -1075,8 +1076,8 @@ function renderTopbar() {
       </div>`;
   } else {
     el.innerHTML = `
-      <div class="plan-title-row">
-        <div class="screen-title">Progress</div>
+      <div class="topbar-row">
+        <div class="topbar-left">${LOGO_MARK}<div class="screen-title">Progress</div></div>
         <div class="topbar-right">
           <button class="icon-btn" data-action="open-data">${ICONS.gear}</button>
           ${helpChipHtml()}
@@ -1559,7 +1560,6 @@ function modalLogger(exId) {
   const hasTarget = !!target && target > 0;
   const arr = getSetsFor(exId, today);
   const total = calcTotal(arr);
-  const chips = (ex.chips && ex.chips.length === 3) ? ex.chips : DEFAULT_CHIPS;
   // A closed session is a record, not a workspace: the card still shows and
   // scrolls exactly as before, but nothing in it can be changed by accident.
   const sealed = workoutSealed(getTimerPure(state.timersLog, today, exId), total, target);
@@ -1643,7 +1643,6 @@ function modalExerciseForm(exId) {
   const ex = editing ? state.exercises.find((e) => e.id === exId) : null;
   const target = ex ? getEffectiveTarget(ex, todayISO()) : null;
   const chosenIcon = ex ? ex.icon : EMOJI_PRESETS[0];
-  const chips = (ex && ex.chips && ex.chips.length === 3) ? ex.chips : DEFAULT_CHIPS;
   // Draft lives in modal state so toggling days re-renders without saving.
   if (state.modal && state.modal.sched === undefined) {
     state.modal.sched = ex && Array.isArray(ex.schedule) ? ex.schedule.slice() : 'daily';
@@ -1672,15 +1671,6 @@ function modalExerciseForm(exId) {
         <label>Unit</label>
         <input id="f-unit" type="text" list="unit-options" placeholder="reps" value="${escapeHtml(ex ? ex.unit : 'reps')}" autocomplete="off">
         <datalist id="unit-options"><option value="reps"><option value="kg"><option value="lb"><option value="sec"><option value="min"><option value="km"><option value="mi"></datalist>
-      </div>
-      <div class="field">
-        <label>Quick-add buttons</label>
-        <div class="chip-input-row">
-          <input id="f-chip1" type="number" min="0" step="any" value="${chips[0]}">
-          <input id="f-chip2" type="number" min="0" step="any" value="${chips[1]}">
-          <input id="f-chip3" type="number" min="0" step="any" value="${chips[2]}">
-        </div>
-        <div class="hint">These become the +/− quick buttons when logging a set.</div>
       </div>
       <div class="field">
         <label>Schedule</label>
@@ -1892,15 +1882,10 @@ document.addEventListener('click', async (e) => {
       const target = targetRaw === '' ? null : Math.max(0, parseFloat(targetRaw));
       const iconEl = document.querySelector('.emoji-chip.selected');
       const icon = iconEl ? iconEl.dataset.emoji : '💪';
-      const chipVals = ['f-chip1', 'f-chip2', 'f-chip3'].map((fid) => {
-        const raw = parseFloat(document.getElementById(fid).value);
-        return raw > 0 ? Math.round(raw * 100) / 100 : null;
-      });
-      const chips = chipVals.every((c) => c != null) ? chipVals : null;
       const id = btn.dataset.id;
       const schedule = state.modal && state.modal.sched ? state.modal.sched : 'daily';
-      if (id) await updateExercise(id, { name, unit, target, chips, schedule });
-      else await addExercise({ name, unit, target, icon, chips, schedule });
+      if (id) await updateExercise(id, { name, unit, target, schedule });
+      else await addExercise({ name, unit, target, icon, schedule });
       closeModal(); rerender();
       break;
     }

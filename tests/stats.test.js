@@ -72,6 +72,81 @@ describe('Top Set vs Max Reps', () => {
   });
 });
 
+describe('records wait for the day to close', () => {
+  // Yesterday is finished and holds the standing records: best set 50, best day 70.
+  const past = { '2026-07-27': { a: [50, 20] } };
+  // Today beats both records but is still short of the 100 target, so it is open.
+  const openBeatsBoth = { ...past, '2026-07-28': { a: [60, 30] } }; // set 60, day 90
+  // Today beats both AND meets the target, so it seals itself.
+  const sealedBeatsBoth = { ...past, '2026-07-28': { a: [60, 55] } }; // set 60, day 115
+
+  it('a set logged today does not become Top Set while the day is open', () => {
+    const s = exerciseStats(ex(), openBeatsBoth, {}, TODAY);
+    expect(s.topSet).toBe(50);
+    expect(s.topSetDate).toBe('2026-07-27');
+  });
+
+  it('a day in progress does not become Best day while it is open', () => {
+    const s = exerciseStats(ex(), openBeatsBoth, {}, TODAY);
+    expect(s.maxReps).toBe(70);
+    expect(s.maxRepsDate).toBe('2026-07-27');
+  });
+
+  it('both records update the moment the target is met', () => {
+    // 115 of 100 seals the day on its own, with no timer involved at all
+    const s = exerciseStats(ex(), sealedBeatsBoth, {}, TODAY);
+    expect(s.topSet).toBe(60);
+    expect(s.topSetDate).toBe('2026-07-28');
+    expect(s.maxReps).toBe(115);
+  });
+
+  it('holds the records while you deliberately push past the target', () => {
+    // Keep going marks the session pushingOn, so a met target does not seal it
+    const timers = { '2026-07-28': { a: { status: 'running', elapsedMs: 0, runStartedAt: 1, pushingOn: true } } };
+    const s = exerciseStats(ex(), sealedBeatsBoth, timers, TODAY);
+    expect(s.topSet).toBe(50);
+    expect(s.maxReps).toBe(70);
+  });
+
+  it('closing the session seals an open day and releases the records', () => {
+    const closed = { '2026-07-28': { a: { status: 'completed', elapsedMs: 1000, runStartedAt: null } } };
+    const s = exerciseStats(ex(), openBeatsBoth, closed, TODAY);
+    expect(s.topSet).toBe(60);
+    expect(s.maxReps).toBe(90);
+  });
+
+  it('giving up also closes the day, and what you did still counts', () => {
+    const quit = { '2026-07-28': { a: { status: 'gaveup', elapsedMs: 1000, runStartedAt: null } } };
+    const s = exerciseStats(ex(), openBeatsBoth, quit, TODAY);
+    expect(s.topSet).toBe(60);
+    expect(s.maxReps).toBe(90);
+  });
+
+  it('counters keep counting today even while the records wait', () => {
+    const s = exerciseStats(ex(), openBeatsBoth, {}, TODAY);
+    expect(s.topSet).toBe(50);      // record still yesterday's
+    expect(s.totalReps).toBe(160);  // but today's 90 is counted
+    expect(s.totalSets).toBe(4);
+  });
+
+  it('a targetless exercise admits today only once its session is closed', () => {
+    const noTarget = ex({ targetHistory: [{ effectiveDate: '2026-07-20', target: null }] });
+    expect(exerciseStats(noTarget, openBeatsBoth, {}, TODAY).topSet).toBe(50);
+
+    const closed = { '2026-07-28': { a: { status: 'completed', elapsedMs: 1000, runStartedAt: null } } };
+    const done = exerciseStats(noTarget, openBeatsBoth, closed, TODAY);
+    expect(done.topSet).toBe(60);
+    expect(done.maxReps).toBe(90);
+  });
+
+  it('leaves past days alone whether or not they were ever sealed', () => {
+    // 07-27 has no timer and no seal, but it is not today, so it counts
+    const s = exerciseStats(ex(), past, {}, TODAY);
+    expect(s.topSet).toBe(50);
+    expect(s.maxReps).toBe(70);
+  });
+});
+
 describe('lifetime reps and period', () => {
   it('sums every rep ever', () => {
     expect(exerciseStats(ex(), setsLog, timersLog, TODAY).totalReps).toBe(315);

@@ -48,7 +48,7 @@ import {
   EMOM_DEFAULT_REST_SEC,
 } from './domain/domain.js';
 import * as gsync from './sync/googleSync.js';
-import { allStats, exerciseStats, recentDayStates, streakTier, dayHistory, formatDuration, formatCount, formatClock } from './domain/stats.js';
+import { allStats, exerciseStats, recentDayStates, streakTier, dayHistory, trajectorySeries, formatDuration, formatCount, formatClock } from './domain/stats.js';
 
 // Every number is on screen — no hunting, no typing. One tap applies it in
 // whichever direction the lever is set to.
@@ -902,6 +902,89 @@ async function saveTopSetHandler(exId, rawValue) {
 }
 
 /**
+ * The trajectory: daily totals across 30 days against the target that applied
+ * on each day.
+ *
+ * Decisions worth not re-deriving, all of them from the dataviz pass:
+ *
+ * - Points sit at their real calendar position, not their index in a list, so a
+ *   week off reads as a week off instead of one smooth step.
+ * - The line is SILVER, never neon. A whole chart in the accent would spend the
+ *   one signal this palette rations to "live or achieved".
+ * - A day that met its target is a FILLED marker; a short day is HOLLOW. That
+ *   shape difference is not decoration: the palette validator put neon and
+ *   silver at ΔE 7.8 for deutan colour blindness, which is too close to carry
+ *   achievement by colour alone. Shape carries it; colour reinforces.
+ * - No gridlines at all, which also keeps the dashed target line unambiguous —
+ *   dashed already means "target" elsewhere in this app.
+ * - Labels only on the newest and best points. A number on every dot stops
+ *   being a label and becomes noise.
+ *
+ * The 300x96 viewBox scales to ~0.997 inside a card at 375px, so the 2px
+ * strokes and 8px markers arrive at very close to their intended size.
+ */
+function trajectoryChartHtml(ex) {
+  const { points, span, maxY, minY } = trajectorySeries(ex, state.setsLog, 30);
+  if (points.length < 2) {
+    return `<div class="traj-empty">Two logged days and this becomes a trajectory.</div>`;
+  }
+
+  const W = 300, H = 96, padL = 8, padR = 8, padT = 14, padB = 18;
+  // Fit the range rather than pinning to zero: a climb from 60 to 130 squashed
+  // against a zero baseline reads as flat, and the two numbers worth reading are
+  // labelled with the full list of exact totals directly below.
+  const lo = Math.max(0, minY - (maxY - minY) * 0.25 - 1);
+  const hi = maxY + (maxY - minY) * 0.1 + 1;
+  const x = (i) => padL + (i / (span - 1)) * (W - padL - padR);
+  const y = (v) => padT + (1 - (v - lo) / (hi - lo)) * (H - padT - padB);
+
+  const line = points.map((p) => `${x(p.dayIndex).toFixed(1)},${y(p.total).toFixed(1)}`).join(' ');
+
+  // Stepped target: hold each day's target until the next logged day, so the
+  // line shows what you were actually chasing rather than today's number painted
+  // backwards over history. The final segment runs to the plot edge, because
+  // today's target still applies — and a zero-length last segment would draw
+  // nothing while still making the key claim a target line exists.
+  let targetPath = '';
+  let hasTargetLine = false;
+  points.forEach((p, i) => {
+    if (!(p.target > 0)) return;
+    const x0 = x(p.dayIndex);
+    const x1 = i + 1 < points.length ? x(points[i + 1].dayIndex) : (W - padR);
+    if (x1 - x0 < 0.5) return;
+    const yy = y(p.target).toFixed(1);
+    targetPath += `M${x0.toFixed(1)},${yy} L${x1.toFixed(1)},${yy} `;
+    hasTargetLine = true;
+  });
+
+  const best = points.reduce((m, p) => (p.total > m.total ? p : m), points[0]);
+  const last = points[points.length - 1];
+  const label = (p, anchor) => `<text class="traj-label" x="${x(p.dayIndex).toFixed(1)}" y="${(y(p.total) - 8).toFixed(1)}" text-anchor="${anchor}">${p.total}</text>`;
+  // Two labels that land on top of each other are worse than one. The latest
+  // value always wins; the best is only named when it is far enough away to read.
+  const labelBest = best !== last && Math.abs(x(best.dayIndex) - x(last.dayIndex)) > 34;
+
+  const marks = points.map((p) => `<circle class="traj-dot ${p.hit ? 'hit' : 'short'}" cx="${x(p.dayIndex).toFixed(1)}" cy="${y(p.total).toFixed(1)}" r="4"/>`).join('');
+
+  return `<div class="traj">
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Daily totals over the last 30 days for ${escapeHtml(ex.name)}, from ${points[0].total} on ${escapeHtml(points[0].date)} to ${last.total} on ${escapeHtml(last.date)}, best ${best.total}">
+      ${hasTargetLine ? `<path class="traj-target" d="${targetPath.trim()}"/>` : ''}
+      <polyline class="traj-line" points="${line}"/>
+      ${marks}
+      ${label(last, 'end')}
+      ${labelBest ? label(best, 'middle') : ''}
+      <text class="traj-axis" x="${padL}" y="${H - 4}" text-anchor="start">${escapeHtml(formatDisplayDate(points[0].date, { month: 'short', day: 'numeric' }))}</text>
+      <text class="traj-axis" x="${W - padR}" y="${H - 4}" text-anchor="end">${escapeHtml(formatDisplayDate(last.date, { month: 'short', day: 'numeric' }))}</text>
+    </svg>
+    <div class="traj-key">
+      <span class="traj-key-item"><i class="traj-swatch hit"></i>Target met</span>
+      <span class="traj-key-item"><i class="traj-swatch short"></i>Short</span>
+      ${hasTargetLine ? '<span class="traj-key-item"><i class="traj-swatch target"></i>Target</span>' : ''}
+    </div>
+  </div>`;
+}
+
+/**
  * One exercise, one card — used on Progress and inside the break picker, so a
  * resting exercise reads as the same object in a different state rather than a
  * second design. The strip is CSS dots over recentDayStates, so it is the same
@@ -967,6 +1050,8 @@ function exerciseHistory(ex, s) {
     ${num('Average', formatDuration(s.avgTime))}
   </dl>`;
 
+  const chart = trajectoryChartHtml(ex);
+
   // Reach is unbounded; only the rendered slice grows, and only when asked.
   const limit = state.dayLimits[ex.id] || DAY_PAGE;
   const { rows: history, remaining } = dayHistory(ex, state.setsLog, state.streakOverrides, limit);
@@ -992,7 +1077,9 @@ function exerciseHistory(ex, s) {
     ? `<button class="exday-more" data-action="more-days" data-id="${ex.id}">+${remaining.toLocaleString()} earlier</button>`
     : (limit > DAY_PAGE ? `<button class="exday-more" data-action="less-days" data-id="${ex.id}">Show less</button>` : '');
 
-  return `<div class="ex-history">${numbers}<div class="exday-list">${rows}</div>${more}</div>`;
+  // Chart above the day list: the list IS the table view the chart needs, so the
+  // exact numbers are always a glance below the shape they make.
+  return `<div class="ex-history">${numbers}${chart}<div class="exday-list">${rows}</div>${more}</div>`;
 }
 
 /* ============================= SIDE PANELS ============================= *//* ============================= SIDE PANELS ============================= */

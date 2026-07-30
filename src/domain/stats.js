@@ -218,6 +218,46 @@ export function allStats(exercises, setsLog, timersLog, todayOverride, overrides
  * logged day), so it stops where the history genuinely stops rather than at
  * an arbitrary number.
  */
+/**
+ * Daily totals for one exercise across a trailing window, against the target
+ * that applied on each of those days.
+ *
+ * Points exist only for days actually logged, and each carries the number of
+ * days since the window started rather than its position in a list. Spacing a
+ * line by list index would draw a smooth history that never happened — a week
+ * off has to read as a week off, so the renderer places points by real date.
+ *
+ * maxY covers the tallest target as well as the tallest total, so a target you
+ * never reached still shows on the scale, and is at least 1 so no caller can
+ * divide by zero on an empty history.
+ */
+export function trajectorySeries(ex, setsLog, windowDays, todayOverride) {
+  const span = Math.max(2, windowDays || 30);
+  const today = todayOverride || todayISO();
+  const start = addDays(today, -(span - 1));
+
+  const points = [];
+  let maxY = 1;
+  let minY = Infinity;
+  workoutDates(ex.id, setsLog).forEach((d) => {
+    if (d < start || d > today) return;
+    const total = calcTotal(setsLog[d][ex.id]);
+    if (!(total > 0)) return;
+    const target = getEffectiveTarget(ex, d);
+    // Whole days between the window start and this date.
+    const dayIndex = Math.round((Date.parse(d + 'T00:00:00') - Date.parse(start + 'T00:00:00')) / 86400000);
+    points.push({ date: d, dayIndex, total, target: target || null, hit: !!(target > 0 && total >= target) });
+    maxY = Math.max(maxY, total, target || 0);
+    minY = Math.min(minY, total, target > 0 ? target : total);
+  });
+
+  // minY lets the renderer fit the range instead of pinning to zero. A line's
+  // job here is "am I climbing", and 60 to 130 squashed against a zero baseline
+  // reads as flat. Honest because the two points worth reading are labelled and
+  // every exact number sits in the day list directly beneath the chart.
+  return { points, span, maxY, minY: points.length ? minY : 0 };
+}
+
 export function dayHistory(ex, setsLog, overrides, limit, todayOverride) {
   const today = todayOverride || todayISO();
   const logged = workoutDates(ex.id, setsLog);

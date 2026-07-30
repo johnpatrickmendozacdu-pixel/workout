@@ -1279,3 +1279,34 @@
     font-family:var(--font-mono); font-weight:700;
   }
   .emom-fields.disabled{opacity:0.4; pointer-events:none;}
+
+  /* ---------- trajectory chart ----------
+     Silver line, never neon: a whole chart in the accent would spend the one
+     signal this palette rations to "live or achieved". A day that met its
+     target is a filled dot, a short day is hollow — shape carries achievement
+     because the validator put neon and silver at dE 7.8 for deutan colour
+     blindness, too close to trust colour alone. No gridlines. */
+  .traj{margin:14px 0 4px;}
+  .traj svg{width:100%; height:auto; display:block; overflow:visible;}
+  .traj-line{fill:none; stroke:var(--silver); stroke-width:2; stroke-linejoin:round; stroke-linecap:round;}
+  .traj-target{fill:none; stroke:#3A423C; stroke-width:2; stroke-dasharray:5 4;}
+  .traj-dot.hit{fill:var(--accent); stroke:var(--surface); stroke-width:2;}
+  .traj-dot.short{fill:var(--surface); stroke:var(--silver); stroke-width:2;}
+  .traj-label{
+    fill:var(--text); font-family:var(--font-mono); font-size:11px; font-weight:700;
+  }
+  .traj-axis{fill:var(--text-faint); font-family:var(--font-mono); font-size:9px; letter-spacing:0.06em;}
+  .traj-empty{
+    margin:14px 0 4px; padding:12px; border:2px dashed #2A312D;
+    color:var(--text-faint); font-size:12.5px; text-align:center;
+  }
+  .traj-key{
+    display:flex; gap:14px; flex-wrap:wrap; margin-top:8px;
+    font-family:var(--font-mono); font-size:10px; letter-spacing:0.08em;
+    text-transform:uppercase; color:var(--text-faint);
+  }
+  .traj-key-item{display:flex; align-items:center; gap:5px;}
+  .traj-swatch{width:9px; height:9px; flex:none; border:2px solid var(--silver);}
+  .traj-swatch.hit{background:var(--accent); border-color:var(--accent);}
+  .traj-swatch.short{background:transparent;}
+  .traj-swatch.target{height:0; width:12px; border:none; border-top:2px dashed #3A423C;}

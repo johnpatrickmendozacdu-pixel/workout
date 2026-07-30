@@ -10,6 +10,7 @@ import {
   recentDayStates,
   streakTier,
   dayHistory,
+  trajectorySeries,
 } from '../src/domain/stats.js';
 
 const TODAY = '2026-07-28';
@@ -351,5 +352,85 @@ describe('dayHistory (reach without rendering)', () => {
 
   it('is empty and safe for an exercise with no history', () => {
     expect(dayHistory(ex({ createdDate: null }), {}, {}, 7, '2026-07-28')).toEqual({ rows: [], remaining: 0, total: 0 });
+  });
+});
+
+describe('trajectorySeries', () => {
+  const WIN = 30;
+  // window of 30 days ending 2026-07-28 starts on 2026-06-29
+  const exT = () => ex({
+    targetHistory: [
+      { effectiveDate: '2026-07-20', target: 100 },
+      { effectiveDate: '2026-07-27', target: 120 },
+    ],
+  });
+
+  it('plots only days that were actually logged, in date order', () => {
+    const log = {
+      '2026-07-22': { a: [50, 30] },  // 80
+      '2026-07-26': { a: [100] },     // 100
+      '2026-07-28': { a: [60] },      // 60
+    };
+    const s = trajectorySeries(exT(), log, WIN, TODAY);
+    expect(s.points.map((p) => p.date)).toEqual(['2026-07-22', '2026-07-26', '2026-07-28']);
+    expect(s.points.map((p) => p.total)).toEqual([80, 100, 60]);
+  });
+
+  it('positions each point by real calendar date, so gaps stay gaps', () => {
+    const log = { '2026-07-22': { a: [10] }, '2026-07-28': { a: [10] } };
+    const s = trajectorySeries(exT(), log, WIN, TODAY);
+    // last day of the window is index 29; six days earlier is 23
+    expect(s.points.map((p) => p.dayIndex)).toEqual([23, 29]);
+    expect(s.span).toBe(WIN);
+  });
+
+  it('reads the target that applied on each day, stepping when it changed', () => {
+    const log = { '2026-07-26': { a: [10] }, '2026-07-28': { a: [10] } };
+    const s = trajectorySeries(exT(), log, WIN, TODAY);
+    expect(s.points.map((p) => p.target)).toEqual([100, 120]);
+  });
+
+  it('flags the days that reached their target', () => {
+    const log = {
+      '2026-07-26': { a: [100] }, // target 100 -> hit
+      '2026-07-27': { a: [100] }, // target 120 -> short
+      '2026-07-28': { a: [130] }, // target 120 -> hit
+    };
+    const s = trajectorySeries(exT(), log, WIN, TODAY);
+    expect(s.points.map((p) => p.hit)).toEqual([true, false, true]);
+  });
+
+  it('scales to include a target that was never reached', () => {
+    const log = { '2026-07-28': { a: [20] } };
+    const s = trajectorySeries(exT(), log, WIN, TODAY);
+    expect(s.maxY).toBeGreaterThanOrEqual(120);
+  });
+
+  it('leaves out days older than the window', () => {
+    const log = { '2026-05-01': { a: [999] }, '2026-07-28': { a: [10] } };
+    const s = trajectorySeries(exT(), log, WIN, TODAY);
+    expect(s.points.map((p) => p.date)).toEqual(['2026-07-28']);
+    expect(s.maxY).toBeLessThan(999);
+  });
+
+  it('reports the range so the renderer can fit it instead of pinning to zero', () => {
+    const log = { '2026-07-22': { a: [60] }, '2026-07-26': { a: [130] } };
+    const s = trajectorySeries(exT(), log, WIN, TODAY);
+    expect(s.minY).toBe(60);
+    expect(s.maxY).toBeGreaterThanOrEqual(130);
+  });
+
+  it('returns nothing to draw, safely, for an exercise with no history', () => {
+    const s = trajectorySeries(exT(), {}, WIN, TODAY);
+    expect(s.points).toEqual([]);
+    expect(s.maxY).toBeGreaterThan(0); // never divide by zero downstream
+  });
+
+  it('handles an untargeted exercise without claiming hits', () => {
+    const noTarget = ex({ targetHistory: [{ effectiveDate: '2026-07-20', target: null }] });
+    const s = trajectorySeries(noTarget, { '2026-07-28': { a: [40] } }, WIN, TODAY);
+    expect(s.points[0].hit).toBe(false);
+    expect(s.points[0].target).toBeNull();
+    expect(s.maxY).toBeGreaterThanOrEqual(40);
   });
 });

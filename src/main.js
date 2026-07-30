@@ -1447,7 +1447,6 @@ function modalGuide() {
     plan: [
       ['Edit', 'Tap the exercise.'],
       ['Schedule', 'Every day, or pick weekdays. A day off is never a miss.'],
-      ['Quick-add', 'The three values on the pad.'],
       has.length && ['Retire', 'Archive keeps history. Delete removes it.'],
     ],
     progress: [

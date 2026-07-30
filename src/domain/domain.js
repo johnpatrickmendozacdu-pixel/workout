@@ -508,6 +508,60 @@ export function countInLeft(timer, nowMs) {
 }
 
 /**
+ * The running EMOM sessions that would have to yield to `keepExId`.
+ * Separate from enforcing it so the app can name what it paused.
+ */
+export function emomSessionsToPause(timersLog, exercises, dateStr, keepExId) {
+  const day = (timersLog && timersLog[dateStr]) || {};
+  return Object.keys(day).filter((id) => {
+    if (id === keepExId) return false;
+    const t = day[id];
+    if (!t || t.status !== 'running') return false;
+    const ex = (exercises || []).find((e) => e.id === id);
+    return !!(ex && ex.timerMode === 'emom');
+  });
+}
+
+/**
+ * One EMOM session at a time.
+ *
+ * You cannot do two structured workouts at once, and two sets of rounds cueing
+ * over each other is worse than either alone. Starting or resuming an EMOM
+ * session therefore pauses any other that is running — paused, not ended, so
+ * every second it earned is kept and it can be picked up again later.
+ *
+ * Normal-mode clocks are left alone: they are stopwatches, not a schedule
+ * competing for your attention.
+ */
+export function enforceSingleEmom(timersLog, exercises, dateStr, keepExId, nowMs) {
+  const doomed = emomSessionsToPause(timersLog, exercises, dateStr, keepExId);
+  if (!doomed.length) return timersLog;
+  return doomed.reduce((log, id) => pauseTimer(log, dateStr, id, nowMs), timersLog);
+}
+
+/**
+ * Which EMOM session owns the cues right now.
+ *
+ * You can only do one exercise at a time, so only one may beep — two running
+ * sessions cueing over each other is worse than either alone. The card you have
+ * open wins, because that is where your attention is; otherwise it is the
+ * session you started most recently, which is the one you moved on to. Resuming
+ * a paused session re-asserts it, since resuming sets a fresh runStartedAt.
+ */
+export function activeEmomId(timersLog, exercises, dateStr, openExId) {
+  const day = (timersLog && timersLog[dateStr]) || {};
+  const live = Object.keys(day).filter((id) => {
+    const t = day[id];
+    if (!t || t.status !== 'running') return false;
+    const ex = (exercises || []).find((e) => e.id === id);
+    return !!(ex && ex.timerMode === 'emom');
+  });
+  if (!live.length) return null;
+  if (openExId && live.includes(openExId)) return openExId;
+  return live.sort((a, b) => (day[b].runStartedAt || 0) - (day[a].runStartedAt || 0))[0];
+}
+
+/**
  * The beeps due between now and now+lookahead, each with the exact millisecond
  * it should sound at.
  *

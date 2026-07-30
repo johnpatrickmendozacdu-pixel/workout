@@ -42,6 +42,9 @@ import {
   emomPhase,
   emomBeepSchedule,
   countInLeft,
+  activeEmomId,
+  enforceSingleEmom,
+  emomSessionsToPause,
 } from '../src/domain/domain.js';
 
 const TODAY = '2026-07-26';
@@ -1078,5 +1081,89 @@ describe('EMOM count-in and beep schedule', () => {
     expect(countInLeft(t, NOW + 4200)).toBe(1);
     expect(countInLeft(t, NOW + 5 * S)).toBe(0);
     expect(countInLeft(getTimer(startTimer({}, TODAY, 'b', NOW, 0), TODAY, 'b'), NOW)).toBe(0);
+  });
+});
+
+describe('activeEmomId', () => {
+  const emom = (id) => makeExercise({ id, timerMode: 'emom', emomWorkSec: 60, emomRestSec: 60 });
+  const normal = (id) => makeExercise({ id, timerMode: 'normal' });
+  const running = (at) => ({ status: 'running', elapsedMs: 0, runStartedAt: at });
+
+  it('is nothing when no EMOM session is running', () => {
+    expect(activeEmomId({}, [emom('a')], TODAY, null)).toBeNull();
+    expect(activeEmomId({ [TODAY]: { a: { status: 'paused', elapsedMs: 5, runStartedAt: null } } }, [emom('a')], TODAY, null)).toBeNull();
+  });
+
+  it('ignores a running timer on a normal-mode exercise', () => {
+    expect(activeEmomId({ [TODAY]: { a: running(100) } }, [normal('a')], TODAY, null)).toBeNull();
+  });
+
+  it('is the only running EMOM session when there is one', () => {
+    expect(activeEmomId({ [TODAY]: { a: running(100) } }, [emom('a')], TODAY, null)).toBe('a');
+  });
+
+  it('is the most recently started when several are running', () => {
+    const timers = { [TODAY]: { a: running(100), b: running(900) } };
+    expect(activeEmomId(timers, [emom('a'), emom('b')], TODAY, null)).toBe('b');
+  });
+
+  it('follows the card you actually have open, even if it started earlier', () => {
+    const timers = { [TODAY]: { a: running(100), b: running(900) } };
+    expect(activeEmomId(timers, [emom('a'), emom('b')], TODAY, 'a')).toBe('a');
+  });
+
+  it('falls back to the most recent when the open card is not a running EMOM session', () => {
+    const timers = { [TODAY]: { a: running(100), b: running(900) } };
+    expect(activeEmomId(timers, [emom('a'), emom('b'), normal('z')], TODAY, 'z')).toBe('b');
+  });
+});
+
+describe('one EMOM session at a time', () => {
+  const emom = (id) => makeExercise({ id, timerMode: 'emom', emomWorkSec: 60, emomRestSec: 60 });
+  const normal = (id) => makeExercise({ id, timerMode: 'normal' });
+
+  it('pauses another running EMOM session when one takes over', () => {
+    let timers = startTimer({}, TODAY, 'a', 1000);
+    timers = startTimer(timers, TODAY, 'b', 5000);
+    const after = enforceSingleEmom(timers, [emom('a'), emom('b')], TODAY, 'b', 9000);
+    expect(after[TODAY].a).toMatchObject({ status: 'paused', elapsedMs: 8000 });
+    expect(after[TODAY].b).toMatchObject({ status: 'running', runStartedAt: 5000 });
+  });
+
+  it('keeps the time the paused session had already earned', () => {
+    let timers = startTimer({}, TODAY, 'a', 0);
+    timers = startTimer(timers, TODAY, 'b', 30000);
+    const after = enforceSingleEmom(timers, [emom('a'), emom('b')], TODAY, 'b', 30000);
+    expect(timerElapsedMs(after[TODAY].a, 999999)).toBe(30000);
+  });
+
+  it('leaves a normal-mode clock running — the rule is about EMOM', () => {
+    let timers = startTimer({}, TODAY, 'n', 1000);
+    timers = startTimer(timers, TODAY, 'b', 5000);
+    const after = enforceSingleEmom(timers, [normal('n'), emom('b')], TODAY, 'b', 9000);
+    expect(after[TODAY].n.status).toBe('running');
+  });
+
+  it('leaves sessions that are already paused or closed alone', () => {
+    let timers = startTimer({}, TODAY, 'a', 1000);
+    timers = pauseTimer(timers, TODAY, 'a', 3000);
+    timers = startTimer(timers, TODAY, 'c', 4000);
+    timers = finishTimer(timers, TODAY, 'c', 6000, 'completed');
+    timers = startTimer(timers, TODAY, 'b', 7000);
+    const after = enforceSingleEmom(timers, [emom('a'), emom('b'), emom('c')], TODAY, 'b', 9000);
+    expect(after[TODAY].a).toMatchObject({ status: 'paused', elapsedMs: 2000 });
+    expect(after[TODAY].c.status).toBe('completed');
+  });
+
+  it('is a no-op when nothing else is running', () => {
+    const timers = startTimer({}, TODAY, 'b', 5000);
+    expect(enforceSingleEmom(timers, [emom('b')], TODAY, 'b', 9000)).toBe(timers);
+  });
+
+  it('reports nothing to pause versus something paused, so the app can say so', () => {
+    let timers = startTimer({}, TODAY, 'a', 1000);
+    timers = startTimer(timers, TODAY, 'b', 5000);
+    expect(emomSessionsToPause(timers, [emom('a'), emom('b')], TODAY, 'b')).toEqual(['a']);
+    expect(emomSessionsToPause(timers, [emom('a'), emom('b')], TODAY, 'a')).toEqual(['b']);
   });
 });

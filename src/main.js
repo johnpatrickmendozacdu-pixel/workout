@@ -46,6 +46,9 @@ import {
   emomPhase,
   emomBeepSchedule,
   countInLeft,
+  activeEmomId,
+  enforceSingleEmom,
+  emomSessionsToPause,
   EMOM_COUNT_IN_SEC,
   EMOM_DEFAULT_WORK_SEC,
   EMOM_DEFAULT_REST_SEC,
@@ -486,7 +489,11 @@ async function logSet(exId, value) {
   // EMOM exercise it starts a count-in instead: the workout clock and the first
   // round then begin together, five seconds later.
   const countIn = ex && ex.timerMode === 'emom' ? EMOM_COUNT_IN_SEC * 1000 : 0;
+  const hadTimer = !!getTimerPure(state.timersLog, d, exId);
   state.timersLog = startTimerPure(state.timersLog, d, exId, now, countIn);
+  // Only a session that has just begun takes over; logging into one already
+  // running must not keep re-pausing whatever else you left going.
+  const emomNote = hadTimer ? null : takeOverEmom(exId, now, false);
 
   let newPR = false;
   if (ex) {
@@ -518,8 +525,8 @@ async function logSet(exId, value) {
     state.modal = { type: 'complete', exId, total, elapsedMs: t ? t.elapsedMs : 0 };
     renderModal();
   } else {
-    const msg = newPR ? `🏆 New PR! Target raised to ${total}${unit}` : `Logged ${value}${unit}`;
-    showToast(msg, () => undoLastSetHandler(exId));
+    const base = newPR ? `🏆 New PR! Target raised to ${total}${unit}` : `Logged ${value}${unit}`;
+    showToast(emomNote ? `${base} · ${emomNote}` : base, () => undoLastSetHandler(exId));
   }
   rerender();
 }
@@ -541,7 +548,9 @@ async function keepGoingHandler(exId) {
   // Record the choice, don't infer it from the clock: the day is past its
   // target now, so without this marker the next pause would seal it.
   state.timersLog = markPushingOn(state.timersLog, todayISO(), exId);
-  state.timersLog = resumeTimerPure(state.timersLog, todayISO(), exId, Date.now());
+  const now = Date.now();
+  takeOverEmom(exId, now);
+  state.timersLog = resumeTimerPure(state.timersLog, todayISO(), exId, now);
   await persistTimers();
   // Straight back into the logger — "keep going" means keep logging, so
   // bouncing out to the day view would be the wrong place to land.
@@ -605,7 +614,9 @@ async function pauseTimerHandler(exId) {
   renderView();
 }
 async function resumeTimerHandler(exId) {
-  state.timersLog = resumeTimerPure(state.timersLog, todayISO(), exId, Date.now());
+  const now = Date.now();
+  takeOverEmom(exId, now);
+  state.timersLog = resumeTimerPure(state.timersLog, todayISO(), exId, now);
   await persistTimers();
   renderModal();
   renderView();
@@ -633,6 +644,27 @@ function sealedToday(exId, dateStr) {
 }
 
 /** The deliberate way out of a sealed day. Lands paused, keeping the time. */
+/**
+ * Applies the one-EMOM-at-a-time rule and names what it paused, because a
+ * session going quiet on its own would otherwise look like a bug.
+ */
+function takeOverEmom(exId, now, announce) {
+  const d = todayISO();
+  const ex = state.exercises.find((e) => e.id === exId);
+  if (!ex || ex.timerMode !== 'emom') return null;
+  const paused = emomSessionsToPause(state.timersLog, state.exercises, d, exId);
+  if (!paused.length) return null;
+  state.timersLog = enforceSingleEmom(state.timersLog, state.exercises, d, exId, now);
+  const names = paused
+    .map((id) => (state.exercises.find((e) => e.id === id) || {}).name)
+    .filter(Boolean);
+  const note = `paused ${names.join(' and ')}`;
+  // logSet posts its own toast a moment later and would bury this, so it takes
+  // the note and says both. Everywhere else, say it here.
+  if (announce !== false) showToast(`One EMOM at a time — ${note}`);
+  return note;
+}
+
 async function reopenSessionHandler(exId) {
   state.timersLog = reopenTimerPure(state.timersLog, todayISO(), exId);
   await persistTimers();
@@ -1614,21 +1646,36 @@ function playTone(kind) {
  */
 const BEEP_LOOKAHEAD_MS = 2500;
 let beepBooked = new Set();
+let beepTimers = [];
+let beepOwner = null;
+
+/** Drops every cue already booked. Used when the active session changes, so a
+ *  session you have moved on from cannot beep over the one you are doing. */
+function clearBookedBeeps() {
+  beepTimers.forEach(clearTimeout);
+  beepTimers = [];
+  beepBooked = new Set();
+}
+
 function scheduleEmomBeeps(now) {
   if (!audioPrimed) return;
+  const openExId = state.modal && state.modal.type === 'logger' ? state.modal.exId : null;
+  const exId = activeEmomId(state.timersLog, state.exercises, todayISO(), openExId);
+
+  // Handing the cues to a different session cancels the old one's booked beeps;
+  // they were scheduled minutes ahead and would otherwise still fire.
+  if (exId !== beepOwner) { clearBookedBeeps(); beepOwner = exId; }
+  if (!exId) return;
   if (beepBooked.size > 400) beepBooked = new Set();
-  const day = state.timersLog[todayISO()] || {};
-  Object.keys(day).forEach((exId) => {
-    const t = day[exId];
-    if (!t || t.status !== 'running') return;
-    const ex = state.exercises.find((e) => e.id === exId);
-    if (!ex || ex.timerMode !== 'emom') return;
-    emomBeepSchedule(t, ex.emomWorkSec, ex.emomRestSec, now, BEEP_LOOKAHEAD_MS).forEach((ev) => {
-      const key = `${exId}:${ev.atMs}`;
-      if (beepBooked.has(key)) return;
-      beepBooked.add(key);
-      setTimeout(() => playTone(ev.kind), Math.max(0, ev.atMs - Date.now()));
-    });
+
+  const t = (state.timersLog[todayISO()] || {})[exId];
+  const ex = state.exercises.find((e) => e.id === exId);
+  if (!t || !ex) return;
+  emomBeepSchedule(t, ex.emomWorkSec, ex.emomRestSec, now, BEEP_LOOKAHEAD_MS).forEach((ev) => {
+    const key = `${exId}:${ev.atMs}`;
+    if (beepBooked.has(key)) return;
+    beepBooked.add(key);
+    beepTimers.push(setTimeout(() => playTone(ev.kind), Math.max(0, ev.atMs - Date.now())));
   });
 }
 

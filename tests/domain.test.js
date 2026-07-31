@@ -48,6 +48,7 @@ import {
   weightTrend,
   weighInWeeks,
   recordWeight,
+  mergeTombstones,
   syncNudge,
   enforceSingleEmom,
   emomSessionsToPause,
@@ -1446,5 +1447,39 @@ describe('health habits are not exercises', () => {
     const streak = calcStreakInfo(ex, setsLog, '2026-07-30', {});
     recordWeight([], '2026-07-30', 82.4);
     expect(calcStreakInfo(ex, setsLog, '2026-07-30', {})).toEqual(streak);
+  });
+});
+
+describe('mergeTombstones', () => {
+  it('keeps the newer deletion when both sides have the same id', () => {
+    expect(mergeTombstones({ a: 100 }, { a: 200 })).toEqual({ a: 200 });
+    expect(mergeTombstones({ a: 300 }, { a: 200 })).toEqual({ a: 300 });
+  });
+  it('unions ids from both sides', () => {
+    expect(mergeTombstones({ a: 1 }, { b: 2 })).toEqual({ a: 1, b: 2 });
+  });
+  it('handles missing sides', () => {
+    expect(mergeTombstones(null, { a: 1 })).toEqual({ a: 1 });
+    expect(mergeTombstones({ a: 1 }, null)).toEqual({ a: 1 });
+  });
+});
+
+describe('mergeSyncSnapshots — deletes stay deleted', () => {
+  const snap = (updatedAt, extra) => ({ updatedAt, exercises: [], setsLog: {}, timersLog: {}, streakOverrides: {}, profile: {}, ...extra });
+
+  it('does not resurrect an exercise the local device deleted', () => {
+    // local deleted 'push' just now; remote (older) still has it
+    const local = snap(200, { exercises: [], deletedExercises: { push: 150 } });
+    const remote = snap(100, { exercises: [{ id: 'push', name: 'Push Ups' }] });
+    const merged = mergeSyncSnapshots(local, remote);
+    expect(merged.exercises.find((e) => e.id === 'push')).toBeUndefined();
+    expect(merged.deletedExercises.push).toBe(150);
+  });
+
+  it('keeps a genuinely new exercise that reuses no old id', () => {
+    const local = snap(200, { exercises: [{ id: 'squat', name: 'Squats' }], deletedExercises: { push: 150 } });
+    const remote = snap(100, { exercises: [{ id: 'push', name: 'Push Ups' }] });
+    const merged = mergeSyncSnapshots(local, remote);
+    expect(merged.exercises.map((e) => e.id)).toEqual(['squat']);
   });
 });

@@ -152,15 +152,22 @@ export function exerciseStats(ex, setsLog, timersLog, todayOverride, overrides) 
     const dayTotal = calcTotal(arr);
     totalReps += dayTotal;
 
-    // An unfinished today is still a running total, not a result to beat.
+    // Top set is the most reps in a SINGLE set — a completed fact the instant
+    // it is logged. Nothing later in the day can walk it back, so today counts
+    // straight away. (25 reps just done IS your top set; waiting for a seal to
+    // admit it only reads as broken.)
+    arr.forEach((v) => {
+      if (v > topSet) { topSet = v; topSetDate = d; }
+    });
+
+    // Best day is a daily TOTAL, and it keeps climbing while you train, so it
+    // would ratchet up set by set if shown live. That one still waits for the
+    // day to seal, or every set of an open session looks like a new record.
     const provisional = d === today
       && !workoutSealed(getTimer(timersLog || {}, d, ex.id), dayTotal, getEffectiveTarget(ex, d));
     if (provisional) return;
 
     if (dayTotal > maxReps) { maxReps = dayTotal; maxRepsDate = d; }
-    arr.forEach((v) => {
-      if (v > topSet) { topSet = v; topSetDate = d; }
-    });
   });
 
   const times = completedTimes(ex.id, timersLog);

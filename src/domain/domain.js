@@ -924,11 +924,10 @@ export function versionStatus(localBuild, remoteBuild) {
  * (idempotent), and merging in either order reaches the same set of days and
  * exercises.
  *
- * Known limits, accepted deliberately and documented in the spec: two devices
- * editing the same exercise on the same day resolve to the later writer for
- * that day, and union has no tombstones, so an exercise deleted on one device
- * comes back from a device that still has it. Deleting again is cheap; losing a
- * history is not.
+ * Deletes carry a tombstone (see mergeTombstones) so a removed exercise stays
+ * removed instead of being unioned back from Drive. Known limit still accepted:
+ * two devices editing the same exercise on the same day resolve to the later
+ * writer for that day.
  */
 function mergeByDayKey(winner, loser) {
   const out = {};
@@ -945,6 +944,22 @@ function mergeExerciseLists(winner, loser) {
   const out = (winner || []).slice();
   const seen = new Set(out.map((e) => e.id));
   (loser || []).forEach((e) => { if (!seen.has(e.id)) out.push(e); });
+  return out;
+}
+
+/**
+ * A deletion has to outlive the union, or the copy still sitting in Drive
+ * simply adds the exercise straight back — which it did, even on one device,
+ * because Drive holds the version pushed before the delete. A tombstone is the
+ * id and when it died; the newer timestamp wins if the same id is both deleted
+ * and edited from two devices. Re-adding makes a fresh id, so an old tombstone
+ * can never smother a genuinely new exercise.
+ */
+export function mergeTombstones(a, b) {
+  const out = { ...(a || {}) };
+  Object.entries(b || {}).forEach(([id, ts]) => {
+    if (!out[id] || ts > out[id]) out[id] = ts;
+  });
   return out;
 }
 
@@ -998,10 +1013,14 @@ export function mergeSyncSnapshots(local, remote) {
   const winner = remoteWins ? remote : local;
   const loser = remoteWins ? local : remote;
 
+  const deletedExercises = mergeTombstones(local.deletedExercises, remote.deletedExercises);
+  const exercises = mergeExerciseLists(winner.exercises, loser.exercises)
+    .filter((e) => !deletedExercises[e.id]);
   return {
     version: 1,
     updatedAt: Math.max(localAt, remoteAt),
-    exercises: mergeExerciseLists(winner.exercises, loser.exercises),
+    exercises,
+    deletedExercises,
     setsLog: mergeByDayKey(winner.setsLog, loser.setsLog),
     timersLog: mergeByDayKey(winner.timersLog, loser.timersLog),
     streakOverrides: mergeByDayKey(winner.streakOverrides, loser.streakOverrides),

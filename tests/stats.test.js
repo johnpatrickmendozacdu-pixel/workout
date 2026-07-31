@@ -81,10 +81,10 @@ describe('records wait for the day to close', () => {
   // Today beats both AND meets the target, so it seals itself.
   const sealedBeatsBoth = { ...past, '2026-07-28': { a: [60, 55] } }; // set 60, day 115
 
-  it('a set logged today does not become Top Set while the day is open', () => {
+  it('a set logged today becomes Top Set at once — a single set is a done fact', () => {
     const s = exerciseStats(ex(), openBeatsBoth, {}, TODAY);
-    expect(s.topSet).toBe(50);
-    expect(s.topSetDate).toBe('2026-07-27');
+    expect(s.topSet).toBe(60);
+    expect(s.topSetDate).toBe('2026-07-28');
   });
 
   it('a day in progress does not become Best day while it is open', () => {
@@ -101,12 +101,12 @@ describe('records wait for the day to close', () => {
     expect(s.maxReps).toBe(115);
   });
 
-  it('holds the records while you deliberately push past the target', () => {
+  it('holds Best day while you push past the target, but Top set already counts', () => {
     // Keep going marks the session pushingOn, so a met target does not seal it
     const timers = { '2026-07-28': { a: { status: 'running', elapsedMs: 0, runStartedAt: 1, pushingOn: true } } };
     const s = exerciseStats(ex(), sealedBeatsBoth, timers, TODAY);
-    expect(s.topSet).toBe(50);
-    expect(s.maxReps).toBe(70);
+    expect(s.topSet).toBe(60);   // the single 60 is done the moment it is logged
+    expect(s.maxReps).toBe(70);  // the daily total still waits for the seal
   });
 
   it('closing the session seals an open day and releases the records', () => {
@@ -123,16 +123,18 @@ describe('records wait for the day to close', () => {
     expect(s.maxReps).toBe(90);
   });
 
-  it('counters keep counting today even while the records wait', () => {
+  it('counters keep counting today even while Best day waits', () => {
     const s = exerciseStats(ex(), openBeatsBoth, {}, TODAY);
-    expect(s.topSet).toBe(50);      // record still yesterday's
+    expect(s.maxReps).toBe(70);     // Best day still yesterday's
     expect(s.totalReps).toBe(160);  // but today's 90 is counted
     expect(s.totalSets).toBe(4);
   });
 
-  it('a targetless exercise admits today only once its session is closed', () => {
+  it('a targetless exercise admits today Best day only once its session is closed', () => {
     const noTarget = ex({ targetHistory: [{ effectiveDate: '2026-07-20', target: null }] });
-    expect(exerciseStats(noTarget, openBeatsBoth, {}, TODAY).topSet).toBe(50);
+    const open = exerciseStats(noTarget, openBeatsBoth, {}, TODAY);
+    expect(open.topSet).toBe(60);   // single set counts immediately
+    expect(open.maxReps).toBe(70);  // daily total waits for the close
 
     const closed = { '2026-07-28': { a: { status: 'completed', elapsedMs: 1000, runStartedAt: null } } };
     const done = exerciseStats(noTarget, openBeatsBoth, closed, TODAY);

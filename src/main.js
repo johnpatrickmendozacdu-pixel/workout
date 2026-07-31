@@ -77,6 +77,7 @@ const state = {
   profile: { username: '', weight: null, height: null, weightLog: [], weighInDay: 6 },
   sync: { status: 'signed-out', email: null, error: null, pending: false },
   streakOverrides: {},
+  deletedExercises: {},
   storageError: false,
   updateAvailable: false,
   applyUpdate: null,
@@ -164,13 +165,14 @@ async function restoreNamespace() {
 }
 
 async function loadAll() {
-  const [exercises, setsLog, meta, timersLog, profile, streakOverrides] = await Promise.all([
+  const [exercises, setsLog, meta, timersLog, profile, streakOverrides, deletedExercises] = await Promise.all([
     db.getItem('exercises'),
     db.getItem('sets-log'),
     db.getItem('app-meta'),
     db.getItem('timers-log'),
     db.getItem('profile'),
     db.getItem('streak-overrides'),
+    db.getItem('deleted-exercises'),
   ]);
 
   state.exercises = exercises || [];
@@ -179,6 +181,7 @@ async function loadAll() {
   state.timersLog = timersLog || {};
   state.profile = profile || { username: '', weight: null, height: null, weightLog: [], weighInDay: 6 };
   state.streakOverrides = migrateOverrides(streakOverrides || {});
+  state.deletedExercises = deletedExercises || {};
 }
 /** Called by every persist* that changes real data. Bumps a timestamp (used to
  * decide who "wins" during Drive sync) and, if signed in, schedules a push. */
@@ -255,6 +258,7 @@ function buildSyncSnapshot() {
     version: 1,
     updatedAt: state.meta.updatedAt || Date.now(),
     exercises: state.exercises,
+    deletedExercises: state.deletedExercises,
     setsLog: state.setsLog,
     timersLog: state.timersLog,
     profile: state.profile,
@@ -267,6 +271,7 @@ function buildSyncSnapshot() {
 async function applyMergedSnapshot(merged) {
   applyingRemote = true;
   state.exercises = merged.exercises || [];
+  state.deletedExercises = merged.deletedExercises || {};
   state.setsLog = merged.setsLog || {};
   state.timersLog = merged.timersLog || {};
   state.profile = merged.profile || { username: '', weight: null, height: null, weightLog: [], weighInDay: 6 };
@@ -274,6 +279,7 @@ async function applyMergedSnapshot(merged) {
   state.meta.updatedAt = merged.updatedAt || Date.now();
   await Promise.all([
     db.setItem('exercises', state.exercises),
+    db.setItem('deleted-exercises', state.deletedExercises),
     db.setItem('sets-log', state.setsLog),
     db.setItem('timers-log', state.timersLog),
     db.setItem('profile', state.profile),
@@ -834,7 +840,9 @@ async function toggleDayOverrideHandler(dateStr) {
 async function deleteExerciseHandler(id) {
   state.exercises = removeExercisePure(state.exercises, id);
   state.setsLog = purgeExerciseSetsPure(state.setsLog, id);
-  await Promise.all([persistExercises(), persistSets()]);
+  // Tombstone the id so sync cannot resurrect it from the copy still in Drive.
+  state.deletedExercises = { ...state.deletedExercises, [id]: Date.now() };
+  await Promise.all([persistExercises(), persistSets(), db.setItem('deleted-exercises', state.deletedExercises)]);
   closeModal();
   rerender();
 }
@@ -2694,7 +2702,7 @@ document.addEventListener('click', async (e) => {
       const emomWorkSec = rawWork > 0 ? Math.min(3600, rawWork) : EMOM_DEFAULT_WORK_SEC;
       const emomRestSec = rawRest >= 0 ? Math.min(3600, rawRest) : EMOM_DEFAULT_REST_SEC;
       const timer = { timerMode, emomWorkSec, emomRestSec };
-      if (id) await updateExercise(id, { name, unit, target, schedule, ...timer });
+      if (id) await updateExercise(id, { name, unit, target, icon, schedule, ...timer });
       else await addExercise({ name, unit, target, icon, schedule, ...timer });
       closeModal(); rerender();
       break;

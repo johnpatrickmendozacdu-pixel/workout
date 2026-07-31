@@ -436,3 +436,27 @@ describe('trajectorySeries', () => {
     expect(s.maxY).toBeGreaterThanOrEqual(40);
   });
 });
+
+describe('manual Top Set is a floor, never a ceiling', () => {
+  const past = { '2026-07-27': { a: [50, 20] } };
+
+  it('lifts the figure when nothing logged beats it', () => {
+    const s = exerciseStats(ex({ topSetOverride: 80 }), past, {}, TODAY);
+    expect(s.topSet).toBe(80);
+    expect(s.topSetManual).toBe(true);
+  });
+
+  it('does not hide a logged set that beats the manual value', () => {
+    // hand-typed 20, but a real single set of 50 is on record
+    const s = exerciseStats(ex({ topSetOverride: 20 }), past, {}, TODAY);
+    expect(s.topSet).toBe(50);
+    expect(s.topSetManual).toBe(false);
+  });
+
+  it('a real single set today beats a manual value at once', () => {
+    // nothing bigger than the manual 20 in the past; a real 25 today must win
+    const withToday = { '2026-07-26': { a: [10] }, '2026-07-28': { a: [25] } };
+    const s = exerciseStats(ex({ topSetOverride: 20 }), withToday, {}, TODAY);
+    expect(s.topSet).toBe(25);
+  });
+});

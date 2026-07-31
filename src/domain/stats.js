@@ -176,17 +176,22 @@ export function exerciseStats(ex, setsLog, timersLog, todayOverride, overrides) 
 
   const streak = streakInfo(ex, setsLog, todayOverride, overrides);
 
-  // A manual Top Set is a display correction and nothing more: it never
-  // rewrites a logged set, so daily totals, Max, lifetime reps and streaks are
-  // all left exactly as they were.
+  // A manual Top Set lifts the figure for a big set you did but never logged
+  // here — offline, or before the app. It is a floor, not a ceiling: a set you
+  // actually logged that beats it must win, or doing 25 for real shows your
+  // hand-typed 20 and reads as broken. So take the higher of the two.
   const manual = ex.topSetOverride;
   const hasManual = manual != null && manual !== '' && !isNaN(Number(manual));
+  const computed = topSet || 0;
+  const manualVal = hasManual ? Number(manual) : 0;
+  const manualWins = hasManual && manualVal >= computed;
+  const finalTop = Math.max(computed, manualVal) || null;
 
   return {
-    topSet: hasManual ? Number(manual) : (topSet || null),
-    topSetManual: hasManual,
+    topSet: finalTop,
+    topSetManual: manualWins,
     topSetComputed: topSet || null,
-    topSetDate: hasManual ? null : topSetDate,
+    topSetDate: manualWins ? null : topSetDate,
     maxReps: maxReps || null,
     maxRepsDate,
     totalReps,

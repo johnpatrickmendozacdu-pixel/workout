@@ -17,6 +17,10 @@ let accessToken = null;
 let tokenExpiresAt = 0;
 let signedInEmail = null;
 let emailPromise = null;
+let lastAuthError = null;
+
+/** Why the last sign-in attempt failed, or null. See googleSignInHandler. */
+export function getLastAuthError() { return lastAuthError; }
 
 /** Milliseconds before actual expiry at which we treat a token as stale and
  *  renew it, so a Drive call never races the expiry boundary. */
@@ -153,6 +157,7 @@ function ensureTokenClient(onToken) {
       scope: SCOPE,
       callback: (resp) => {
         if (resp && resp.access_token) {
+          lastAuthError = null;
           accessToken = resp.access_token;
           tokenExpiresAt = Date.now() + (resp.expires_in ? resp.expires_in * 1000 : 3500 * 1000);
           if (onTokenStored) onTokenStored({ token: accessToken, expiresAt: tokenExpiresAt, email: signedInEmail });
@@ -161,10 +166,13 @@ function ensureTokenClient(onToken) {
           emailPromise = fetchEmail();
           settle(true);
         } else {
+          lastAuthError = (resp && resp.error) || 'no-token';
           settle(false);
         }
       },
-      error_callback: () => settle(false),
+      // Google reports a tester-list rejection here as access_denied. Keeping
+      // the reason is what lets the app say "not you, not broken".
+      error_callback: (err) => { lastAuthError = (err && err.type) || 'access_denied'; settle(false); },
     });
   }
   return tokenClient;

@@ -493,10 +493,16 @@ async function googleSignInHandler() {
     if (await useAccount(email)) render();
     await syncNow();
   } else {
-    // Falling back to 'reconnect' (not 'error') keeps the retry affordance on
-    // screen for someone who was already signed in.
+    // Google turns away anyone not on the tester list while the app is
+    // unverified. "Try again" is the worst possible thing to say to them: it
+    // reads as a broken app, so they close it and do not come back. Name it as
+    // a closed door rather than a fault, and say plainly that nothing else is
+    // affected - the app has never needed an account to work.
+    const denied = gsync.getLastAuthError() === 'access_denied';
     endSyncing(state.sync.email ? 'reconnect' : 'signed-out',
-      state.sync.email ? null : 'Sign-in didn\u2019t go through — try again.');
+      denied
+        ? 'Drive backup is invite-only for now — nothing is wrong with your account. Everything you log still saves on this device.'
+        : state.sync.email ? null : 'Sign-in didn\u2019t go through — try again.');
     renderSyncUI();
   }
 }
@@ -2430,7 +2436,7 @@ function modalProfile() {
   const syncHtml = (() => {
     if (sync.status === 'signed-out') {
       return `<button class="secondary-btn" style="width:100%" data-action="google-sign-in">${ICONS.google || ''} Sign in with Google</button>
-        <div class="hint">Syncs your workouts to a private, hidden spot in your own Google Drive — free, and readable only by this app.</div>`;
+        <div class="hint">Syncs your workouts to a private, hidden spot in your own Google Drive — free, and readable only by this app. Optional: the app works fully without it. Sign-in is invite-only while it is in testing.</div>`;
     }
     // Offline is not an error and needs no action — the work is already safe
     // here and will go up on its own. Saying "waiting" instead of "couldn't

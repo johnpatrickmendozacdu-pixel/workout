@@ -542,6 +542,103 @@ export function syncNudge(lastSyncAt, nowMs) {
 }
 
 /**
+ * BMI and everything derivable from it. Stored nowhere: weight and height are
+ * already on the profile, so saving a new weight updates all of this for free.
+ *
+ * The category is decided on the unrounded value. Rounding first would let a
+ * BMI of 24.96 display as 25.0 while being classified normal, and a number that
+ * disagrees with its own badge reads as a bug.
+ */
+export const BMI_HEALTHY_MIN = 18.5;
+export const BMI_HEALTHY_MAX = 24.9;
+const round1 = (n) => Math.round(n * 10) / 10;
+
+export function bmiSummary(profile) {
+  const p = profile || {};
+  const w = Number(p.weight);
+  const h = Number(p.height);
+  if (!(w > 0) || !(h > 0)) return null;
+  const m2 = (h / 100) ** 2;
+  const raw = w / m2;
+  if (!isFinite(raw)) return null;
+
+  const category = raw < BMI_HEALTHY_MIN ? 'underweight'
+    : raw < 25 ? 'normal'
+    : raw < 30 ? 'overweight'
+    : 'obese';
+
+  const healthyMin = round1(BMI_HEALTHY_MIN * m2);
+  const healthyMax = round1(BMI_HEALTHY_MAX * m2);
+  const toHealthy = w < healthyMin ? round1(healthyMin - w)
+    : w > healthyMax ? round1(w - healthyMax)
+    : 0;
+
+  return { bmi: round1(raw), category, healthyMin, healthyMax, toHealthy };
+}
+
+/** Change against the first weight ever recorded. Negative means lost. */
+export function weightTrend(weightLog) {
+  const log = Array.isArray(weightLog) ? weightLog.filter((e) => e && e.d && e.w > 0) : [];
+  if (log.length < 2) return null;
+  const sorted = [...log].sort((a, b) => (a.d < b.d ? -1 : a.d > b.d ? 1 : 0));
+  const first = sorted[0];
+  const last = sorted[sorted.length - 1];
+  return { delta: round1(last.w - first.w), since: first.d };
+}
+
+/**
+ * Each week since the first weigh-in, and whether it was logged.
+ *
+ * Weeks are seven-day buckets counted from the first entry. The day someone
+ * weighs in is irrelevant — Sunday or Wednesday both count — so the reminder
+ * day is deliberately not an input here. That is what stops a change of
+ * reminder day from rewriting history: nothing in this function depends on it.
+ *
+ * Stores nothing. The habit's whole record is the weight log's dates.
+ */
+export function weighInWeeks(weightLog, today) {
+  const log = Array.isArray(weightLog) ? weightLog.filter((e) => e && e.d && e.w > 0) : [];
+  if (!log.length) return [];
+  const dates = log.map((e) => e.d).sort();
+  const start = dates[0];
+  if (today < start) return [];
+
+  const weeks = [];
+  let from = start;
+  let n = 1;
+  for (;;) {
+    const to = addDays(from, 6);
+    const logged = dates.some((d) => d >= from && d <= to);
+    const current = today >= from && today <= to;
+    weeks.push({ n, from, to, status: logged ? 'hit' : current ? 'pending' : 'missed' });
+    if (current) break;
+    from = addDays(from, 7);
+    n += 1;
+  }
+  return weeks;
+}
+
+/**
+ * One entry per weight *change*, not per save — saving the profile with the
+ * same number on it should not manufacture a data point. A second weight on a
+ * day already recorded corrects that day rather than adding to it, so fixing a
+ * typo does not leave a spike in the history.
+ */
+export function recordWeight(weightLog, dateStr, w) {
+  const log = Array.isArray(weightLog) ? weightLog : [];
+  const weight = Number(w);
+  if (!(weight > 0)) return log;
+  const sorted = [...log].sort((a, b) => (a.d < b.d ? -1 : a.d > b.d ? 1 : 0));
+  const last = sorted[sorted.length - 1];
+  if (last && last.d === dateStr) {
+    if (last.w === weight) return log;
+    return [...sorted.slice(0, -1), { d: dateStr, w: weight }];
+  }
+  if (last && last.w === weight) return log;
+  return [...sorted, { d: dateStr, w: weight }];
+}
+
+/**
  * The running EMOM sessions that would have to yield to `keepExId`.
  * Separate from enforcing it so the app can name what it paused.
  */
@@ -876,7 +973,21 @@ function mergeProfiles(winner, loser) {
     weight: pick('weight'),
     height: pick('height'),
     avatar: pick('avatar'),
+    weighInDay: pick('weighInDay'),
+    weightLog: mergeWeightLogs(w.weightLog, l.weightLog),
   };
+}
+
+/**
+ * Union by date. The spread above would let the winning phone's array replace
+ * the loser's outright and silently bin weeks of weigh-ins — the same mistake
+ * that once deleted the avatar, in a different field.
+ */
+function mergeWeightLogs(winner, loser) {
+  const byDate = new Map();
+  (Array.isArray(loser) ? loser : []).forEach((e) => { if (e && e.d && e.w > 0) byDate.set(e.d, e); });
+  (Array.isArray(winner) ? winner : []).forEach((e) => { if (e && e.d && e.w > 0) byDate.set(e.d, e); });
+  return [...byDate.values()].sort((a, b) => (a.d < b.d ? -1 : a.d > b.d ? 1 : 0));
 }
 
 export function mergeSyncSnapshots(local, remote) {

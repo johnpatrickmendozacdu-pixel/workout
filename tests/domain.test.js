@@ -44,6 +44,10 @@ import {
   countInLeft,
   activeEmomId,
   storedTokenUsable,
+  bmiSummary,
+  weightTrend,
+  weighInWeeks,
+  recordWeight,
   syncNudge,
   enforceSingleEmom,
   emomSessionsToPause,
@@ -1250,5 +1254,197 @@ describe('syncNudge', () => {
 
   it('never nags about a clock that has drifted forward', () => {
     expect(syncNudge(NOW + 5 * DAY, NOW)).toBeNull();
+  });
+});
+
+describe('bmiSummary', () => {
+  it('computes BMI and calls it normal', () => {
+    const s = bmiSummary({ weight: 80, height: 180 });
+    expect(s.bmi).toBe(24.7);
+    expect(s.category).toBe('normal');
+    expect(s.toHealthy).toBe(0);
+  });
+
+  it('classifies on the exact cutoffs', () => {
+    expect(bmiSummary({ weight: 74, height: 200 }).category).toBe('normal');
+    expect(bmiSummary({ weight: 100, height: 200 }).category).toBe('overweight');
+    expect(bmiSummary({ weight: 120, height: 200 }).category).toBe('obese');
+    expect(bmiSummary({ weight: 73.9, height: 200 }).category).toBe('underweight');
+  });
+
+  it('classifies on the unrounded value, so the badge matches the number', () => {
+    const s = bmiSummary({ weight: 99.84, height: 200 });
+    expect(s.bmi).toBe(25);
+    expect(s.category).toBe('normal');
+  });
+
+  it('reports the healthy range for the height', () => {
+    const s = bmiSummary({ weight: 90, height: 178 });
+    expect(s.healthyMin).toBe(58.6);
+    expect(s.healthyMax).toBe(78.9);
+  });
+
+  it('measures the distance to the healthy range from both sides', () => {
+    expect(bmiSummary({ weight: 90, height: 178 }).toHealthy).toBe(11.1);
+    expect(bmiSummary({ weight: 50, height: 178 }).toHealthy).toBe(8.6);
+  });
+
+  it('returns null rather than a number it cannot compute', () => {
+    expect(bmiSummary(null)).toBeNull();
+    expect(bmiSummary({ weight: null, height: 180 })).toBeNull();
+    expect(bmiSummary({ weight: 80, height: null })).toBeNull();
+    expect(bmiSummary({ weight: 80, height: 0 })).toBeNull();
+    expect(bmiSummary({ weight: -5, height: 180 })).toBeNull();
+  });
+});
+
+describe('weightTrend', () => {
+  it('says nothing until there are two entries', () => {
+    expect(weightTrend([])).toBeNull();
+    expect(weightTrend(null)).toBeNull();
+    expect(weightTrend([{ d: '2026-06-12', w: 85 }])).toBeNull();
+  });
+
+  it('reports a loss as a negative delta', () => {
+    const t = weightTrend([{ d: '2026-06-12', w: 85.6 }, { d: '2026-07-31', w: 82.4 }]);
+    expect(t.delta).toBe(-3.2);
+    expect(t.since).toBe('2026-06-12');
+  });
+
+  it('reports a gain as a positive delta', () => {
+    expect(weightTrend([{ d: '2026-06-12', w: 80 }, { d: '2026-07-31', w: 82.5 }]).delta).toBe(2.5);
+  });
+
+  it('measures from the earliest entry whatever order they arrive in', () => {
+    const t = weightTrend([{ d: '2026-07-31', w: 82 }, { d: '2026-06-12', w: 85 }]);
+    expect(t.delta).toBe(-3);
+    expect(t.since).toBe('2026-06-12');
+  });
+});
+
+describe('weighInWeeks', () => {
+  it('has no weeks at all before the first entry', () => {
+    expect(weighInWeeks([], '2026-07-31')).toEqual([]);
+    expect(weighInWeeks(null, '2026-07-31')).toEqual([]);
+  });
+
+  it('counts buckets from the first entry, not from a calendar week', () => {
+    const weeks = weighInWeeks([{ d: '2026-07-01', w: 80 }], '2026-07-08');
+    expect(weeks[0]).toMatchObject({ n: 1, from: '2026-07-01', to: '2026-07-07', status: 'hit' });
+    expect(weeks[1]).toMatchObject({ n: 2, from: '2026-07-08', to: '2026-07-14', status: 'pending' });
+  });
+
+  it('counts any day inside the week, first day or last', () => {
+    const early = weighInWeeks([{ d: '2026-07-01', w: 80 }, { d: '2026-07-08', w: 79 }], '2026-07-20');
+    expect(early[1].status).toBe('hit');
+    const late = weighInWeeks([{ d: '2026-07-01', w: 80 }, { d: '2026-07-14', w: 79 }], '2026-07-20');
+    expect(late[1].status).toBe('hit');
+  });
+
+  it('marks every skipped week, not just the last one', () => {
+    const weeks = weighInWeeks([{ d: '2026-07-01', w: 80 }], '2026-07-22');
+    expect(weeks.map((x) => x.status)).toEqual(['hit', 'missed', 'missed', 'pending']);
+  });
+
+  it('never calls the current week missed', () => {
+    const weeks = weighInWeeks([{ d: '2026-07-01', w: 80 }], '2026-07-13');
+    expect(weeks[weeks.length - 1].status).toBe('pending');
+  });
+
+  it('counts two entries in one week as a single hit', () => {
+    const weeks = weighInWeeks([{ d: '2026-07-01', w: 80 }, { d: '2026-07-03', w: 79 }], '2026-07-05');
+    expect(weeks).toHaveLength(1);
+    expect(weeks[0].status).toBe('hit');
+  });
+
+  it('ignores the order entries arrive in', () => {
+    const weeks = weighInWeeks([{ d: '2026-07-14', w: 79 }, { d: '2026-07-01', w: 80 }], '2026-07-16');
+    expect(weeks[0].from).toBe('2026-07-01');
+    expect(weeks.map((x) => x.status)).toEqual(['hit', 'hit', 'pending']);
+  });
+});
+
+describe('recordWeight', () => {
+  it('appends the first entry', () => {
+    expect(recordWeight([], '2026-07-31', 82.4)).toEqual([{ d: '2026-07-31', w: 82.4 }]);
+  });
+
+  it('appends when the weight has changed', () => {
+    const log = [{ d: '2026-06-12', w: 85.6 }];
+    expect(recordWeight(log, '2026-07-31', 82.4)).toEqual([
+      { d: '2026-06-12', w: 85.6 }, { d: '2026-07-31', w: 82.4 },
+    ]);
+  });
+
+  it('records nothing when the weight is unchanged', () => {
+    const log = [{ d: '2026-06-12', w: 85.6 }];
+    expect(recordWeight(log, '2026-07-31', 85.6)).toEqual(log);
+  });
+
+  it('corrects a typo instead of inventing a second data point', () => {
+    const log = [{ d: '2026-07-31', w: 824 }];
+    expect(recordWeight(log, '2026-07-31', 82.4)).toEqual([{ d: '2026-07-31', w: 82.4 }]);
+  });
+
+  it('ignores a cleared or nonsense weight', () => {
+    const log = [{ d: '2026-06-12', w: 85.6 }];
+    expect(recordWeight(log, '2026-07-31', null)).toEqual(log);
+    expect(recordWeight(log, '2026-07-31', 0)).toEqual(log);
+    expect(recordWeight(undefined, '2026-07-31', null)).toEqual([]);
+  });
+});
+
+describe('mergeSyncSnapshots — weight log', () => {
+  const snap = (updatedAt, profile) => ({ updatedAt, profile, exercises: [], setsLog: {}, timersLog: {}, streakOverrides: {} });
+
+  it('keeps entries from both phones', () => {
+    const local = snap(2, { weightLog: [{ d: '2026-07-01', w: 80 }] });
+    const remote = snap(1, { weightLog: [{ d: '2026-07-08', w: 79 }] });
+    expect(mergeSyncSnapshots(local, remote).profile.weightLog).toEqual([
+      { d: '2026-07-01', w: 80 }, { d: '2026-07-08', w: 79 },
+    ]);
+  });
+
+  it('lets the newer snapshot win a same-day disagreement', () => {
+    const local = snap(2, { weightLog: [{ d: '2026-07-01', w: 80 }] });
+    const remote = snap(1, { weightLog: [{ d: '2026-07-01', w: 99 }] });
+    expect(mergeSyncSnapshots(local, remote).profile.weightLog).toEqual([{ d: '2026-07-01', w: 80 }]);
+  });
+
+  it('does not drop a log the other side has never seen', () => {
+    const local = snap(2, { username: 'J' });
+    const remote = snap(1, { weightLog: [{ d: '2026-07-01', w: 80 }] });
+    expect(mergeSyncSnapshots(local, remote).profile.weightLog).toEqual([{ d: '2026-07-01', w: 80 }]);
+  });
+
+  it('carries the reminder day across', () => {
+    const local = snap(2, { weighInDay: 1 });
+    const remote = snap(1, { weighInDay: 6 });
+    expect(mergeSyncSnapshots(local, remote).profile.weighInDay).toBe(1);
+  });
+});
+
+describe('health habits are not exercises', () => {
+  const setsLog = { '2026-07-30': { push: [10, 10] } };
+  const ex = [{ id: 'push', active: true, archived: false, target: 20, createdAt: '2026-07-01' }];
+
+  it('logging a weight leaves the workout record untouched', () => {
+    const before = JSON.stringify(setsLog);
+    recordWeight([], '2026-07-30', 82.4);
+    expect(JSON.stringify(setsLog)).toBe(before);
+  });
+
+  it('a weigh-in never becomes a set', () => {
+    const log = recordWeight([], '2026-07-30', 82.4);
+    expect(calcTotal(setsLog['2026-07-30'].push)).toBe(20);
+    expect(log.every((e) => typeof e.w === 'number' && e.d)).toBe(true);
+  });
+
+  it('a missed week cannot touch the exercise streak', () => {
+    const weeks = weighInWeeks([{ d: '2026-07-01', w: 80 }], '2026-07-22');
+    expect(weeks.some((x) => x.status === 'missed')).toBe(true);
+    const streak = calcStreakInfo(ex, setsLog, '2026-07-30', {});
+    recordWeight([], '2026-07-30', 82.4);
+    expect(calcStreakInfo(ex, setsLog, '2026-07-30', {})).toEqual(streak);
   });
 });

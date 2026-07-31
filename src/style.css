@@ -1348,3 +1348,38 @@
   /* Banner actions predate the 44px rule and shipped at 29px tall. They are
      real controls — a sync, an update, an export — so they get a real target. */
   .banner button{min-height:44px; padding:0 14px;}
+
+/* ---- BMI block: the number is the hero, everything else is quiet ---- */
+.bmi-block{border:1px solid var(--border);background:var(--bg-elevated);padding:14px;margin:4px 0 18px;}
+.bmi-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;}
+.bmi-num{font-family:var(--font-num);font-size:30px;line-height:1;font-variant-numeric:tabular-nums;color:var(--accent);}
+.bmi-block.overweight .bmi-num,.bmi-block.underweight .bmi-num{color:#F5A524;}
+.bmi-block.obese .bmi-num{color:var(--danger);}
+.bmi-badge{font-family:var(--font-mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;
+  border:1px solid currentColor;padding:3px 7px;color:var(--text-dim);}
+.bmi-block.normal .bmi-badge{color:var(--accent);}
+.bmi-block.overweight .bmi-badge,.bmi-block.underweight .bmi-badge{color:#F5A524;}
+.bmi-block.obese .bmi-badge{color:var(--danger);}
+.bmi-line{font-size:12.5px;color:var(--text-dim);margin-top:6px;line-height:1.45;}
+.bmi-line.down{color:var(--accent);}
+#f-weighin-day{width:100%;min-height:44px;}
+
+/* ---- Health habit card: deliberately unlike an exercise card ---- */
+.habit-card{display:flex;align-items:center;justify-content:space-between;gap:12px;
+  border:1px dashed var(--border);background:transparent;padding:14px;}
+.habit-text b{display:block;font-size:15px;}
+.habit-text span{display:block;font-size:12px;color:var(--text-faint);margin-top:3px;}
+.habit-btn{min-height:44px;padding:0 16px;border:1px solid var(--accent);background:transparent;
+  color:var(--accent);font-family:var(--font-mono);font-size:12px;letter-spacing:.06em;text-transform:uppercase;}
+
+/* ---- Weekly weight tracking: its own block, never an exercise card ---- */
+.habit-block{border:1px solid var(--border);padding:14px;margin-bottom:14px;}
+.habit-block-head{display:flex;align-items:center;justify-content:space-between;gap:10px;}
+.habit-tag{font-family:var(--font-mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-faint);}
+/* The strip scrolls on its own so a long history never makes the page scroll. */
+.habit-strip{display:flex;gap:10px;overflow-x:auto;padding:10px 0 4px;
+  -webkit-overflow-scrolling:touch;scrollbar-width:none;}
+.habit-strip::-webkit-scrollbar{display:none;}
+.habit-mark{flex:0 0 auto;font-size:15px;line-height:1;color:var(--text-faint);}
+.habit-mark.hit{color:var(--accent);}
+.habit-mark.missed{color:var(--danger);font-weight:700;}

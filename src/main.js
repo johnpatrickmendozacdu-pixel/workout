@@ -49,6 +49,10 @@ import {
   activeEmomId,
   storedTokenUsable,
   syncNudge,
+  bmiSummary,
+  weightTrend,
+  weighInWeeks,
+  recordWeight,
   enforceSingleEmom,
   emomSessionsToPause,
   EMOM_COUNT_IN_SEC,
@@ -70,7 +74,7 @@ const state = {
   setsLog: {},
   timersLog: {},
   meta: { lastExportAt: null },
-  profile: { username: '', weight: null, height: null },
+  profile: { username: '', weight: null, height: null, weightLog: [], weighInDay: 6 },
   sync: { status: 'signed-out', email: null, error: null, pending: false },
   streakOverrides: {},
   storageError: false,
@@ -144,7 +148,7 @@ async function loadAll() {
   state.setsLog = setsLog || {};
   state.meta = meta || { lastExportAt: null };
   state.timersLog = timersLog || {};
-  state.profile = profile || { username: '', weight: null, height: null };
+  state.profile = profile || { username: '', weight: null, height: null, weightLog: [], weighInDay: 6 };
   state.streakOverrides = migrateOverrides(streakOverrides || {});
 }
 /** Called by every persist* that changes real data. Bumps a timestamp (used to
@@ -236,7 +240,7 @@ async function applyMergedSnapshot(merged) {
   state.exercises = merged.exercises || [];
   state.setsLog = merged.setsLog || {};
   state.timersLog = merged.timersLog || {};
-  state.profile = merged.profile || { username: '', weight: null, height: null };
+  state.profile = merged.profile || { username: '', weight: null, height: null, weightLog: [], weighInDay: 6 };
   state.streakOverrides = merged.streakOverrides || {};
   state.meta.updatedAt = merged.updatedAt || Date.now();
   await Promise.all([
@@ -554,11 +558,15 @@ async function saveProfile() {
   const height = heightRaw === '' ? null : Math.max(0, parseFloat(heightRaw));
   // Spread what is already there: this form does not edit the photo, and
   // rebuilding the object from its fields alone silently deleted it.
+  const cleanWeight = isNaN(weight) ? null : weight;
+  const dayEl = document.getElementById('f-weighin-day');
   state.profile = {
     ...state.profile,
     username,
-    weight: isNaN(weight) ? null : weight,
+    weight: cleanWeight,
     height: isNaN(height) ? null : height,
+    weighInDay: dayEl ? Number(dayEl.value) : (state.profile.weighInDay ?? 6),
+    weightLog: recordWeight(state.profile.weightLog, todayISO(), cleanWeight),
   };
   await persistProfile();
   renderTopbar();
@@ -1389,6 +1397,59 @@ function renderView() {
 }
 
 /* ============================= VIEW: TODAY ============================= */
+/**
+ * A health habit, not an exercise: no ring, no bar, no target, no "to go".
+ * It sits below the exercises and is labelled, so it can never be read as one.
+ *
+ * The chosen day is a nudge, not a deadline — the card appears from that day
+ * and stays until the week runs out, and any day's weight satisfies the week.
+ */
+function weighInCardHtml() {
+  const p = state.profile || {};
+  const today = todayISO();
+  const weeks = weighInWeeks(p.weightLog, today);
+  const current = weeks[weeks.length - 1];
+
+  if (current && current.status === 'hit') return '';
+  if (current) {
+    // Exactly one day in the current bucket falls on the reminder weekday.
+    const startDay = new Date(current.from + 'T00:00:00').getDay();
+    const remindOn = addDays(current.from, ((p.weighInDay ?? 6) - startDay + 7) % 7);
+    if (today < remindOn) return '';
+  }
+  // Never logged: show it until they do, then the rule above governs.
+
+  return `<div class="section-label">Health habit</div>
+    <div class="habit-card">
+      <div class="habit-text"><b>Weekly weigh-in</b><span>Takes a second. Any day this week counts.</span></div>
+      <button class="habit-btn" data-action="open-weigh-in">Log weight</button>
+    </div>
+    ${tipHtml('weigh-in', 'Health habits are tracked apart from exercises — missing one never breaks your streak.')}`;
+}
+
+/**
+ * The habit's own place on Progress, kept clear of the exercise cards. Every
+ * week since the first weigh-in is shown; the strip scrolls rather than being
+ * cut off, so a long history never crushes the markers together.
+ */
+function weighInBlockHtml() {
+  const p = state.profile || {};
+  const weeks = weighInWeeks(p.weightLog, todayISO());
+  if (!weeks.length) return '';
+  const marks = weeks.map((wk) => {
+    const glyph = wk.status === 'hit' ? '●' : wk.status === 'missed' ? '✕' : '○';
+    return `<span class="habit-mark ${wk.status}" title="Week ${wk.n}: ${wk.from} to ${wk.to}">${glyph}</span>`;
+  }).join('');
+  const s = bmiSummary(p);
+  return `<div class="habit-block">
+    <div class="habit-block-head"><span class="section-label">Weekly weight tracking</span><span class="habit-tag">health habit</span></div>
+    <div class="habit-strip">${marks}</div>
+    ${s ? `<div class="bmi-line">Current ${p.weight} kg · BMI ${s.bmi} · ${BMI_LABEL[s.category]}</div>
+      ${s.toHealthy > 0 ? `<div class="bmi-line">About ${s.toHealthy} kg to the healthy range.</div>` : ''}` : ''}
+    ${weightTrendHtml(p.weightLog)}
+  </div>`;
+}
+
 function viewToday() {
   const today = todayISO();
   const all = state.exercises.filter((e) => e.active).sort((a, b) => a.order - b.order);
@@ -1480,6 +1541,8 @@ function viewToday() {
     ? `<p class="break-nudge resting">🌙 Resting today: ${onBreak.map((e) => escapeHtml(e.name)).join(', ')}</p>`
     : `<p class="break-nudge">Not training one today? Open it and take a break — the streak holds.</p>`;
 
+  html += weighInCardHtml();
+
   return html;
 }
 
@@ -1555,10 +1618,13 @@ function renderDayTargetPart(dt, dateStr, isToday) {
 }
 
 function viewProgress() {
+  const habit = weighInBlockHtml();
   const activeEx = state.exercises.filter((e) => e.active && !e.archived).sort((a, b) => a.order - b.order);
-  if (!activeEx.length) return `<p class="rail-empty">Add an exercise to start a streak.</p>`;
+  // The habit is not an exercise, so an empty workout plan must not hide it.
+  if (!activeEx.length) return habit || `<p class="rail-empty">Add an exercise to start a streak.</p>`;
   const stats = allStats(activeEx, state.setsLog, state.timersLog, null, state.streakOverrides);
-  return activeEx.map((ex) => exerciseCard(ex, stats[ex.id], { expandable: true })).join('')
+  return habit
+    + activeEx.map((ex) => exerciseCard(ex, stats[ex.id], { expandable: true })).join('')
     + tipHtml('progress-open', 'Tap an exercise for its history and numbers.');
 }
 
@@ -1924,6 +1990,7 @@ function modalGuide() {
       anyTarget && ['Once it is done', 'Hitting the target locks the card. Train again to reopen it.'],
       anyTarget && ['Rest a day', 'Open the exercise, Take a break. Streak holds.'],
       !has.length && ['Start', 'Add an exercise.'],
+      ['Weekly weigh-in', 'A health habit, not an exercise. Logging it never counts as reps.'],
     ],
     plan: [
       ['Edit', 'Tap the exercise.'],
@@ -1935,6 +2002,7 @@ function modalGuide() {
       ['Open a card', 'Its numbers, best day and recent days.'],
       anyHistory && ['Fix a number', 'Tap a total or target inside a card.'],
       ['Top set vs Max', 'Best single set, versus biggest day.'],
+      (state.profile && (state.profile.weightLog || []).length) && ['Weight tracking', 'Green = weighed in, red = missed that week, hollow = this week.'],
     ],
   };
 
@@ -1992,6 +2060,7 @@ function renderModal() {
   else if (m.type === 'giveup') root.innerHTML = modalGiveUp();
   else if (m.type === 'confirmBreak') root.innerHTML = modalConfirmBreak();
   else if (m.type === 'guide') root.innerHTML = modalGuide();
+  else if (m.type === 'weighin') root.innerHTML = modalWeighIn();
   else if (m.type === 'logger') root.innerHTML = modalLogger(m.exId);
   else if (m.type === 'exerciseForm') root.innerHTML = modalExerciseForm(m.exId);
   else if (m.type === 'confirmDeleteSet') root.innerHTML = modalConfirm(m);
@@ -2249,6 +2318,49 @@ function modalConfirmDeleteExercise(m) {
   </div>`;
 }
 
+const BMI_LABEL = { underweight: 'Underweight', normal: 'Normal', overweight: 'Overweight', obese: 'Obese' };
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+/** The weight change line, shared by the profile sheet and Progress. */
+function weightTrendHtml(weightLog) {
+  const t = weightTrend(weightLog);
+  if (!t) return '';
+  const when = formatDisplayDate(t.since, { month: 'short', day: 'numeric' });
+  return `<div class="bmi-line ${t.delta < 0 ? 'down' : 'up'}">${t.delta < 0 ? '↓' : '↑'} ${Math.abs(t.delta)} kg since ${escapeHtml(when)}</div>`;
+}
+
+/**
+ * BMI is shown wherever weight is, and nowhere else. Derived on every render,
+ * so a new weight updates it with no cache to invalidate.
+ */
+function bmiBlockHtml(profile) {
+  const s = bmiSummary(profile);
+  if (!s) return '';
+  return `<div class="bmi-block ${s.category}">
+    <div class="bmi-head"><span class="bmi-num">${s.bmi}</span><span class="bmi-badge">${BMI_LABEL[s.category]}</span></div>
+    <div class="bmi-line">Healthy range at ${profile.height} cm: ${s.healthyMin} – ${s.healthyMax} kg</div>
+    ${s.toHealthy > 0 ? `<div class="bmi-line">About ${s.toHealthy} kg to the healthy range.</div>` : ''}
+    ${weightTrendHtml(profile.weightLog)}
+    <div class="hint">Weight alone can't tell muscle from fat.</div>
+  </div>`;
+}
+
+function modalWeighIn() {
+  const p = state.profile || {};
+  return `<div class="modal-backdrop" data-action="backdrop">
+    <div class="modal-sheet" data-stop>
+      <div class="sheet-handle"></div>
+      <div class="sheet-head"><h2>Weekly weigh-in</h2><button class="sheet-close" data-action="close-modal">${ICONS.close}</button></div>
+      <div class="field">
+        <label>Weight (kg)</label>
+        <input id="f-weighin" type="number" min="0" step="any" inputmode="decimal" placeholder="—" value="${p.weight != null ? p.weight : ''}">
+        <div class="hint">Saved to your profile and this week's habit. It is never counted as reps.</div>
+      </div>
+      <button class="primary-btn" style="width:100%" data-action="save-weigh-in">Save weight</button>
+    </div>
+  </div>`;
+}
+
 function modalProfile() {
   const p = state.profile || {};
   const sync = state.sync || { status: 'signed-out' };
@@ -2333,6 +2445,14 @@ function modalProfile() {
           <label>Height (cm)</label>
           <input id="f-height" type="number" min="0" step="any" placeholder="—" value="${p.height != null ? p.height : ''}">
         </div>
+      </div>
+      ${bmiBlockHtml(p)}
+      <div class="field">
+        <label>Weigh-in reminder</label>
+        <select id="f-weighin-day">
+          ${WEEKDAYS.map((d, i) => `<option value="${i}"${(p.weighInDay ?? 6) === i ? ' selected' : ''}>${d}</option>`).join('')}
+        </select>
+        <div class="hint">Just when you're reminded. Any day of the week counts — only skipping the whole week is a miss.</div>
       </div>
       <button class="secondary-btn" style="width:100%" data-action="save-profile">Save profile</button>
     </div>
@@ -2591,6 +2711,22 @@ document.addEventListener('click', async (e) => {
       renderModal();
       rerender();
       showToast('Resting everything today');
+      break;
+    }
+    case 'open-weigh-in':
+      state.modal = { type: 'weighin' };
+      renderModal();
+      break;
+    case 'save-weigh-in': {
+      const raw = document.getElementById('f-weighin').value;
+      const w = raw === '' ? null : Math.max(0, parseFloat(raw));
+      if (!(w > 0)) { showToast('Enter a weight first'); break; }
+      state.profile = { ...state.profile, weight: w, weightLog: recordWeight(state.profile.weightLog, todayISO(), w) };
+      await persistProfile();
+      state.modal = null;
+      renderModal();
+      render();
+      showToast('Weight logged');
       break;
     }
     case 'open-guide':

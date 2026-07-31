@@ -48,6 +48,7 @@ import {
   countInLeft,
   activeEmomId,
   storedTokenUsable,
+  syncNudge,
   enforceSingleEmom,
   emomSessionsToPause,
   EMOM_COUNT_IN_SEC,
@@ -367,6 +368,7 @@ function scheduleSyncPush() {
 function renderSyncUI() {
   if (state.modal && state.modal.type === 'profile') renderModal();
   renderTopbar();
+  renderBanner();
 }
 
 /**
@@ -990,6 +992,17 @@ function renderBanner() {
   // the immediate remedy rather than a reminder.
   if (state.storageError) {
     banners.push(`<div class="banner"><span>Couldn't save your last change. Export a backup so nothing's lost.</span><button data-action="export">Export</button></div>`);
+  }
+  // The app never nags about an expired Google token, because interrupting
+  // someone cannot fix one. The cost of that silence is that sync can lapse
+  // unnoticed, so this is the one mention it gets — at most once a week, and
+  // never at all for anyone who syncs more often than that.
+  if (hasSyncAccount() && state.sync.status !== 'syncing') {
+    const stale = syncNudge(state.sync.lastBackupAt, Date.now());
+    if (stale) {
+      const how = stale.days == null ? 'Not synced yet' : `Not synced for ${stale.days} days`;
+      banners.push(`<div class="banner"><span>${how}. Your workouts are safe on this phone.</span><button data-action="nudge-sync">Sync</button></div>`);
+    }
   }
   el.innerHTML = banners.join('');
 }
@@ -2730,6 +2743,12 @@ document.addEventListener('click', async (e) => {
       break;
     case 'remove-avatar':
       await removeAvatarHandler();
+      break;
+    case 'nudge-sync':
+      // A dead token needs the real sign-in; a live one just syncs.
+      if (gsync.isSignedIn()) await syncNow();
+      else await googleSignInHandler();
+      renderBanner();
       break;
     case 'google-sync-now':
       await googleSyncNowHandler();

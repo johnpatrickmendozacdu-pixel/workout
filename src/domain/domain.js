@@ -522,6 +522,26 @@ export function storedTokenUsable(record, nowMs) {
 }
 
 /**
+ * Whether it is worth mentioning that sync has fallen behind, and by how much.
+ *
+ * The app deliberately never nags: an expired Google token is routine and
+ * cannot be fixed by interrupting someone. The cost of that silence is that
+ * sync can lapse for weeks unnoticed, which is only discovered when a phone is
+ * lost. One mention a week is the smallest thing that closes that gap.
+ *
+ * Returns null while things are fine, { days } once a week has passed, and
+ * days: null for an account that has never synced at all.
+ */
+export const SYNC_NUDGE_AFTER_DAYS = 7;
+export function syncNudge(lastSyncAt, nowMs) {
+  if (!lastSyncAt) return { days: null };
+  const elapsed = nowMs - lastSyncAt;
+  if (elapsed < 0) return null; // clock drift: never invent staleness
+  const days = Math.floor(elapsed / 86400000);
+  return days >= SYNC_NUDGE_AFTER_DAYS ? { days } : null;
+}
+
+/**
  * The running EMOM sessions that would have to yield to `keepExId`.
  * Separate from enforcing it so the app can name what it paused.
  */

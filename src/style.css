@@ -1344,3 +1344,7 @@
   .emom-band.phase-ready .emom-phase{color:var(--silver);}
 
   .test-sound{min-height:44px; width:100%; margin-top:8px;}
+
+  /* Banner actions predate the 44px rule and shipped at 29px tall. They are
+     real controls — a sync, an update, an export — so they get a real target. */
+  .banner button{min-height:44px; padding:0 14px;}

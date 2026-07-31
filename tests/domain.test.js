@@ -44,6 +44,7 @@ import {
   countInLeft,
   activeEmomId,
   storedTokenUsable,
+  syncNudge,
   enforceSingleEmom,
   emomSessionsToPause,
 } from '../src/domain/domain.js';
@@ -1221,5 +1222,33 @@ describe('storedTokenUsable', () => {
     expect(storedTokenUsable(null, NOW)).toBe(false);
     expect(storedTokenUsable({ expiresAt: NOW + 60000 }, NOW)).toBe(false);
     expect(storedTokenUsable({ token: 't' }, NOW)).toBe(false);
+  });
+});
+
+describe('syncNudge', () => {
+  const DAY = 86400000;
+  const NOW = 1_700_000_000_000;
+
+  it('says nothing while a sync is recent', () => {
+    expect(syncNudge(NOW - 2 * DAY, NOW)).toBeNull();
+    expect(syncNudge(NOW - 6.9 * DAY, NOW)).toBeNull();
+  });
+
+  it('speaks up once a week has passed', () => {
+    expect(syncNudge(NOW - 7 * DAY, NOW)).toEqual({ days: 7 });
+    expect(syncNudge(NOW - 21 * DAY, NOW)).toEqual({ days: 21 });
+  });
+
+  it('rounds down, so it never overstates how stale things are', () => {
+    expect(syncNudge(NOW - 9.8 * DAY, NOW)).toEqual({ days: 9 });
+  });
+
+  it('treats never-synced as worth mentioning', () => {
+    expect(syncNudge(0, NOW)).toEqual({ days: null });
+    expect(syncNudge(null, NOW)).toEqual({ days: null });
+  });
+
+  it('never nags about a clock that has drifted forward', () => {
+    expect(syncNudge(NOW + 5 * DAY, NOW)).toBeNull();
   });
 });

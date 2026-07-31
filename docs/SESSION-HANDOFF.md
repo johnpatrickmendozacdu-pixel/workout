@@ -20,10 +20,13 @@ see the warning under "Lessons" about what that misses.
 
 ## State right now
 
-- `main` = **`7f2bdf0`**, pushed, deployed, working tree clean, 199 tests green.
-- Every one of the user's requests this session is shipped and verified live.
-- **One open decision, described in full at the bottom: how Google sync should
-  behave.** Nothing else is outstanding.
+- `main` = **`cd0844a`**, pushed, deployed, working tree clean, 199 tests green.
+- Every one of the user's requests is shipped. **No decisions are outstanding.**
+- **One step only the user can take:** add the app URL as an Authorized redirect
+  URI on the OAuth client, or the restored redirect stays inert. Details at the
+  bottom. Until then it fails closed and sync just stays manual.
+- Two sessions were working in this repo at once on 2026-07-31. If a dev server
+  already holds port 5173, that is likely another session, not a stale process.
 
 ## What was built this session
 
@@ -70,7 +73,7 @@ the deletion, so it looked like a sync bug. The same mistake was in the merge
 sync can take ~45s. The watchdog fired at 20s and blamed *consent*. It is now
 60s, cycles are serialised, and a timeout no longer asks for consent.
 
-## The one open question: Google sync
+## Google sync: settled, but needs one console step
 
 **The constraint.** Google gives browser apps an access token lasting ~1 hour
 and no way to renew it offline. Renewal normally happens through a hidden frame
@@ -82,38 +85,49 @@ Consequence: about an hour after signing in, sync stops until the user taps.
 Data is never at risk — everything is on the phone instantly; only the Drive
 copy goes stale.
 
-**Current behaviour (`00a846a`).** Signs in, syncs automatically for that hour,
-then goes quiet. **No path anywhere sets `reconnect` on launch** — the app never
-nags. To sync again: Profile → Sync now.
+**What the user chose: both defences.**
 
-**Only two ways to make it automatic, both currently rejected:**
+1. **Redirect renewal** (`prompt=none`), restored in `cd0844a` — an exact mirror
+   of the removal in `00a846a`, originally built in `2ad2399`. Works because
+   accounts.google.com is first-party during a full navigation, so the session
+   cookie is sent and a token comes back with no interaction. Renews sync
+   automatically on open.
+2. **The weekly line**, built in `7f2bdf0`. One line at the top of Today, shown
+   only when a successful sync is more than 7 days old, with a Sync button that
+   signs in if the token has died and simply syncs if not. Hidden when signed
+   out, hidden when recently synced. Rule is `syncNudge` in `domain.js`, five
+   tests cover it.
 
-1. **A small server** holding a refresh token. Free on Cloudflare Workers.
-   Rejected: user does not want a server.
-2. **Top-level redirect renewal** (`prompt=none`). Works because Google is
-   first-party during a full navigation. Needs the app URL added as an
-   **Authorized redirect URI** on the existing OAuth client. Was built in
-   `2ad2399` and removed in `00a846a`.
+They complement each other: the redirect keeps sync alive, the line is the
+backstop for when it cannot be — signed out, consent withdrawn, Google changed
+something. The line is the only thing that would ever tell the user sync died.
 
-**Where the conversation stopped.** The user rejected the redirect saying it
-"sounds risky", which was likely a misreading caused by the assistant leading
-with caveats. The redirect is the *standard* OAuth flow and carries **no**
-security trade-off — the redirect-URI whitelist is itself a security control,
-and the scope stays `drive.appdata` (the app's own hidden folder only, never the
-user's real Drive). The genuine risks are cosmetic: a flash on open, and a
-possible bounce from the installed PWA into Safari.
+The user's earlier "sounds risky" was a misread caused by the assistant leading
+with caveats, and they said so. The redirect is the *standard* OAuth flow with
+**no** security trade-off: the redirect-URI whitelist is itself a security
+control, and the scope stays `drive.appdata` (the app's own hidden folder, never
+the real Drive). The genuine risks are cosmetic — a flash on open, and a
+possible bounce from the installed PWA into Safari. Watch for that bounce; it is
+the one thing that would justify reconsidering.
 
-The user was asked to choose between:
+**A server** holding a refresh token (free on Cloudflare Workers) remains the
+third option and is still rejected: the user does not want a server.
 
-- **Restore the redirect** (`git revert 00a846a` brings it back) → automatic
-  sync on open, one console step needed.
-- ~~Add a "weekly line"~~ → **BUILT and deployed in `7f2bdf0`.** One line at the
-  top of Today, shown only when a successful sync is more than 7 days old, with
-  a Sync button that signs in if the token has died and simply syncs if not.
-  Hidden when signed out, hidden when recently synced.
+### The console step, which only the user can do
 
-**So the only thing still open is whether to restore the redirect.** The user
-had not answered when the session ended. Ask.
+The redirect **does nothing until this is done**, and fails closed if it is not:
+
+1. Google Cloud Console → APIs & Services → Credentials
+2. Open the existing OAuth 2.0 Client ID for this app
+3. Under **Authorized redirect URIs**, Add URI:
+   `https://johnpatrickmendozacdu-pixel.github.io/workout/`
+   (exact, with the trailing slash — `REDIRECT_URI` in `googleSync.js` is
+   hard-coded to match, because a mismatch is the one thing Google rejects
+   outright)
+4. Save, then sign out and back in once in the app
+
+`canRedirectRenew()` returns false anywhere but that exact URL, so localhost dev
+never redirects.
 
 ## How this user works
 

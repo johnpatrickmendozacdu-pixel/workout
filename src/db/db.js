@@ -8,6 +8,41 @@ const STORE = 'kv';
 
 let dbPromise = null;
 
+/**
+ * ===================== ONE DEVICE, SEVERAL ACCOUNTS =====================
+ * Workout data belongs to the Google account it was logged under, so every
+ * data key is written behind a namespace and two accounts on the same phone
+ * never see each other's sets.
+ *
+ * The first account to sign in *claims the unprefixed keys* rather than being
+ * copied into a namespace of its own. That is what makes this change safe to
+ * ship to someone who already has months of data: their keys are not moved,
+ * renamed or rewritten, so there is no migration that can go wrong. Only a
+ * second, different account gets a prefix.
+ *
+ * These keys stay global, because they are how the app works out whose data to
+ * load in the first place — namespacing them would hide the answer inside the
+ * question.
+ */
+const GLOBAL_KEYS = new Set([
+  'sync-account', 'sync-token', 'sync-enabled', 'sync-redirect-at',
+  'local-claimed-by', 'active-ns',
+]);
+
+let namespace = '';
+
+/** '' is the claiming account's dataset; anyone else gets `u:<email>:`. */
+export function namespaceFor(email, claimedBy) {
+  if (!email) return '';
+  if (!claimedBy || claimedBy === email) return '';
+  return `u:${email}:`;
+}
+
+export function setNamespace(ns) { namespace = ns || ''; }
+export function getNamespace() { return namespace; }
+
+const scoped = (key) => (GLOBAL_KEYS.has(key) ? key : namespace + key);
+
 function openDB() {
   if (dbPromise) return dbPromise;
   dbPromise = new Promise((resolve, reject) => {
@@ -32,7 +67,7 @@ export async function getItem(key) {
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE, 'readonly');
-    const req = tx.objectStore(STORE).get(key);
+    const req = tx.objectStore(STORE).get(scoped(key));
     req.onsuccess = () => resolve(req.result ? req.result.value : undefined);
     req.onerror = () => reject(req.error);
   });
@@ -42,7 +77,7 @@ export async function setItem(key, value) {
   const db = await openDB();
   return new Promise((resolve, reject) => {
     const tx = db.transaction(STORE, 'readwrite');
-    tx.objectStore(STORE).put({ key, value });
+    tx.objectStore(STORE).put({ key: scoped(key), value });
     tx.oncomplete = () => resolve(true);
     tx.onerror = () => reject(tx.error);
   });

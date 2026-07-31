@@ -16,6 +16,7 @@ let tokenClient = null;
 let accessToken = null;
 let tokenExpiresAt = 0;
 let signedInEmail = null;
+let emailPromise = null;
 
 /** Milliseconds before actual expiry at which we treat a token as stale and
  *  renew it, so a Drive call never races the expiry boundary. */
@@ -68,7 +69,7 @@ export function consumeRedirectResult() {
     accessToken = p.get('access_token');
     tokenExpiresAt = Date.now() + (parseInt(p.get('expires_in'), 10) || 3500) * 1000;
     if (onTokenStored) onTokenStored({ token: accessToken, expiresAt: tokenExpiresAt, email: signedInEmail });
-    fetchEmail();
+    emailPromise = fetchEmail();
     return { ok: true };
   }
   // interaction_required / login_required: not signed in to Google here. Not an
@@ -157,7 +158,7 @@ function ensureTokenClient(onToken) {
           if (onTokenStored) onTokenStored({ token: accessToken, expiresAt: tokenExpiresAt, email: signedInEmail });
           // Deliberately not awaited: the address is only used for display, so
           // holding sync behind an extra round-trip just makes it feel slow.
-          fetchEmail();
+          emailPromise = fetchEmail();
           settle(true);
         } else {
           settle(false);
@@ -185,6 +186,23 @@ function fetchWithTimeout(url, options = {}, ms = NETWORK_TIMEOUT_MS) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), ms);
   return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(timer));
+}
+
+/**
+ * The address was once display-only, so it was fetched without being awaited.
+ * It now decides which dataset the app loads, so there has to be a way to wait
+ * for it — syncing before it lands could push one account's workouts into
+ * another account's Drive. Resolves to null rather than hanging if it fails.
+ */
+export async function ensureEmail(timeoutMs) {
+  if (signedInEmail) return signedInEmail;
+  try {
+    await Promise.race([
+      emailPromise || Promise.resolve(),
+      new Promise((r) => setTimeout(r, timeoutMs || 5000)),
+    ]);
+  } catch (e) { /* the address simply did not arrive */ }
+  return signedInEmail;
 }
 
 async function fetchEmail() {

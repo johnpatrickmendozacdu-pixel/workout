@@ -134,6 +134,35 @@ function getSetsFor(exId, dateStr) {
 }
 
 /* ============================= STORAGE ============================= */
+/**
+ * Point the database at the dataset belonging to `email`, and load it.
+ *
+ * The first account to sign in claims the existing unprefixed keys, so someone
+ * who has been using the app for months signs in and finds everything exactly
+ * where they left it — nothing is copied or migrated. A second, different
+ * account gets its own namespace and therefore its own empty app.
+ *
+ * Returns true when the dataset actually changed, so callers know to re-render.
+ */
+async function useAccount(email) {
+  const claimedBy = (await db.getItem('local-claimed-by').catch(() => null)) || null;
+  if (email && !claimedBy) {
+    await db.setItem('local-claimed-by', email).catch(() => {});
+  }
+  const ns = db.namespaceFor(email, claimedBy);
+  if (ns === db.getNamespace()) return false;
+  db.setNamespace(ns);
+  await db.setItem('active-ns', ns).catch(() => {});
+  await loadAll();
+  return true;
+}
+
+/** Restore the dataset that was in use last launch, before anything renders. */
+async function restoreNamespace() {
+  const ns = (await db.getItem('active-ns').catch(() => '')) || '';
+  db.setNamespace(ns);
+}
+
 async function loadAll() {
   const [exercises, setsLog, meta, timersLog, profile, streakOverrides] = await Promise.all([
     db.getItem('exercises'),
@@ -449,16 +478,20 @@ async function googleSignInHandler() {
     // connection itself, which is what sync and resume actually depend on.
     state.sync.connected = true;
     await db.setItem('sync-enabled', true).catch(() => {});
-    state.sync.email = gsync.getSignedInEmail() || state.sync.email;
-    if (state.sync.email) await db.setItem('sync-account', state.sync.email).catch(() => {});
-    await syncNow();
-    // Pick up the address once the background lookup lands, for display + hint.
-    const late = gsync.getSignedInEmail();
-    if (late && late !== state.sync.email) {
-      state.sync.email = late;
-      db.setItem('sync-account', late).catch(() => {});
+    // The address is no longer cosmetic: it decides whose dataset is loaded, so
+    // nothing may sync until it lands. Pushing first would send whoever's data
+    // happens to be open into the Drive of whoever just signed in.
+    const email = await gsync.ensureEmail();
+    if (!email) {
+      endSyncing('pending');
+      showToast("Signed in, but Google didn't confirm which account. Sync will pick it up.");
       renderSyncUI();
+      return;
     }
+    state.sync.email = email;
+    await db.setItem('sync-account', email).catch(() => {});
+    if (await useAccount(email)) render();
+    await syncNow();
   } else {
     // Falling back to 'reconnect' (not 'error') keeps the retry affordance on
     // screen for someone who was already signed in.
@@ -539,6 +572,9 @@ async function tryResumeSync() {
   if (ok) {
     state.sync.email = gsync.getSignedInEmail() || savedEmail || null;
     if (state.sync.email) db.setItem('sync-account', state.sync.email).catch(() => {});
+    // Same rule as an interactive sign-in: settle whose data this is before any
+    // of it leaves the device. `savedEmail` normally makes this a no-op.
+    if (state.sync.email && await useAccount(state.sync.email)) render();
     await pullAndMerge();
   } else {
     // Google would not renew silently — expected on iOS, where the cookies that
@@ -3140,6 +3176,8 @@ async function init() {
   gsync.setTokenListener((record) => {
     db.setItem('sync-token', record).catch(() => {});
   });
+  // Whose data this is has to be settled before a single key is read.
+  await restoreNamespace();
   await loadAll();
   db.requestPersistence();
   render();

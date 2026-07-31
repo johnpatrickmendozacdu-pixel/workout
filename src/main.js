@@ -1401,27 +1401,36 @@ function renderView() {
  * A health habit, not an exercise: no ring, no bar, no target, no "to go".
  * It sits below the exercises and is labelled, so it can never be read as one.
  *
- * The chosen day is a nudge, not a deadline — the card appears from that day
- * and stays until the week runs out, and any day's weight satisfies the week.
+ * It stays up all week rather than appearing on the day, because the point of
+ * naming a day is to have something to work towards. Seeing "this Saturday"
+ * on a Tuesday is the whole value — the day is a bar to aim at, not an alarm.
+ * Any day's weight still satisfies the week.
  */
 function weighInCardHtml() {
   const p = state.profile || {};
   const today = todayISO();
   const weeks = weighInWeeks(p.weightLog, today);
   const current = weeks[weeks.length - 1];
-
   if (current && current.status === 'hit') return '';
-  if (current) {
-    // Exactly one day in the current bucket falls on the reminder weekday.
+
+  const dayName = WEEKDAYS[p.weighInDay ?? 6];
+  let line;
+  if (!current) {
+    line = `Your day is ${dayName}. Log any time to start.`;
+  } else {
+    // Exactly one day in the current bucket falls on the chosen weekday.
     const startDay = new Date(current.from + 'T00:00:00').getDay();
-    const remindOn = addDays(current.from, ((p.weighInDay ?? 6) - startDay + 7) % 7);
-    if (today < remindOn) return '';
+    const dayOn = addDays(current.from, ((p.weighInDay ?? 6) - startDay + 7) % 7);
+    const daysAway = Math.round((new Date(dayOn + 'T00:00:00') - new Date(today + 'T00:00:00')) / 86400000);
+    line = daysAway > 1 ? `${dayName} — ${daysAway} days to go. Make them count.`
+      : daysAway === 1 ? `${dayName} is tomorrow. Make it count.`
+      : daysAway === 0 ? `It's ${dayName}. Today's the day.`
+      : `${dayName} has passed — still counts before the week is out.`;
   }
-  // Never logged: show it until they do, then the rule above governs.
 
   return `<div class="section-label">Health habit</div>
     <div class="habit-card">
-      <div class="habit-text"><b>Weekly weigh-in</b><span>Takes a second. Any day this week counts.</span></div>
+      <div class="habit-text"><b>Weekly weigh-in</b><span>${escapeHtml(line)}</span></div>
       <button class="habit-btn" data-action="open-weigh-in">Log weight</button>
     </div>
     ${tipHtml('weigh-in', 'Health habits are tracked apart from exercises — missing one never breaks your streak.')}`;
@@ -1990,7 +1999,7 @@ function modalGuide() {
       anyTarget && ['Once it is done', 'Hitting the target locks the card. Train again to reopen it.'],
       anyTarget && ['Rest a day', 'Open the exercise, Take a break. Streak holds.'],
       !has.length && ['Start', 'Add an exercise.'],
-      ['Weekly weigh-in', 'A health habit, not an exercise. Logging it never counts as reps.'],
+      ['Weekly weigh-in', 'A health habit, not an exercise. Set your day in Profile — it shows all week so you can work towards it.'],
     ],
     plan: [
       ['Edit', 'Tap the exercise.'],
@@ -2448,11 +2457,11 @@ function modalProfile() {
       </div>
       ${bmiBlockHtml(p)}
       <div class="field">
-        <label>Weigh-in reminder</label>
+        <label>Weekly weigh-in day</label>
         <select id="f-weighin-day">
           ${WEEKDAYS.map((d, i) => `<option value="${i}"${(p.weighInDay ?? 6) === i ? ' selected' : ''}>${d}</option>`).join('')}
         </select>
-        <div class="hint">Just when you're reminded. Any day of the week counts — only skipping the whole week is a miss.</div>
+        <div class="hint">The day you're aiming for, shown on Today all week. Any day still counts — only skipping the whole week is a miss.</div>
       </div>
       <button class="secondary-btn" style="width:100%" data-action="save-profile">Save profile</button>
     </div>

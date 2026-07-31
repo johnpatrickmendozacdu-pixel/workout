@@ -264,10 +264,20 @@ function hasSyncAccount() {
 
 /** Token trouble means "reconnect", anything else means the network/Drive is
  *  unhappy — two different messages, because only one is actionable. */
+/**
+ * A dead token is not an emergency. Everything is on the phone, and a backup
+ * being a few hours old costs nothing — so an expired token queues quietly and
+ * retries when the app next comes forward, instead of demanding you sign in
+ * again. Only once a backup has not landed for a day is it worth interrupting,
+ * because by then something really is stuck.
+ */
+const BACKUP_STALE_MS = 24 * 60 * 60 * 1000;
 function noteSyncFailure(err) {
   const code = err && err.message;
   if (code === 'token-expired' || code === 'not-signed-in') {
-    endSyncing('reconnect');
+    const last = state.sync.lastBackupAt || 0;
+    if (Date.now() - last > BACKUP_STALE_MS) endSyncing('reconnect');
+    else { markSyncPending(); endSyncing('pending'); }
   } else {
     endSyncing('error', 'Could not reach Google Drive.');
   }
@@ -387,29 +397,57 @@ async function syncNow() {
   return undefined;
 }
 
+/**
+ * One device, so this is a BACKUP, not a sync.
+ *
+ * The phone is the only place data is edited, which means there is nothing to
+ * reconcile: the cycle uploads and never quietly rewrites what is on the phone.
+ * That removes the entire class of conflict the merge existed to survive — and
+ * with it the reconnect prompts that came from a cycle needing three network
+ * round trips before it could finish.
+ *
+ * Coming the other way is an explicit act (Restore from backup), because
+ * replacing what is on the phone should never happen without being asked for.
+ */
 async function runSyncCycle() {
   if (!hasSyncAccount()) { endSyncing(state.sync.connected ? 'reconnect' : 'signed-out'); renderSyncUI(); return; }
   if (!isOnline()) { markSyncPending(); endSyncing('pending'); renderSyncUI(); return; }
   try {
     beginSyncing(); renderSyncUI();
-    const remote = await gsync.downloadBackup();
-    const merged = mergeSyncSnapshots(buildSyncSnapshot(), remote);
-    // Only rewrite local state when the cloud actually contributed something.
-    if (remote) await applyMergedSnapshot(merged);
-    await gsync.uploadBackup(merged);
+    await gsync.uploadBackup(buildSyncSnapshot());
     await clearSyncPending();
+    state.sync.lastBackupAt = Date.now();
+    db.setItem('sync-last-backup', state.sync.lastBackupAt).catch(() => {});
     endSyncing('synced');
   } catch (e) {
-    // The work is still safe on this device; remember that it needs sending.
+    // The work is safe on the phone regardless; the backup can wait.
     markSyncPending();
     noteSyncFailure(e);
   }
   renderSyncUI();
 }
 
-/* Kept as names the rest of the app already calls. Both now mean "run a full
- * merge cycle" — there is no longer a push-only path that could clobber the
- * cloud with a snapshot that never saw it. */
+/**
+ * Pulls the cloud copy back — only ever from an explicit tap. Merged rather
+ * than replaced, so restoring onto a phone that already has work cannot erase
+ * it; the merge is kept for exactly this, the one case that can still conflict.
+ */
+async function restoreFromBackupHandler() {
+  if (!hasSyncAccount()) return;
+  try {
+    beginSyncing(); renderSyncUI();
+    const remote = await gsync.downloadBackup();
+    if (!remote) { endSyncing('synced'); renderSyncUI(); showToast('No backup found in your Drive yet'); return; }
+    await applyMergedSnapshot(mergeSyncSnapshots(buildSyncSnapshot(), remote));
+    endSyncing('synced');
+    renderSyncUI();
+    showToast('Restored from your Drive backup');
+  } catch (e) {
+    noteSyncFailure(e);
+    renderSyncUI();
+  }
+}
+
 const pullAndMerge = syncNow;
 
 async function googleSignInHandler() {
@@ -422,7 +460,11 @@ async function googleSignInHandler() {
     await db.setItem('sync-enabled', true).catch(() => {});
     state.sync.email = gsync.getSignedInEmail() || state.sync.email;
     if (state.sync.email) await db.setItem('sync-account', state.sync.email).catch(() => {});
-    await pullAndMerge();
+    // A phone with nothing on it is a new or reinstalled one: bring the backup
+    // down. A phone with work on it just starts backing up — never the reverse.
+    const empty = !state.exercises.length && !Object.keys(state.setsLog).length;
+    if (empty) await restoreFromBackupHandler();
+    else await syncNow();
     // Pick up the address once the background lookup lands, for display + hint.
     const late = gsync.getSignedInEmail();
     if (late && late !== state.sync.email) {
@@ -441,11 +483,12 @@ async function googleSignInHandler() {
 async function googleSignOutHandler() {
   gsync.signOut();
   clearTimeout(syncWatchdog);
-  state.sync = { status: 'signed-out', email: null, error: null, connected: false };
+  state.sync = { status: 'signed-out', email: null, error: null, connected: false, pending: false, lastBackupAt: 0 };
   await Promise.all([
     db.setItem('sync-account', null).catch(() => {}),
     db.setItem('sync-enabled', false).catch(() => {}),
     db.setItem('sync-token', null).catch(() => {}),
+    db.setItem('sync-last-backup', null).catch(() => {}),
   ]);
   renderModal();
   renderTopbar();
@@ -456,11 +499,12 @@ async function googleSyncNowHandler() {
 /** Attempted once on app load — reconnects silently (no popup) if this browser
  * signed in before and still has an active Google session. */
 async function tryResumeSync() {
-  const [savedEmail, enabled, pending, token] = await Promise.all([
+  const [savedEmail, enabled, pending, token, lastBackup] = await Promise.all([
     db.getItem('sync-account').catch(() => null),
     db.getItem('sync-enabled').catch(() => null),
     db.getItem('sync-pending').catch(() => null),
     db.getItem('sync-token').catch(() => null),
+    db.getItem('sync-last-backup').catch(() => null),
   ]);
   // Resume on either signal: the email may never have been captured (the
   // userinfo lookup can fail while sync itself works fine), so the connection
@@ -468,6 +512,7 @@ async function tryResumeSync() {
   if (!savedEmail && !enabled) return;
   // Queued work survives being closed while offline.
   state.sync.pending = !!pending;
+  state.sync.lastBackupAt = lastBackup || 0;
 
   // Show the account immediately, before the handshake — the person never
   // signed out, so the app shouldn't flash a signed-out avatar on every load.
@@ -2199,23 +2244,23 @@ function modalProfile() {
   const syncHtml = (() => {
     if (sync.status === 'signed-out') {
       return `<button class="secondary-btn" style="width:100%" data-action="google-sign-in">${ICONS.google || ''} Sign in with Google</button>
-        <div class="hint">Syncs your data to a private, hidden spot in your own Google Drive — free, and readable only by this app.</div>`;
+        <div class="hint">Backs your workouts up to a private, hidden spot in your own Google Drive — free, and readable only by this app. Your data stays on this phone; the backup is just a copy.</div>`;
     }
     // Offline is not an error and needs no action — the work is already safe
     // here and will go up on its own. Saying "waiting" instead of "couldn't
     // reach Drive" is the difference between information and a false alarm.
     if (sync.status === 'pending') {
-      return `<div class="sync-status pending">Waiting for connection${sync.email ? ` · ${escapeHtml(sync.email)}` : ''}</div>
+      return `<div class="sync-status pending">Backup waiting${sync.email ? ` · ${escapeHtml(sync.email)}` : ''}</div>
         <div class="sync-actions">
           <button class="secondary-btn" data-action="google-sync-now">Try now</button>
           <button class="secondary-btn" data-action="google-sign-out">Sign out</button>
         </div>
-        <div class="hint">Everything you log is saved on this device. It syncs by itself as soon as you're back online.</div>`;
+        <div class="hint">Everything you log is saved on this phone. The backup catches up by itself — nothing for you to do.</div>`;
     }
     if (sync.status === 'syncing') {
       // Keep the account and an escape hatch on screen — a bare spinner with no
       // way out is what made a slow handshake feel like a hang.
-      return `<div class="sync-status syncing">Syncing…${sync.email ? ` · ${escapeHtml(sync.email)}` : ''}</div>
+      return `<div class="sync-status syncing">Backing up…${sync.email ? ` · ${escapeHtml(sync.email)}` : ''}</div>
         <div class="sync-actions">
           <button class="secondary-btn" data-action="google-sign-out">Sign out</button>
         </div>`;
@@ -2223,21 +2268,24 @@ function modalProfile() {
     // Signed in as far as this app is concerned, but Google wouldn't renew the
     // token without a prompt. Everything still works locally; one tap resumes.
     if (sync.status === 'reconnect') {
-      return `<div class="sync-status error">Sync paused${sync.email ? ` · ${escapeHtml(sync.email)}` : ''}</div>
+      return `<div class="sync-status error">Backup paused${sync.email ? ` · ${escapeHtml(sync.email)}` : ''}</div>
         <div class="sync-actions">
-          <button class="secondary-btn" data-action="google-sign-in">Reconnect to sync</button>
+          <button class="secondary-btn" data-action="google-sign-in">Reconnect</button>
           <button class="secondary-btn" data-action="google-sign-out">Sign out</button>
         </div>
-        <div class="hint">Your workouts are all here and safe on this device. Google just needs you to confirm it's you again before syncing resumes.</div>`;
+        <div class="hint">Your workouts are all here and safe on this phone. Google just needs you to confirm it's you again before backups resume.</div>`;
     }
     const statusLine = sync.status === 'error'
       ? `<div class="sync-status error">${escapeHtml(sync.error || 'Sync error')}</div>`
-      : `<div class="sync-status ok">${ICONS.check} Synced${sync.email ? ` · ${escapeHtml(sync.email)}` : ''}</div>`;
+      : `<div class="sync-status ok">${ICONS.check} Backed up${sync.email ? ` · ${escapeHtml(sync.email)}` : ''}</div>`;
+    const when = sync.lastBackupAt ? new Date(sync.lastBackupAt).toLocaleString() : null;
     return `${statusLine}
       <div class="sync-actions">
-        <button class="secondary-btn" data-action="google-sync-now">Sync now</button>
+        <button class="secondary-btn" data-action="google-sync-now">Back up now</button>
         <button class="secondary-btn" data-action="google-sign-out">Sign out</button>
-      </div>`;
+      </div>
+      <button class="secondary-btn" style="width:100%;margin-top:8px" data-action="restore-backup">Restore from backup</button>
+      <div class="hint">${when ? `Last backup: ${escapeHtml(when)}. ` : ''}Restore pulls the Drive copy back onto this phone — only needed on a new or reinstalled phone.</div>`;
   })();
   return `<div class="modal-backdrop" data-action="backdrop">
     <div class="modal-sheet" data-stop>
@@ -2257,7 +2305,7 @@ function modalProfile() {
       </div>
 
       <div class="field">
-        <label>Cross-device sync</label>
+        <label>Google Drive backup</label>
         ${syncHtml}
       </div>
 
@@ -2700,6 +2748,9 @@ document.addEventListener('click', async (e) => {
       break;
     case 'remove-avatar':
       await removeAvatarHandler();
+      break;
+    case 'restore-backup':
+      await restoreFromBackupHandler();
       break;
     case 'google-sync-now':
       await googleSyncNowHandler();

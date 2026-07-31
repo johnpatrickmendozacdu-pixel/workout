@@ -271,13 +271,15 @@ function hasSyncAccount() {
  * again. Only once a backup has not landed for a day is it worth interrupting,
  * because by then something really is stuck.
  */
-const BACKUP_STALE_MS = 24 * 60 * 60 * 1000;
 function noteSyncFailure(err) {
   const code = err && err.message;
   if (code === 'token-expired' || code === 'not-signed-in') {
-    const last = state.sync.lastBackupAt || 0;
-    if (Date.now() - last > BACKUP_STALE_MS) endSyncing('reconnect');
-    else { markSyncPending(); endSyncing('pending'); }
+    // Never escalate an expired token into a demand. Google hands browser apps
+    // a token that lasts about an hour and no way to renew it without a server,
+    // so this WILL happen routinely and is not something the person did wrong.
+    // The backup waits; the profile sheet tells the truth to anyone who looks.
+    markSyncPending();
+    endSyncing('pending');
   } else {
     endSyncing('error', 'Could not reach Google Drive.');
   }
@@ -432,6 +434,19 @@ async function runSyncCycle() {
  * than replaced, so restoring onto a phone that already has work cannot erase
  * it; the merge is kept for exactly this, the one case that can still conflict.
  */
+/**
+ * Tries to get a backup through without ever interrupting. If the token has
+ * died, attempt a silent renewal first — it succeeds on some browsers and fails
+ * harmlessly on the ones that block it — then back up. Nothing here can produce
+ * a prompt; reconnecting stays something the person chooses to do.
+ */
+async function retryBackupQuietly() {
+  try {
+    if (!gsync.isSignedIn()) await gsync.trySilentSignIn(state.sync.email);
+  } catch (e) { /* silent by design */ }
+  await syncNow();
+}
+
 async function restoreFromBackupHandler() {
   if (!hasSyncAccount()) return;
   try {
@@ -538,10 +553,12 @@ async function tryResumeSync() {
     if (state.sync.email) db.setItem('sync-account', state.sync.email).catch(() => {});
     await pullAndMerge();
   } else {
-    // Google wouldn't renew silently (signed out of Google, or third-party
-    // cookies blocked). Keep the account visible and offer a one-tap reconnect
-    // rather than pretending we've forgotten them.
-    endSyncing('reconnect');
+    // Google would not renew silently — expected on iOS, where the cookies that
+    // flow depends on are blocked. Opening the app must not greet anyone with a
+    // demand to sign in again, so the backup simply waits. The account stays
+    // visible and reconnecting remains available inside the profile.
+    markSyncPending();
+    endSyncing('pending');
     renderSyncUI();
   }
 }
@@ -2965,7 +2982,7 @@ async function init() {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState !== 'visible') return;
     checkVersion();
-    if (hasSyncAccount() && isOnline()) syncNow();
+    if (hasSyncAccount() && isOnline()) retryBackupQuietly();
   });
 
   // Coming back onto the network is the moment queued work should leave the

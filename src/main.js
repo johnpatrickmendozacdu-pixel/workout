@@ -493,15 +493,15 @@ async function googleSignInHandler() {
     if (await useAccount(email)) render();
     await syncNow();
   } else {
-    // Google turns away anyone not on the tester list while the app is
-    // unverified. "Try again" is the worst possible thing to say to them: it
-    // reads as a broken app, so they close it and do not come back. Name it as
-    // a closed door rather than a fault, and say plainly that nothing else is
-    // affected - the app has never needed an account to work.
+    // access_denied covers two very different things, and the app cannot tell
+    // them apart: Google refusing the account, or the person backing out of the
+    // "hasn't verified this app" screen. Since the app is unverified, the second
+    // is far more common, and the fix for it is a link most people miss. Name
+    // that link, and make clear nothing is broken either way.
     const denied = gsync.getLastAuthError() === 'access_denied';
     endSyncing(state.sync.email ? 'reconnect' : 'signed-out',
       denied
-        ? 'Drive backup is invite-only for now — nothing is wrong with your account. Everything you log still saves on this device.'
+        ? 'Google stopped short of finishing. If you saw a warning screen, tap Advanced, then Go to Sets — it is unverified, not unsafe. Nothing is lost: everything you log saves on this device either way.'
         : state.sync.email ? null : 'Sign-in didn\u2019t go through — try again.');
     renderSyncUI();
   }
@@ -2436,7 +2436,7 @@ function modalProfile() {
   const syncHtml = (() => {
     if (sync.status === 'signed-out') {
       return `<button class="secondary-btn" style="width:100%" data-action="google-sign-in">${ICONS.google || ''} Sign in with Google</button>
-        <div class="hint">Syncs your workouts to a private, hidden spot in your own Google Drive — free, and readable only by this app. Optional: the app works fully without it. Sign-in is invite-only while it is in testing.</div>`;
+        <div class="hint">Syncs your workouts to a private, hidden spot in your own Google Drive — free, and readable only by this app. Optional: the app works fully without it. Google shows a warning first because the app is unverified — tap Advanced, then Go to Sets.</div>`;
     }
     // Offline is not an error and needs no action — the work is already safe
     // here and will go up on its own. Saying "waiting" instead of "couldn't

@@ -441,7 +441,6 @@ describe('manual Top Set is an exact correction', () => {
   const past = { '2026-07-27': { a: [50, 20] } };
 
   it('shows exactly the number you set, even below the logged best', () => {
-    // real logged best is 50, but you correct the display to 25
     const s = exerciseStats(ex({ topSetOverride: 25 }), past, {}, TODAY);
     expect(s.topSet).toBe(25);
     expect(s.topSetManual).toBe(true);
@@ -451,5 +450,33 @@ describe('manual Top Set is an exact correction', () => {
     const s = exerciseStats(ex({ topSetOverride: null }), past, {}, TODAY);
     expect(s.topSet).toBe(50);
     expect(s.topSetManual).toBe(false);
+  });
+});
+
+describe('Top set starts fresh from topSetSince', () => {
+  // a stray 89 before the fresh-start date, a real 25 on/after it
+  const log = { '2026-07-25': { a: [89] }, '2026-07-27': { a: [25] }, '2026-07-28': { a: [12] } };
+
+  it('ignores sets logged before the start date', () => {
+    const s = exerciseStats(ex({ topSetSince: '2026-07-27' }), log, {}, TODAY);
+    expect(s.topSet).toBe(25);          // the 89 on 07-25 is excluded
+    expect(s.topSetDate).toBe('2026-07-27');
+  });
+
+  it('climbs as you beat it from the start date on', () => {
+    const better = { ...log, '2026-07-28': { a: [30] } };
+    const s = exerciseStats(ex({ topSetSince: '2026-07-27' }), better, {}, TODAY);
+    expect(s.topSet).toBe(30);
+  });
+
+  it('counts everything when no start date is set (older exercises pre-migration)', () => {
+    const s = exerciseStats(ex(), log, {}, TODAY);
+    expect(s.topSet).toBe(89);
+  });
+
+  it('leaves Best day, lifetime and totals counting all history', () => {
+    const s = exerciseStats(ex({ topSetSince: '2026-07-27' }), log, {}, TODAY);
+    expect(s.totalReps).toBe(126);      // 89 + 25 + 12, nothing dropped
+    expect(s.maxReps).toBe(89);         // Best day still sees 07-25
   });
 });

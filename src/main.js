@@ -182,6 +182,21 @@ async function loadAll() {
   state.profile = profile || { username: '', weight: null, height: null, weightLog: [], weighInDay: 6 };
   state.streakOverrides = migrateOverrides(streakOverrides || {});
   state.deletedExercises = deletedExercises || {};
+
+  // One-time: start Top set fresh from today for every existing exercise, and
+  // drop old manual corrections. Old and stray sets before today stop counting
+  // toward Top set (only), so a bad number cannot haunt it. Runs once — an
+  // exercise that already has topSetSince is left alone.
+  const today = todayISO();
+  let migrated = false;
+  state.exercises.forEach((e) => {
+    if (e.topSetSince === undefined) {
+      e.topSetSince = today;
+      if (e.topSetOverride !== undefined) delete e.topSetOverride;
+      migrated = true;
+    }
+  });
+  if (migrated) await db.setItem('exercises', state.exercises).catch(() => {});
 }
 /** Called by every persist* that changes real data. Bumps a timestamp (used to
  * decide who "wins" during Drive sync) and, if signed in, schedules a push. */
@@ -858,6 +873,7 @@ async function addExercise(data) {
     archived: false,
     order: maxOrder + 1,
     createdDate: now,
+    topSetSince: now,
     schedule: data.schedule || 'daily',
     timerMode: data.timerMode === 'emom' ? 'emom' : 'normal',
     emomWorkSec: data.emomWorkSec || EMOM_DEFAULT_WORK_SEC,

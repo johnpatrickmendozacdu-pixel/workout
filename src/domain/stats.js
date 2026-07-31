@@ -144,6 +144,10 @@ export function exerciseStats(ex, setsLog, timersLog, todayOverride, overrides) 
   let totalReps = 0;
 
   const today = todayOverride || todayISO();
+  // Top set tracks fresh from the day the exercise started counting it, so old
+  // or bad data before that day can never be the record. Sets on or after this
+  // date climb it; earlier ones are ignored for Top set only.
+  const topSetSince = ex.topSetSince || null;
   const dates = workoutDates(ex.id, setsLog);
   dates.forEach((d) => {
     const arr = setsLog[d][ex.id];
@@ -156,9 +160,11 @@ export function exerciseStats(ex, setsLog, timersLog, todayOverride, overrides) 
     // it is logged. Nothing later in the day can walk it back, so today counts
     // straight away. (25 reps just done IS your top set; waiting for a seal to
     // admit it only reads as broken.)
-    arr.forEach((v) => {
-      if (v > topSet) { topSet = v; topSetDate = d; }
-    });
+    if (!topSetSince || d >= topSetSince) {
+      arr.forEach((v) => {
+        if (v > topSet) { topSet = v; topSetDate = d; }
+      });
+    }
 
     // Best day is a daily TOTAL, and it keeps climbing while you train, so it
     // would ratchet up set by set if shown live. That one still waits for the

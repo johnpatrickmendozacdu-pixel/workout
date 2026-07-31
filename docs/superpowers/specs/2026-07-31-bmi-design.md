@@ -44,7 +44,8 @@ the smallest thing that answers that question: no chart data, no daily samples, 
 separate store.
 
 **Also stored:** `profile.weighInDay` — 0 (Sunday) to 6 (Saturday), defaulting to **6**.
-A single integer, because the user wants to pick their own weigh-in day.
+A single integer, and it controls **only when the reminder appears on Today**. It plays no
+part in deciding whether a week was hit or missed.
 
 **Not stored: the habit's hit/miss history.** Every week's status is derived from the
 dates already in `weightLog`. There is no habit log, no per-week record, nothing to sync
@@ -62,29 +63,32 @@ weightTrend(weightLog)
 // → null when fewer than 2 entries
 // → { delta, since }   // delta kg vs the first entry, negative = lost
 
-weighInWeeks(weightLog, weighInDay, today)
+weighInWeeks(weightLog, today)
 // → [] when the log is empty
-// → [{ ends: 'YYYY-MM-DD', status: 'hit' | 'missed' | 'pending' }, ...] oldest first
+// → [{ n, from, to, status: 'hit' | 'missed' | 'pending' }, ...] oldest first
 ```
 
 ### How a week is judged
 
-A week **ends** on `weighInDay` and covers the seven days up to and including it.
+**The day you weigh in does not matter.** A week counts as logged if there is any entry
+inside it, Sunday or Wednesday or the last day — the only thing that matters is that it
+did not slip past the end of that week.
+
+Weeks are consecutive 7-day buckets counted from the **first** `weightLog` entry. Week 1
+starts the day of that entry; week 2 starts seven days later; and so on to today.
 
 | Status | Rule |
 |---|---|
-| `hit` | at least one `weightLog` entry dated inside that week |
-| `missed` | no entry, and the week's end day is in the past |
-| `pending` | the current week, whose end day has not arrived |
+| `hit` | at least one `weightLog` entry dated inside the bucket |
+| `missed` | no entry, and the bucket has fully passed |
+| `pending` | the bucket containing today |
 
-History begins at the week containing the **first** `weightLog` entry, so weeks before the
-user started are never shown as missed. A person who has never logged a weight has no
-history and no misses — only the prompt.
+Because the buckets are anchored to the first entry and nothing else, **changing the
+reminder day never re-derives history** — no past week can flip between hit and missed.
+`weighInDay` is not an input to this function at all.
 
-Changing `weighInDay` re-derives every past week under the new anchor, so old weeks can
-flip between hit and missed. This is a deliberate consequence of storing nothing: the
-alternative is recording the anchor per week, which is more state for a cosmetic gain.
-A `.hint` under the day picker says so plainly.
+A person who has never logged a weight has no weeks, no history and no misses — only the
+prompt.
 
 `bmi = w / (h/100)^2`, rounded to one decimal.
 
@@ -151,9 +155,13 @@ Weekly weigh-in                     [ Log weight ]
 ```
 
 Tapping opens a single weight field. Saving writes `profile.weight`, appends to
-`weightLog`, and updates BMI everywhere at once. The card shows on the weigh-in day only —
-a card sitting there all week is clutter — but a weight logged on any day still counts as
-that week's hit.
+`weightLog`, and updates BMI everywhere at once.
+
+The card appears **from the chosen reminder day until the end of that week**, and only
+while the week has no entry. So the day is a nudge, not a deadline: miss Saturday and the
+card is still there Sunday and Monday, right up until the week runs out. Logging on any
+day of the week — before the reminder day included — satisfies the week and the card never
+appears.
 
 ## UI — Progress
 
@@ -207,7 +215,7 @@ inventing a fourth:
 
 | Mechanism | Where | Text |
 |---|---|---|
-| `.hint` | under the weigh-in day picker | "Pick the day you usually weigh in. Changing it recalculates past weeks." |
+| `.hint` | under the weigh-in day picker | "Just when you're reminded. Any day of the week counts — only skipping the whole week is a miss." |
 | `.hint` | under the BMI block | "Weight alone can't tell muscle from fat." |
 | `tipHtml` | first time the weigh-in card appears on Today | "Health habits are tracked apart from exercises — missing one never breaks your streak." Retires once a weight is logged. |
 | Guide — Today | `['Weekly weigh-in', 'A health habit, not an exercise. Logging it never counts as reps.']` | conditional on the card being visible |
@@ -221,10 +229,11 @@ Unit tests in `tests/domain.test.js` for the pure layer:
   from both sides (18.5, 25, 30); `toHealthy` above, below and inside the range;
   null for missing weight, missing height, zero height, negative values.
 - `weightTrend`: null for zero and one entry; loss and gain deltas; unsorted input.
-- `weighInWeeks`: empty log → no weeks; a hit in the current week → `pending` never
-  becomes `missed`; a gap of several weeks → each one `missed`; an entry on the last day
-  of a week counts for that week; changing `weighInDay` re-anchors the weeks; no week is
-  reported before the first entry.
+- `weighInWeeks`: empty log → no weeks; no week reported before the first entry; an entry
+  on the **first** day of a bucket and one on the **last** day both count as `hit`; a gap
+  of several weeks → each one `missed`; the current bucket is `pending`, never `missed`;
+  two entries in one bucket are still one `hit`; the function takes no `weighInDay`, so
+  the same log yields the same weeks whatever day is chosen.
 - `mergeProfiles`: union of two disjoint logs; same-date conflict resolves to the winner;
   a log present on one side only survives; neither side loses entries; `weighInDay`
   survives a merge.

@@ -1,4 +1,4 @@
-# BMI readout, category and weight trend
+# BMI, and weekly weigh-in as a health habit
 
 Date: 2026-07-31
 
@@ -8,6 +8,12 @@ The profile already collects weight (kg) and height (cm) and does nothing with t
 user wants BMI derived from those two numbers, the category it falls in, a nudge toward
 the healthy range when it does not, and — once weight changes over time — a way to see
 how much has been lost or gained.
+
+They also want weighing in to become a tracked **health habit**: a weekly prompt on a day
+they choose (Saturday by default), a visible mark when a week is missed, and its own place
+on Progress. Health habits are a distinct concept from exercises and must never be
+confused with them — a weigh-in is not a set, and missing one cannot break a workout
+streak.
 
 Nothing in the app stores weight history today. `profile.weight` is a single current
 value that a form overwrites.
@@ -37,6 +43,14 @@ the app cannot answer "how much have I lost", which the user explicitly asked fo
 the smallest thing that answers that question: no chart data, no daily samples, no
 separate store.
 
+**Also stored:** `profile.weighInDay` — 0 (Sunday) to 6 (Saturday), defaulting to **6**.
+A single integer, because the user wants to pick their own weigh-in day.
+
+**Not stored: the habit's hit/miss history.** Every week's status is derived from the
+dates already in `weightLog`. There is no habit log, no per-week record, nothing to sync
+or merge beyond what the weight list already carries. This is the whole reason the feature
+is cheap.
+
 ## Domain functions (pure, in `src/domain/domain.js`)
 
 ```js
@@ -47,7 +61,30 @@ bmiSummary(profile)
 weightTrend(weightLog)
 // → null when fewer than 2 entries
 // → { delta, since }   // delta kg vs the first entry, negative = lost
+
+weighInWeeks(weightLog, weighInDay, today)
+// → [] when the log is empty
+// → [{ ends: 'YYYY-MM-DD', status: 'hit' | 'missed' | 'pending' }, ...] oldest first
 ```
+
+### How a week is judged
+
+A week **ends** on `weighInDay` and covers the seven days up to and including it.
+
+| Status | Rule |
+|---|---|
+| `hit` | at least one `weightLog` entry dated inside that week |
+| `missed` | no entry, and the week's end day is in the past |
+| `pending` | the current week, whose end day has not arrived |
+
+History begins at the week containing the **first** `weightLog` entry, so weeks before the
+user started are never shown as missed. A person who has never logged a weight has no
+history and no misses — only the prompt.
+
+Changing `weighInDay` re-derives every past week under the new anchor, so old weeks can
+flip between hit and missed. This is a deliberate consequence of storing nothing: the
+alternative is recording the anchor per week, which is more state for a cosmetic gain.
+A `.hint` under the day picker says so plainly.
 
 `bmi = w / (h/100)^2`, rounded to one decimal.
 
@@ -92,7 +129,52 @@ not optional to fix.
 `weightLog` merges as a **union keyed by date**, sorted by date ascending. When both sides
 have an entry for the same date, the winning snapshot's value is kept.
 
-## UI — Profile sheet only
+## Health habits are not exercises
+
+This is a hard boundary, enforced in the domain layer and covered by tests:
+
+- A weigh-in never appears in `setsLog`, never counts as a logged set, and never
+  contributes to daily totals, Max, Top Set, lifetime reps or records.
+- A missed weigh-in never breaks, shortens or touches the exercise streak.
+- The weigh-in card never renders with exercise chrome: no rep ring, no progress bar, no
+  target, no "to go" figure, no Give up / Keep going.
+- It is labelled `HEALTH HABIT` wherever it appears, and on Today it sits **below** the
+  exercise list.
+
+## UI — Today
+
+On the chosen weigh-in day, when that week has no entry yet, one card below the exercises:
+
+```
+HEALTH HABIT
+Weekly weigh-in                     [ Log weight ]
+```
+
+Tapping opens a single weight field. Saving writes `profile.weight`, appends to
+`weightLog`, and updates BMI everywhere at once. The card shows on the weigh-in day only —
+a card sitting there all week is clutter — but a weight logged on any day still counts as
+that week's hit.
+
+## UI — Progress
+
+Its own block, visually separated from the exercise sections:
+
+```
+WEEKLY WEIGHT TRACKING                      health habit
+
+●  ●  ●  ✕  ●  ●  ●  ●  ○   →  (scrolls)
+
+Current  82.4 kg · BMI 26.0 · Overweight
+About 3.5 kg to the healthy range.
+↓ 3.2 kg since 12 Jun
+```
+
+Green `●` = weighed in, red `✕` = missed, hollow `○` = this week pending. Every week since
+the first entry is shown; the strip scrolls horizontally inside its own
+`overflow-x:auto` container rather than being capped at a fixed number of weeks. The page
+body must still never scroll sideways — the scroll belongs to the strip alone.
+
+## UI — Profile sheet
 
 Directly beneath the existing weight/height row, inside the same `.field` rhythm:
 
@@ -116,7 +198,20 @@ Weight alone can't tell muscle from fat.
   eventually mislead without it.
 - When weight or height is missing, the whole block is absent. No empty state, no prompt.
 
-Nothing renders on Today, on Progress, or at launch.
+A weekday picker for `weighInDay` sits beside it, defaulting to Saturday.
+
+## Notes — the app explains itself
+
+The app has three note mechanisms and this feature uses each where it fits, rather than
+inventing a fourth:
+
+| Mechanism | Where | Text |
+|---|---|---|
+| `.hint` | under the weigh-in day picker | "Pick the day you usually weigh in. Changing it recalculates past weeks." |
+| `.hint` | under the BMI block | "Weight alone can't tell muscle from fat." |
+| `tipHtml` | first time the weigh-in card appears on Today | "Health habits are tracked apart from exercises — missing one never breaks your streak." Retires once a weight is logged. |
+| Guide — Today | `['Weekly weigh-in', 'A health habit, not an exercise. Logging it never counts as reps.']` | conditional on the card being visible |
+| Guide — Progress | `['Weight tracking', 'Green = weighed in, red = missed that week, hollow = this week.']` | conditional on any history existing |
 
 ## Testing
 
@@ -126,8 +221,15 @@ Unit tests in `tests/domain.test.js` for the pure layer:
   from both sides (18.5, 25, 30); `toHealthy` above, below and inside the range;
   null for missing weight, missing height, zero height, negative values.
 - `weightTrend`: null for zero and one entry; loss and gain deltas; unsorted input.
+- `weighInWeeks`: empty log → no weeks; a hit in the current week → `pending` never
+  becomes `missed`; a gap of several weeks → each one `missed`; an entry on the last day
+  of a week counts for that week; changing `weighInDay` re-anchors the weeks; no week is
+  reported before the first entry.
 - `mergeProfiles`: union of two disjoint logs; same-date conflict resolves to the winner;
-  a log present on one side only survives; neither side loses entries.
+  a log present on one side only survives; neither side loses entries; `weighInDay`
+  survives a merge.
+- **The boundary**: logging a weigh-in leaves `setsLog`, daily totals and the exercise
+  streak byte-identical. A missed week does not change `calcStreakInfo`.
 
 The UI layer is verified by using the app, not by calling handlers: open the Profile
 sheet at 375px, confirm the block appears and the figures are right, change the weight

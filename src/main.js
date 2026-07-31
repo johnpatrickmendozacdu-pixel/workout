@@ -416,7 +416,11 @@ async function runSyncCycle() {
   if (!isOnline()) { markSyncPending(); endSyncing('pending'); renderSyncUI(); return; }
   try {
     beginSyncing(); renderSyncUI();
-    await gsync.uploadBackup(buildSyncSnapshot());
+    const remote = await gsync.downloadBackup();
+    const merged = mergeSyncSnapshots(buildSyncSnapshot(), remote);
+    // Only rewrite what is here when the cloud actually contributed something.
+    if (remote) await applyMergedSnapshot(merged);
+    await gsync.uploadBackup(merged);
     await clearSyncPending();
     state.sync.lastBackupAt = Date.now();
     db.setItem('sync-last-backup', state.sync.lastBackupAt).catch(() => {});
@@ -427,40 +431,6 @@ async function runSyncCycle() {
     noteSyncFailure(e);
   }
   renderSyncUI();
-}
-
-/**
- * Pulls the cloud copy back — only ever from an explicit tap. Merged rather
- * than replaced, so restoring onto a phone that already has work cannot erase
- * it; the merge is kept for exactly this, the one case that can still conflict.
- */
-/**
- * Tries to get a backup through without ever interrupting. If the token has
- * died, attempt a silent renewal first — it succeeds on some browsers and fails
- * harmlessly on the ones that block it — then back up. Nothing here can produce
- * a prompt; reconnecting stays something the person chooses to do.
- */
-async function retryBackupQuietly() {
-  try {
-    if (!gsync.isSignedIn()) await gsync.trySilentSignIn(state.sync.email);
-  } catch (e) { /* silent by design */ }
-  await syncNow();
-}
-
-async function restoreFromBackupHandler() {
-  if (!hasSyncAccount()) return;
-  try {
-    beginSyncing(); renderSyncUI();
-    const remote = await gsync.downloadBackup();
-    if (!remote) { endSyncing('synced'); renderSyncUI(); showToast('No backup found in your Drive yet'); return; }
-    await applyMergedSnapshot(mergeSyncSnapshots(buildSyncSnapshot(), remote));
-    endSyncing('synced');
-    renderSyncUI();
-    showToast('Restored from your Drive backup');
-  } catch (e) {
-    noteSyncFailure(e);
-    renderSyncUI();
-  }
 }
 
 const pullAndMerge = syncNow;
@@ -475,11 +445,7 @@ async function googleSignInHandler() {
     await db.setItem('sync-enabled', true).catch(() => {});
     state.sync.email = gsync.getSignedInEmail() || state.sync.email;
     if (state.sync.email) await db.setItem('sync-account', state.sync.email).catch(() => {});
-    // A phone with nothing on it is a new or reinstalled one: bring the backup
-    // down. A phone with work on it just starts backing up — never the reverse.
-    const empty = !state.exercises.length && !Object.keys(state.setsLog).length;
-    if (empty) await restoreFromBackupHandler();
-    else await syncNow();
+    await syncNow();
     // Pick up the address once the background lookup lands, for display + hint.
     const late = gsync.getSignedInEmail();
     if (late && late !== state.sync.email) {
@@ -546,8 +512,24 @@ async function tryResumeSync() {
 
   // A token still in date is worth more than a silent re-auth Safari will
   // block: reuse it and sync immediately rather than asking to reconnect.
+  const renewed = !!(redirectResult && redirectResult.ok);
+  if (renewed) db.setItem('sync-redirect-at', 0).catch(() => {});
   const restored = storedTokenUsable(token, Date.now()) && gsync.restoreSession(token);
-  const ok = restored || await gsync.trySilentSignIn(savedEmail);
+  const ok = renewed || restored || await gsync.trySilentSignIn(savedEmail);
+
+  // Last resort before giving up: renew by top-level redirect, the only silent
+  // path Safari permits. Guarded hard, because a redirect that never comes back
+  // with a token would otherwise loop on every launch — at most one attempt an
+  // hour, and never straight after one that just failed.
+  if (!ok && gsync.canRedirectRenew() && isOnline()) {
+    const lastTry = (await db.getItem('sync-redirect-at').catch(() => 0)) || 0;
+    const failedJustNow = redirectResult && !redirectResult.ok;
+    if (!failedJustNow && Date.now() - lastTry > 60 * 60 * 1000) {
+      await db.setItem('sync-redirect-at', Date.now()).catch(() => {});
+      gsync.redirectRenew(savedEmail);
+      return;
+    }
+  }
   if (ok) {
     state.sync.email = gsync.getSignedInEmail() || savedEmail || null;
     if (state.sync.email) db.setItem('sync-account', state.sync.email).catch(() => {});
@@ -2261,23 +2243,23 @@ function modalProfile() {
   const syncHtml = (() => {
     if (sync.status === 'signed-out') {
       return `<button class="secondary-btn" style="width:100%" data-action="google-sign-in">${ICONS.google || ''} Sign in with Google</button>
-        <div class="hint">Backs your workouts up to a private, hidden spot in your own Google Drive — free, and readable only by this app. Your data stays on this phone; the backup is just a copy.</div>`;
+        <div class="hint">Syncs your workouts to a private, hidden spot in your own Google Drive — free, and readable only by this app.</div>`;
     }
     // Offline is not an error and needs no action — the work is already safe
     // here and will go up on its own. Saying "waiting" instead of "couldn't
     // reach Drive" is the difference between information and a false alarm.
     if (sync.status === 'pending') {
-      return `<div class="sync-status pending">Backup waiting${sync.email ? ` · ${escapeHtml(sync.email)}` : ''}</div>
+      return `<div class="sync-status pending">Sync waiting${sync.email ? ` · ${escapeHtml(sync.email)}` : ''}</div>
         <div class="sync-actions">
           <button class="secondary-btn" data-action="google-sync-now">Try now</button>
           <button class="secondary-btn" data-action="google-sign-out">Sign out</button>
         </div>
-        <div class="hint">Everything you log is saved on this phone. The backup catches up by itself — nothing for you to do.</div>`;
+        <div class="hint">Everything you log is saved on this phone. Sync catches up by itself — nothing for you to do.</div>`;
     }
     if (sync.status === 'syncing') {
       // Keep the account and an escape hatch on screen — a bare spinner with no
       // way out is what made a slow handshake feel like a hang.
-      return `<div class="sync-status syncing">Backing up…${sync.email ? ` · ${escapeHtml(sync.email)}` : ''}</div>
+      return `<div class="sync-status syncing">Syncing…${sync.email ? ` · ${escapeHtml(sync.email)}` : ''}</div>
         <div class="sync-actions">
           <button class="secondary-btn" data-action="google-sign-out">Sign out</button>
         </div>`;
@@ -2285,24 +2267,23 @@ function modalProfile() {
     // Signed in as far as this app is concerned, but Google wouldn't renew the
     // token without a prompt. Everything still works locally; one tap resumes.
     if (sync.status === 'reconnect') {
-      return `<div class="sync-status error">Backup paused${sync.email ? ` · ${escapeHtml(sync.email)}` : ''}</div>
+      return `<div class="sync-status error">Sync paused${sync.email ? ` · ${escapeHtml(sync.email)}` : ''}</div>
         <div class="sync-actions">
           <button class="secondary-btn" data-action="google-sign-in">Reconnect</button>
           <button class="secondary-btn" data-action="google-sign-out">Sign out</button>
         </div>
-        <div class="hint">Your workouts are all here and safe on this phone. Google just needs you to confirm it's you again before backups resume.</div>`;
+        <div class="hint">Your workouts are all here and safe on this phone. Google just needs you to confirm it's you again before syncing resumes.</div>`;
     }
     const statusLine = sync.status === 'error'
       ? `<div class="sync-status error">${escapeHtml(sync.error || 'Sync error')}</div>`
-      : `<div class="sync-status ok">${ICONS.check} Backed up${sync.email ? ` · ${escapeHtml(sync.email)}` : ''}</div>`;
+      : `<div class="sync-status ok">${ICONS.check} Synced${sync.email ? ` · ${escapeHtml(sync.email)}` : ''}</div>`;
     const when = sync.lastBackupAt ? new Date(sync.lastBackupAt).toLocaleString() : null;
     return `${statusLine}
       <div class="sync-actions">
-        <button class="secondary-btn" data-action="google-sync-now">Back up now</button>
+        <button class="secondary-btn" data-action="google-sync-now">Sync now</button>
         <button class="secondary-btn" data-action="google-sign-out">Sign out</button>
       </div>
-      <button class="secondary-btn" style="width:100%;margin-top:8px" data-action="restore-backup">Restore from backup</button>
-      <div class="hint">${when ? `Last backup: ${escapeHtml(when)}. ` : ''}Restore pulls the Drive copy back onto this phone — only needed on a new or reinstalled phone.</div>`;
+      <div class="hint">${when ? `Last synced: ${escapeHtml(when)}. ` : ''}Your workouts live on this phone and sync to a private folder in your own Drive.</div>`;
   })();
   return `<div class="modal-backdrop" data-action="backdrop">
     <div class="modal-sheet" data-stop>
@@ -2318,11 +2299,11 @@ function modalProfile() {
           </label>
           ${p.avatar ? '<button class="secondary-btn photo-btn" data-action="remove-avatar">Remove</button>' : ''}
         </div>
-        <div class="hint">Kept on this device and in your own Drive backup. It is shrunk to a small square first, so it never bloats a sync.</div>
+        <div class="hint">Kept on this phone and synced to your own Drive. It is shrunk to a small square first, so it never bloats a sync.</div>
       </div>
 
       <div class="field">
-        <label>Google Drive backup</label>
+        <label>Google Drive sync</label>
         ${syncHtml}
       </div>
 
@@ -2766,9 +2747,6 @@ document.addEventListener('click', async (e) => {
     case 'remove-avatar':
       await removeAvatarHandler();
       break;
-    case 'restore-backup':
-      await restoreFromBackupHandler();
-      break;
     case 'google-sync-now':
       await googleSyncNowHandler();
       break;
@@ -2969,7 +2947,10 @@ const updateSW = registerSW({
 });
 
 /* ============================= INIT ============================= */
+let redirectResult = null;
 async function init() {
+  // Before anything renders: a token handed back by the renewal redirect.
+  try { redirectResult = gsync.consumeRedirectResult(); } catch (e) { redirectResult = null; }
   gsync.setTokenListener((record) => {
     db.setItem('sync-token', record).catch(() => {});
   });

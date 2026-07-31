@@ -968,6 +968,7 @@ const ICONS = {
   trophy: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M7 4h10v4a5 5 0 01-10 0V4z" stroke="currentColor" stroke-width="1.6"/><path d="M7 5H4a3 3 0 003 3M17 5h3a3 3 0 01-3 3M12 13v3m-3 4h6m-3-4v0" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>`,
   google: `<svg width="16" height="16" viewBox="0 0 24 24"><path fill="#4285F4" d="M23.5 12.3c0-.9-.1-1.5-.2-2.2H12v4.2h6.5c-.1 1.1-.9 2.7-2.5 3.8l4 3.1c2.4-2.2 3.5-5.4 3.5-8.9z"/><path fill="#34A853" d="M12 24c3.2 0 5.9-1.1 7.9-2.8l-4-3.1c-1.1.7-2.5 1.2-3.9 1.2-3 0-5.6-2-6.5-4.8l-4.1 3.2C3.4 21.5 7.4 24 12 24z"/><path fill="#FBBC05" d="M5.5 14.5c-.2-.7-.4-1.4-.4-2.5s.1-1.7.4-2.5L1.4 6.3C.5 8 0 9.9 0 12s.5 4 1.4 5.7l4.1-3.2z"/><path fill="#EA4335" d="M12 4.8c1.8 0 3 .8 3.7 1.4l3.5-3.4C17.4 1 14.8 0 12 0 7.4 0 3.4 2.5 1.4 6.3l4.1 3.2C6.4 6.8 9 4.8 12 4.8z"/></svg>`,
   user: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="3.6" stroke="currentColor" stroke-width="1.7"/><path d="M4.5 20c1.5-4 4.3-6 7.5-6s6 2 7.5 6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>`,
+  lock: `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="4.5" y="10.5" width="15" height="10" stroke="currentColor" stroke-width="1.8"/><path d="M8 10.5V7.5a4 4 0 118 0v3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`,
 };
 function ring(percent, size, stroke, complete, iconHtml) {
   const r = (size - stroke) / 2, c = 2 * Math.PI * r, off = c - Math.min(Math.max(percent, 0), 1) * c;
@@ -1414,25 +1415,40 @@ function weighInCardHtml() {
   const current = weeks[weeks.length - 1];
   if (current && current.status === 'hit') return '';
 
-  const dayName = WEEKDAYS[p.weighInDay ?? 6];
+  const wantDay = p.weighInDay ?? 6;
+  const dayName = WEEKDAYS[wantDay];
   let line;
+  let locked;
   if (!current) {
-    line = `Your day is ${dayName}. Log any time to start.`;
+    // No history yet, so there is no week to measure against — fall back to
+    // the plain weekday. The escape hatch below is the same either way.
+    locked = new Date(today + 'T00:00:00').getDay() !== wantDay;
+    line = locked ? `Your day is ${dayName}. Come back then.` : `It's ${dayName}. Today's the day.`;
   } else {
     // Exactly one day in the current bucket falls on the chosen weekday.
     const startDay = new Date(current.from + 'T00:00:00').getDay();
-    const dayOn = addDays(current.from, ((p.weighInDay ?? 6) - startDay + 7) % 7);
+    const dayOn = addDays(current.from, (wantDay - startDay + 7) % 7);
     const daysAway = Math.round((new Date(dayOn + 'T00:00:00') - new Date(today + 'T00:00:00')) / 86400000);
+    locked = today < dayOn;
     line = daysAway > 1 ? `${dayName} — ${daysAway} days to go. Make them count.`
       : daysAway === 1 ? `${dayName} is tomorrow. Make it count.`
       : daysAway === 0 ? `It's ${dayName}. Today's the day.`
       : `${dayName} has passed — still counts before the week is out.`;
   }
 
+  // Locked is a real guard, not a costume: the button carries no action at all
+  // until the day, and 'log-ahead' only ever explains how to move the day.
+  const buttons = locked
+    ? `<div class="habit-actions">
+        <span class="habit-btn locked" aria-disabled="true">${ICONS.lock}Log weight on ${escapeHtml(dayName)}</span>
+        <button class="habit-ahead" data-action="log-ahead">Log ahead?</button>
+      </div>`
+    : `<button class="habit-btn" data-action="open-weigh-in">Log weight</button>`;
+
   return `<div class="section-label">Health habit</div>
-    <div class="habit-card">
+    <div class="habit-card${locked ? ' is-locked' : ''}">
       <div class="habit-text"><b>Weekly weigh-in</b><span>${escapeHtml(line)}</span></div>
-      <button class="habit-btn" data-action="open-weigh-in">Log weight</button>
+      ${buttons}
     </div>
     ${tipHtml('weigh-in', 'Health habits are tracked apart from exercises — missing one never breaks your streak.')}`;
 }
@@ -2723,6 +2739,11 @@ document.addEventListener('click', async (e) => {
       showToast('Resting everything today');
       break;
     }
+    case 'log-ahead':
+      // Deliberately logs nothing. Weighing in early would quietly move the
+      // day the weeks are measured against; changing the day is the honest way.
+      showToast('Want to weigh in earlier? Change your weigh-in day in Profile, then Save profile.');
+      break;
     case 'open-weigh-in':
       state.modal = { type: 'weighin' };
       renderModal();

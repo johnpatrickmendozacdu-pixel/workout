@@ -1369,8 +1369,20 @@
   border:1px dashed var(--border);background:transparent;padding:14px;}
 .habit-text b{display:block;font-size:15px;}
 .habit-text span{display:block;font-size:12px;color:var(--text-faint);margin-top:3px;}
-.habit-btn{min-height:44px;padding:0 16px;border:1px solid var(--accent);background:transparent;
+.habit-btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;
+  min-height:44px;padding:0 16px;border:1px solid var(--accent);background:transparent;
   color:var(--accent);font-family:var(--font-mono);font-size:12px;letter-spacing:.06em;text-transform:uppercase;}
+/* Locked reads as unavailable, not as a button someone failed to press. */
+.habit-btn.locked{border-style:dashed;border-color:var(--text-faint);color:var(--text-faint);cursor:not-allowed;
+  text-transform:none;letter-spacing:.02em;}
+.habit-actions{display:flex;flex-direction:column;align-items:stretch;gap:6px;flex:0 0 auto;}
+.habit-ahead{min-height:32px;padding:0 10px;border:0;background:transparent;color:var(--text-dim);
+  font-size:11.5px;text-decoration:underline;text-underline-offset:3px;}
+/* Locked, the button is too wide to sit beside the text at phone width —
+   squeezing the sentence into four wrapped lines. Stack instead. */
+.habit-card.is-locked{border-color:var(--text-faint);flex-direction:column;align-items:stretch;gap:12px;}
+.habit-card.is-locked .habit-actions{width:100%;}
+.habit-card.is-locked .habit-btn.locked{width:100%;}
 
 /* ---- Weekly weight tracking: its own block, never an exercise card ---- */
 .habit-block{border:1px solid var(--border);padding:14px;margin-bottom:14px;}

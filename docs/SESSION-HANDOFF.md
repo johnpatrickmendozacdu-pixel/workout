@@ -15,12 +15,12 @@ deploys from `main` via Actions).
 `src/main.js` is all rendering and events. `src/db/db.js` wraps IndexedDB.
 `src/sync/googleSync.js` is self-contained Google auth + Drive.
 
-**194 tests, all passing** (`npm test`). They cover the pure domain layer only —
+**199 tests, all passing** (`npm test`). They cover the pure domain layer only —
 see the warning under "Lessons" about what that misses.
 
 ## State right now
 
-- `main` = **`00a846a`**, pushed, deployed, working tree clean.
+- `main` = **`7f2bdf0`**, pushed, deployed, working tree clean, 199 tests green.
 - Every one of the user's requests this session is shipped and verified live.
 - **One open decision, described in full at the bottom: how Google sync should
   behave.** Nothing else is outstanding.
@@ -43,6 +43,7 @@ All verified in a real browser at 375px and against the deployed bundle:
 | Save profile no longer deletes the photo | `0d46c50` |
 | Sync watchdog / lock / token persistence | `e41e745` |
 | Google redirect renewal added, then removed at user's request | `2ad2399` → `00a846a` |
+| Weekly "not synced for N days" line | `7f2bdf0` |
 
 Design specs for the bigger pieces are in `docs/superpowers/specs/`.
 
@@ -106,12 +107,13 @@ The user was asked to choose between:
 
 - **Restore the redirect** (`git revert 00a846a` brings it back) → automatic
   sync on open, one console step needed.
-- **Add a "weekly line"** → one quiet line at the top of Today, only when it has
-  been >7 days since a successful sync, with a Sync button. Not built yet;
-  roughly 15 lines. Without it, sync can lapse silently for weeks unnoticed,
-  which is the real risk of an app that never interrupts.
+- ~~Add a "weekly line"~~ → **BUILT and deployed in `7f2bdf0`.** One line at the
+  top of Today, shown only when a successful sync is more than 7 days old, with
+  a Sync button that signs in if the token has died and simply syncs if not.
+  Hidden when signed out, hidden when recently synced.
 
-**They had not answered when the session ended. Ask which they want.**
+**So the only thing still open is whether to restore the redirect.** The user
+had not answered when the session ended. Ask.
 
 ## How this user works
 

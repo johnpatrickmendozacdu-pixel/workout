@@ -558,15 +558,16 @@ async function saveProfile() {
   const height = heightRaw === '' ? null : Math.max(0, parseFloat(heightRaw));
   // Spread what is already there: this form does not edit the photo, and
   // rebuilding the object from its fields alone silently deleted it.
-  const cleanWeight = isNaN(weight) ? null : weight;
   const dayEl = document.getElementById('f-weighin-day');
+  // Editing the profile is not weighing in. Correcting a username or a height
+  // must not tick the week off, so only the Log weight button writes history —
+  // the number here still moves BMI, it just does not claim a weigh-in.
   state.profile = {
     ...state.profile,
     username,
-    weight: cleanWeight,
+    weight: isNaN(weight) ? null : weight,
     height: isNaN(height) ? null : height,
     weighInDay: dayEl ? Number(dayEl.value) : (state.profile.weighInDay ?? 6),
-    weightLog: recordWeight(state.profile.weightLog, todayISO(), cleanWeight),
   };
   await persistProfile();
   renderTopbar();

@@ -437,26 +437,19 @@ describe('trajectorySeries', () => {
   });
 });
 
-describe('manual Top Set is a floor, never a ceiling', () => {
+describe('manual Top Set is an exact correction', () => {
   const past = { '2026-07-27': { a: [50, 20] } };
 
-  it('lifts the figure when nothing logged beats it', () => {
-    const s = exerciseStats(ex({ topSetOverride: 80 }), past, {}, TODAY);
-    expect(s.topSet).toBe(80);
+  it('shows exactly the number you set, even below the logged best', () => {
+    // real logged best is 50, but you correct the display to 25
+    const s = exerciseStats(ex({ topSetOverride: 25 }), past, {}, TODAY);
+    expect(s.topSet).toBe(25);
     expect(s.topSetManual).toBe(true);
   });
 
-  it('does not hide a logged set that beats the manual value', () => {
-    // hand-typed 20, but a real single set of 50 is on record
-    const s = exerciseStats(ex({ topSetOverride: 20 }), past, {}, TODAY);
+  it('falls back to the logged best once the correction is cleared', () => {
+    const s = exerciseStats(ex({ topSetOverride: null }), past, {}, TODAY);
     expect(s.topSet).toBe(50);
     expect(s.topSetManual).toBe(false);
-  });
-
-  it('a real single set today beats a manual value at once', () => {
-    // nothing bigger than the manual 20 in the past; a real 25 today must win
-    const withToday = { '2026-07-26': { a: [10] }, '2026-07-28': { a: [25] } };
-    const s = exerciseStats(ex({ topSetOverride: 20 }), withToday, {}, TODAY);
-    expect(s.topSet).toBe(25);
   });
 });

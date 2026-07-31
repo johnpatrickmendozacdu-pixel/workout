@@ -33,6 +33,63 @@ const NETWORK_TIMEOUT_MS = 15000;
 
 let lastEmailHint = null;
 
+/**
+ * ===================== SILENT RENEWAL BY REDIRECT =====================
+ * The token client renews in a hidden iframe to accounts.google.com. Safari's
+ * tracking prevention blocks that iframe's cookies, so on iOS the silent path
+ * can never succeed and every expired token became a login prompt.
+ *
+ * A TOP-LEVEL navigation is a different matter: accounts.google.com is
+ * first-party during it, so the Google session cookie is sent and `prompt=none`
+ * returns a token with no interaction at all — a flash on open rather than a
+ * login. Returns you straight back here.
+ *
+ * Hard-coded rather than derived from location so it matches the Authorized
+ * redirect URI exactly; a mismatch is the one thing Google rejects outright.
+ */
+const REDIRECT_URI = 'https://johnpatrickmendozacdu-pixel.github.io/workout/';
+
+export function canRedirectRenew() {
+  return typeof location !== 'undefined' && (location.origin + location.pathname) === REDIRECT_URI;
+}
+
+/**
+ * Reads a token handed back in the URL fragment. Runs before anything else so
+ * the app starts already authorised, and always clears the fragment so a
+ * refresh cannot replay a stale token.
+ */
+export function consumeRedirectResult() {
+  if (typeof location === 'undefined' || !location.hash) return null;
+  const raw = location.hash.slice(1);
+  if (raw.indexOf('state=sets-renew') === -1) return null;
+  const p = new URLSearchParams(raw);
+  history.replaceState(null, '', location.pathname + location.search);
+  if (p.get('access_token')) {
+    accessToken = p.get('access_token');
+    tokenExpiresAt = Date.now() + (parseInt(p.get('expires_in'), 10) || 3500) * 1000;
+    if (onTokenStored) onTokenStored({ token: accessToken, expiresAt: tokenExpiresAt, email: signedInEmail });
+    fetchEmail();
+    return { ok: true };
+  }
+  // interaction_required / login_required: not signed in to Google here. Not an
+  // error worth showing — the backup simply waits.
+  return { ok: false, error: p.get('error') || 'no-token' };
+}
+
+export function redirectRenew(emailHint) {
+  const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+  url.searchParams.set('client_id', CLIENT_ID);
+  url.searchParams.set('redirect_uri', REDIRECT_URI);
+  url.searchParams.set('response_type', 'token');
+  url.searchParams.set('scope', SCOPE);
+  url.searchParams.set('prompt', 'none');
+  url.searchParams.set('include_granted_scopes', 'true');
+  if (emailHint || lastEmailHint) url.searchParams.set('login_hint', emailHint || lastEmailHint);
+  // Marks the fragment as ours so nothing else is mistaken for a token.
+  url.searchParams.set('state', 'sets-renew');
+  location.assign(url.toString());
+}
+
 let onTokenStored = null;
 
 /** The app persists the token so a relaunch inside its lifetime syncs straight

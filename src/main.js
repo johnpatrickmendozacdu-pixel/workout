@@ -514,8 +514,24 @@ async function tryResumeSync() {
 
   // A token still in date is worth more than a silent re-auth Safari will
   // block: reuse it and sync immediately rather than asking to reconnect.
+  const renewed = !!(redirectResult && redirectResult.ok);
+  if (renewed) db.setItem('sync-redirect-at', 0).catch(() => {});
   const restored = storedTokenUsable(token, Date.now()) && gsync.restoreSession(token);
-  const ok = restored || await gsync.trySilentSignIn(savedEmail);
+  const ok = renewed || restored || await gsync.trySilentSignIn(savedEmail);
+
+  // Last resort before giving up: renew by top-level redirect, the only silent
+  // path Safari permits. Guarded hard, because a redirect that never comes back
+  // with a token would otherwise loop on every launch — at most one attempt an
+  // hour, and never straight after one that just failed.
+  if (!ok && gsync.canRedirectRenew() && isOnline()) {
+    const lastTry = (await db.getItem('sync-redirect-at').catch(() => 0)) || 0;
+    const failedJustNow = redirectResult && !redirectResult.ok;
+    if (!failedJustNow && Date.now() - lastTry > 60 * 60 * 1000) {
+      await db.setItem('sync-redirect-at', Date.now()).catch(() => {});
+      gsync.redirectRenew(savedEmail);
+      return;
+    }
+  }
   if (ok) {
     state.sync.email = gsync.getSignedInEmail() || savedEmail || null;
     if (state.sync.email) db.setItem('sync-account', state.sync.email).catch(() => {});
@@ -2950,7 +2966,10 @@ const updateSW = registerSW({
 });
 
 /* ============================= INIT ============================= */
+let redirectResult = null;
 async function init() {
+  // Before anything renders: a token handed back by the renewal redirect.
+  try { redirectResult = gsync.consumeRedirectResult(); } catch (e) { redirectResult = null; }
   gsync.setTokenListener((record) => {
     db.setItem('sync-token', record).catch(() => {});
   });

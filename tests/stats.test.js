@@ -2,10 +2,11 @@ import { describe, it, expect } from 'vitest';
 import {
   workoutDates,
   completedTimes,
+  allSessionMs,
   streakInfo,
   lifetimeSince,
   exerciseStats,
-  formatDuration,
+  formatDuration, formatTotalDuration,
   formatCount,
   recentDayStates,
   streakTier,
@@ -478,5 +479,32 @@ describe('Top set starts fresh from topSetSince', () => {
     const s = exerciseStats(ex({ topSetSince: '2026-07-27' }), log, {}, TODAY);
     expect(s.totalReps).toBe(126);      // 89 + 25 + 12, nothing dropped
     expect(s.maxReps).toBe(89);         // Best day still sees 07-25
+  });
+});
+
+describe('total time logged', () => {
+  it('sums every completed session, and formats to hours', () => {
+    const timers = {
+      '2026-07-25': { a: { status: 'completed', elapsedMs: 1800000, runStartedAt: null } }, // 30m
+      '2026-07-26': { a: { status: 'completed', elapsedMs: 1800000, runStartedAt: null } }, // 30m
+      '2026-07-27': { a: { status: 'gaveup',    elapsedMs: 1800000, runStartedAt: null } }, // 30m
+    };
+    const s = exerciseStats(ex(), { '2026-07-25': { a: [10] } }, timers, TODAY);
+    expect(s.totalTime).toBe(5400000); // 1h30m
+  });
+
+  it('is null when no session has ever closed', () => {
+    expect(exerciseStats(ex(), {}, {}, TODAY).totalTime).toBeNull();
+  });
+});
+
+describe('formatTotalDuration', () => {
+  it('reads in hours and minutes, seconds dropped', () => {
+    expect(formatTotalDuration(5400000)).toBe('1h 30m');
+    expect(formatTotalDuration(2700000)).toBe('45m');
+    expect(formatTotalDuration(3600000)).toBe('1h');
+    expect(formatTotalDuration(3600000 * 1000)).toBe('1,000h');
+    expect(formatTotalDuration(null)).toBe('—');
+    expect(formatTotalDuration(0)).toBe('—');
   });
 });

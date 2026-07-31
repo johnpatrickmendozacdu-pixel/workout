@@ -60,7 +60,7 @@ import {
   EMOM_DEFAULT_REST_SEC,
 } from './domain/domain.js';
 import * as gsync from './sync/googleSync.js';
-import { allStats, exerciseStats, recentDayStates, streakTier, dayHistory, trajectorySeries, formatDuration, formatCount, formatClock } from './domain/stats.js';
+import { allStats, exerciseStats, recentDayStates, streakTier, dayHistory, trajectorySeries, formatDuration, formatTotalDuration, formatCount, formatClock } from './domain/stats.js';
 
 // Every number is on screen — no hunting, no typing. One tap applies it in
 // whichever direction the lever is set to.
@@ -1266,6 +1266,7 @@ function exerciseHistory(ex, s) {
     ${num('Lifetime', `${formatCount(s.totalReps)}${s.since ? ` <i>since ${escapeHtml(s.since)}</i>` : ''}`)}
     ${num('Best time', formatDuration(s.bestTime))}
     ${num('Average', formatDuration(s.avgTime))}
+    ${num('Total time', formatTotalDuration(s.totalTime))}
   </dl>`;
 
   const chart = trajectoryChartHtml(ex);

@@ -28,6 +28,16 @@ export function completedTimes(exId, timersLog) {
   return out;
 }
 
+/** Every closed session's time, finished or given up — total effort, not just wins. */
+export function allSessionMs(exId, timersLog) {
+  let ms = 0;
+  Object.keys(timersLog || {}).forEach((d) => {
+    const t = getTimer(timersLog, d, exId);
+    if (t && (t.status === 'completed' || t.status === 'gaveup') && t.elapsedMs > 0) ms += t.elapsedMs;
+  });
+  return ms;
+}
+
 /**
  * Best run of consecutive days this exercise's target was met, plus how many
  * days it was actually being tracked.
@@ -176,9 +186,15 @@ export function exerciseStats(ex, setsLog, timersLog, todayOverride, overrides) 
     if (dayTotal > maxReps) { maxReps = dayTotal; maxRepsDate = d; }
   });
 
+  // Best and Average are about performance, so they only count sessions you
+  // finished. Total time is about effort toward the long haul (1000 hours to
+  // master), so it counts every real session — a day you gave up two minutes
+  // short was still time on the mat.
   const times = completedTimes(ex.id, timersLog);
   const bestTime = times.reduce((best, t) => (best === null || t.ms < best ? t.ms : best), null);
   const avgTime = times.length ? Math.round(times.reduce((a, t) => a + t.ms, 0) / times.length) : null;
+  const totalMs = allSessionMs(ex.id, timersLog);
+  const totalTime = totalMs > 0 ? totalMs : null;
 
   const streak = streakInfo(ex, setsLog, todayOverride, overrides);
 
@@ -203,6 +219,7 @@ export function exerciseStats(ex, setsLog, timersLog, todayOverride, overrides) 
     breakDays: streak.breaks,
     bestTime,
     avgTime,
+    totalTime,
     totalWorkouts: dates.length,
     totalSets,
     lastWorkout: dates.length ? dates[dates.length - 1] : null,
@@ -339,6 +356,20 @@ export function formatDuration(ms) {
   const s = total % 60;
   const pad = (n) => String(n).padStart(2, '0');
   return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
+}
+
+/**
+ * A running total meant to grow toward hundreds of hours, so H:MM:SS would just
+ * get wider and harder to read. Hours and minutes, seconds dropped as noise at
+ * this scale: "45m", "1h 30m", "1,000h".
+ */
+export function formatTotalDuration(ms) {
+  if (ms == null || ms <= 0) return '—';
+  const totalMin = Math.round(ms / 60000);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  if (h === 0) return `${m}m`;
+  return m ? `${h.toLocaleString()}h ${m}m` : `${h.toLocaleString()}h`;
 }
 
 /** Compact thousands for big lifetime numbers: 12400 -> "12.4k". */

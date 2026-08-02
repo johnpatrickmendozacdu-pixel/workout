@@ -95,6 +95,25 @@ export function calcTotal(arr) {
   return (arr || []).reduce((a, b) => a + b, 0);
 }
 
+const LB_PER_KG = 2.20462;
+
+/** Convert a weight between kg and lb, one decimal. Same physical weight, relabelled. */
+export function convertWeight(value, from, to) {
+  const v = Number(value);
+  if (!(v > 0) || from === to) return v > 0 ? Math.round(v * 10) / 10 : value;
+  const kg = from === 'lb' ? v / LB_PER_KG : v;
+  const out = to === 'lb' ? kg * LB_PER_KG : kg;
+  return Math.round(out * 10) / 10;
+}
+
+/** "12 kg", "26.5 lb", or '' when there is no weight — pure display, never a stat input. */
+export function formatWeight(value, unit) {
+  const v = Number(value);
+  if (!(v > 0)) return '';
+  const n = Math.round(v * 10) / 10;
+  return `${n % 1 === 0 ? n.toFixed(0) : n} ${unit === 'lb' ? 'lb' : 'kg'}`;
+}
+
 /**
  * Day-level stats: how many active, targeted exercises existed on that day,
  * how many of them hit their target, and a per-exercise breakdown.

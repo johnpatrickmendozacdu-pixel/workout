@@ -10,6 +10,8 @@ import {
   isScheduledOn,
   scheduleEffectiveOn,
   scheduleLabel,
+  convertWeight,
+  formatWeight,
   isBreakDay,
   setDayOverride,
   migrateOverrides,
@@ -886,6 +888,9 @@ async function addExercise(data) {
     topSetSince: now,
     schedule: data.schedule || 'daily',
     scheduleHistory: [{ effectiveDate: now, schedule: data.schedule || 'daily' }],
+    equipment: data.equipment === 'dumbbell' ? 'dumbbell' : 'bodyweight',
+    weight: data.weight != null ? data.weight : null,
+    weightUnit: data.weightUnit === 'lb' ? 'lb' : 'kg',
     timerMode: data.timerMode === 'emom' ? 'emom' : 'normal',
     emomWorkSec: data.emomWorkSec || EMOM_DEFAULT_WORK_SEC,
     emomRestSec: data.emomRestSec != null ? data.emomRestSec : EMOM_DEFAULT_REST_SEC,
@@ -930,6 +935,9 @@ async function updateExercise(id, data) {
   ex.icon = data.icon || ex.icon;
   ex.unit = (data.unit || 'reps').trim();
   applyScheduleChange(ex, data.schedule || 'daily');
+  if (data.equipment !== undefined) ex.equipment = data.equipment === 'dumbbell' ? 'dumbbell' : 'bodyweight';
+  if (data.weight !== undefined) ex.weight = data.weight;
+  if (data.weightUnit !== undefined) ex.weightUnit = data.weightUnit === 'lb' ? 'lb' : 'kg';
   if (data.timerMode !== undefined) ex.timerMode = data.timerMode === 'emom' ? 'emom' : 'normal';
   if (data.emomWorkSec != null) ex.emomWorkSec = data.emomWorkSec;
   if (data.emomRestSec != null) ex.emomRestSec = data.emomRestSec;
@@ -1255,12 +1263,12 @@ function exerciseCard(ex, s, opts = {}) {
   const head = opts.expandable
     ? `<button class="ex-stat-head" data-action="toggle-ex-history" data-id="${ex.id}" aria-expanded="${open}">
         <span class="ex-stat-icon">${escapeHtml(ex.icon)}</span>
-        <h3>${escapeHtml(ex.name)}</h3>
+        <h3>${escapeHtml(ex.name)}${weightTag(ex)}</h3>
         ${action}
       </button>`
     : `<header class="ex-stat-head static">
         <span class="ex-stat-icon">${escapeHtml(ex.icon)}</span>
-        <h3>${escapeHtml(ex.name)}</h3>
+        <h3>${escapeHtml(ex.name)}${weightTag(ex)}</h3>
         ${action}
       </header>`;
 
@@ -1685,7 +1693,7 @@ function viewPlan() {
         <button class="plan-row-open" data-action="open-edit-exercise" data-id="${ex.id}" aria-label="Edit ${escapeHtml(ex.name)}">
         <div class="ex-icon-badge">${escapeHtml(ex.icon)}</div>
         <div class="plan-row-body">
-          <div class="plan-row-name">${escapeHtml(ex.name)}</div>
+          <div class="plan-row-name">${escapeHtml(ex.name)}${weightTag(ex)}</div>
           <div class="plan-row-sub">${targetSub}</div>
           <div class="plan-row-schedule">${escapeHtml(scheduleLabel(ex))}</div>
         </div>
@@ -2330,6 +2338,8 @@ function captureExerciseDraft() {
   set('work', val('f-emom-work'));
   set('rest', val('f-emom-rest'));
   if (picked) d.icon = picked.dataset.emoji;
+  const wv = val('f-weight-val');
+  if (wv !== undefined) state.modal.weight = wv;
   state.modal.draft = d;
 }
 
@@ -2354,6 +2364,19 @@ function modalExerciseForm(exId) {
   const isEmom = state.modal ? state.modal.tmode === 'emom' : false;
   const workSec = (ex && ex.emomWorkSec) || EMOM_DEFAULT_WORK_SEC;
   const restSec = (ex && ex.emomRestSec != null) ? ex.emomRestSec : EMOM_DEFAULT_REST_SEC;
+  // Equipment + weight are drafts too, so switching to dumbbell reveals the
+  // weight fields and flipping kg/lb converts the number, all without saving.
+  if (state.modal && state.modal.equip === undefined) {
+    state.modal.equip = (ex && ex.equipment === 'dumbbell') ? 'dumbbell' : 'bodyweight';
+  }
+  if (state.modal && state.modal.wunit === undefined) {
+    state.modal.wunit = (ex && ex.weightUnit === 'lb') ? 'lb' : 'kg';
+  }
+  const isDumbbell = state.modal ? state.modal.equip === 'dumbbell' : false;
+  const wUnit = state.modal ? state.modal.wunit : 'kg';
+  const wVal = (state.modal && state.modal.weight !== undefined)
+    ? state.modal.weight
+    : (ex && ex.weight != null ? ex.weight : '');
   return `<div class="modal-backdrop" data-action="backdrop">
     <div class="modal-sheet" data-stop>
       <div class="sheet-handle"></div>
@@ -2375,6 +2398,21 @@ function modalExerciseForm(exId) {
         <label>Unit</label>
         <input id="f-unit" type="text" list="unit-options" placeholder="reps" value="${escapeHtml(draft.unit !== undefined ? draft.unit : (ex ? ex.unit : 'reps'))}" autocomplete="off">
         <datalist id="unit-options"><option value="reps"><option value="kg"><option value="lb"><option value="sec"><option value="min"><option value="km"><option value="mi"></datalist>
+      </div>
+      <div class="field">
+        <label>Equipment</label>
+        <div class="sched-modes">
+          <button type="button" class="sched-mode ${isDumbbell ? '' : 'on'}" data-action="equip-mode" data-equip="bodyweight">Bodyweight</button>
+          <button type="button" class="sched-mode ${isDumbbell ? 'on' : ''}" data-action="equip-mode" data-equip="dumbbell">Dumbbell</button>
+        </div>
+        <div class="weight-fields ${isDumbbell ? '' : 'disabled'}">
+          <input id="f-weight-val" type="number" min="0" step="any" inputmode="decimal" placeholder="Weight" value="${escapeHtml(wVal)}">
+          <div class="wunit-toggle">
+            <button type="button" class="wunit ${wUnit === 'kg' ? 'on' : ''}" data-action="wunit" data-unit="kg">kg</button>
+            <button type="button" class="wunit ${wUnit === 'lb' ? 'on' : ''}" data-action="wunit" data-unit="lb">lb</button>
+          </div>
+        </div>
+        <div class="hint">A label for this exercise. It never changes your reps, targets or streak.</div>
       </div>
       <div class="field">
         <label>Schedule</label>
@@ -2439,6 +2477,13 @@ function modalConfirmDeleteExercise(m) {
       </div>
     </div>
   </div>`;
+}
+
+/** Quiet dumbbell-weight suffix after an exercise name; nothing for bodyweight. */
+function weightTag(ex) {
+  if (!ex || ex.equipment !== 'dumbbell') return '';
+  const w = formatWeight(ex.weight, ex.weightUnit);
+  return w ? ` <span class="weight-tag">· ${escapeHtml(w)}</span>` : '';
 }
 
 const BMI_LABEL = { underweight: 'Underweight', normal: 'Normal', overweight: 'Overweight', obese: 'Obese' };
@@ -2750,8 +2795,14 @@ document.addEventListener('click', async (e) => {
       const emomWorkSec = rawWork > 0 ? Math.min(3600, rawWork) : EMOM_DEFAULT_WORK_SEC;
       const emomRestSec = rawRest >= 0 ? Math.min(3600, rawRest) : EMOM_DEFAULT_REST_SEC;
       const timer = { timerMode, emomWorkSec, emomRestSec };
-      if (id) await updateExercise(id, { name, unit, target, icon, schedule, ...timer });
-      else await addExercise({ name, unit, target, icon, schedule, ...timer });
+      const equipment = state.modal && state.modal.equip === 'dumbbell' ? 'dumbbell' : 'bodyweight';
+      const weightUnit = state.modal && state.modal.wunit === 'lb' ? 'lb' : 'kg';
+      const wRaw = document.getElementById('f-weight-val');
+      const wParsed = wRaw && wRaw.value !== '' ? Math.max(0, parseFloat(wRaw.value)) : null;
+      const weight = equipment === 'dumbbell' && wParsed > 0 ? Math.round(wParsed * 10) / 10 : null;
+      const equip = { equipment, weight, weightUnit };
+      if (id) await updateExercise(id, { name, unit, target, icon, schedule, ...timer, ...equip });
+      else await addExercise({ name, unit, target, icon, schedule, ...timer, ...equip });
       closeModal(); rerender();
       break;
     }
@@ -2776,6 +2827,22 @@ document.addEventListener('click', async (e) => {
       captureExerciseDraft();
       if (state.modal) { state.modal.tmode = btn.dataset.mode; renderModal(); }
       break;
+    case 'equip-mode':
+      captureExerciseDraft();
+      if (state.modal) { state.modal.equip = btn.dataset.equip; renderModal(); }
+      break;
+    case 'wunit': {
+      captureExerciseDraft();
+      if (!state.modal) break;
+      const to = btn.dataset.unit;
+      const from = state.modal.wunit || 'kg';
+      if (to !== from && state.modal.weight !== '' && state.modal.weight != null) {
+        state.modal.weight = convertWeight(state.modal.weight, from, to);
+      }
+      state.modal.wunit = to;
+      renderModal();
+      break;
+    }
     case 'sched-daily':
       captureExerciseDraft();
       if (state.modal) { state.modal.sched = 'daily'; renderModal(); }

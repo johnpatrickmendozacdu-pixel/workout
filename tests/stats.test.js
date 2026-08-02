@@ -508,3 +508,28 @@ describe('formatTotalDuration', () => {
     expect(formatTotalDuration(0)).toBe('—');
   });
 });
+
+describe('changing target stays local (boundary C)', () => {
+  // Trained 30 on 07-26 and 07-27, target was 20 then raised to 40 today.
+  const log = { '2026-07-26': { a: [30] }, '2026-07-27': { a: [30] } };
+  const raised = ex({
+    targetHistory: [
+      { effectiveDate: '2026-07-20', target: 20 },
+      { effectiveDate: '2026-07-28', target: 40 }, // raised today (TODAY = 07-28)
+    ],
+  });
+
+  it('does not touch top set', () => {
+    expect(exerciseStats(raised, log, {}, TODAY).topSet).toBe(30);
+  });
+
+  it('does not touch lifetime reps', () => {
+    expect(exerciseStats(raised, log, {}, TODAY).totalReps).toBe(60);
+  });
+
+  it('leaves past days judged by the target that applied then, not the new one', () => {
+    // 07-27 had target 20 and 30 reps → still a hit, unaffected by today's 40
+    const s = streakInfo(raised, log, TODAY);
+    expect(s.best).toBeGreaterThanOrEqual(2);
+  });
+});

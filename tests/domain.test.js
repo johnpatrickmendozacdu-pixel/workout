@@ -30,6 +30,8 @@ import {
   bumpTargetIfPR,
   setTargetForDay,
   isScheduledOn,
+  convertWeight,
+  formatWeight,
   scheduleEffectiveOn,
   isBreakDay,
   setDayOverride,
@@ -1542,5 +1544,23 @@ describe('scheduleEffectiveOn picks the schedule in effect', () => {
   });
   it('falls back to the flat schedule with no history', () => {
     expect(scheduleEffectiveOn({ schedule: 'daily' }, '2026-07-25')).toBe('daily');
+  });
+});
+
+describe('weight conversion and formatting (equipment B)', () => {
+  it('converts kg to lb and back, one decimal, preserving the weight', () => {
+    expect(convertWeight(12, 'kg', 'lb')).toBe(26.5);
+    expect(convertWeight(26.5, 'lb', 'kg')).toBe(12);
+  });
+  it('is a no-op when units match', () => {
+    expect(convertWeight(20, 'kg', 'kg')).toBe(20);
+  });
+  it('formats a whole number without a decimal, keeps the unit', () => {
+    expect(formatWeight(12, 'kg')).toBe('12 kg');
+    expect(formatWeight(26.5, 'lb')).toBe('26.5 lb');
+  });
+  it('shows nothing without a weight', () => {
+    expect(formatWeight(null, 'kg')).toBe('');
+    expect(formatWeight(0, 'kg')).toBe('');
   });
 });

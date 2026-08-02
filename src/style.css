@@ -1395,3 +1395,13 @@
 .habit-mark{flex:0 0 auto;font-size:15px;line-height:1;color:var(--text-faint);}
 .habit-mark.hit{color:var(--accent);}
 .habit-mark.missed{color:var(--danger);font-weight:700;}
+
+/* ---- Equipment / weight ---- */
+.weight-fields{display:flex;gap:8px;align-items:stretch;margin-top:8px;}
+.weight-fields.disabled{opacity:.4;pointer-events:none;}
+.weight-fields #f-weight-val{flex:1;min-height:44px;}
+.wunit-toggle{display:flex;flex:0 0 auto;border:1px solid var(--border);}
+.wunit{min-width:44px;min-height:44px;background:transparent;border:0;color:var(--text-dim);
+  font-family:var(--font-mono);font-size:12px;text-transform:uppercase;}
+.wunit.on{background:var(--accent);color:var(--accent-ink);}
+.weight-tag{font-family:var(--font-mono);font-size:.72em;color:var(--text-faint);font-weight:400;letter-spacing:.02em;}

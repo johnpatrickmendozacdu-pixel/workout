@@ -93,6 +93,7 @@ const state = {
   editingTopSet: null,
   editingDayTotal: null,
   openExercise: null,
+  openGroups: {},   // { [`${view}:${key}`]: true } — which schedule groups are expanded
   dayLimits: {},
   repMode: 'add',   // 'add' | 'sub' — the pad lever
   version: { local: typeof __BUILD_ID__ === 'string' ? __BUILD_ID__ : 'dev', status: 'unknown' },
@@ -1690,8 +1691,9 @@ function viewPlan() {
     // so changing an exercise's days moves it to its new group at once.
     const groups = groupBySchedule(active, todayISO(), scheduleEffectiveOn);
     groups.forEach((g) => {
-      const label = scheduleLabel({ schedule: g.days });
-      html += `<div class="section-label">${escapeHtml(label)}</div>`;
+      const n = g.exercises.length;
+      html += groupHeaderHtml('plan', g, groups.length, `${n} exercise${n > 1 ? 's' : ''}`);
+      if (!groupOpen('plan', g.key, groups.length)) return;
       g.exercises.forEach((ex, i) => {
         const target = getEffectiveTarget(ex, todayISO());
         const targetSub = target ? `${target} ${escapeHtml(ex.unit)}/day` : `no target · ${escapeHtml(ex.unit)}`;
@@ -1774,12 +1776,17 @@ function viewProgress() {
   const groups = groupBySchedule(activeEx, todayISO(), scheduleEffectiveOn);
   let html = habit;
   groups.forEach((g) => {
-    const label = scheduleLabel({ schedule: g.days });
-    html += `<div class="group-head"><span class="section-label">${escapeHtml(label)}</span></div>`;
+    const n = g.exercises.length;
+    // While tucked in, the header carries the combo total (or the count) so a
+    // collapsed group still tells you something at a glance.
+    const combo = n > 1 ? comboTimes(g.exercises, state.timersLog) : null;
+    const summary = combo && combo.days ? `${formatTotalDuration(combo.total)} total` : `${n} exercise${n > 1 ? 's' : ''}`;
+    html += groupHeaderHtml('progress', g, groups.length, summary);
+    if (!groupOpen('progress', g.key, groups.length)) return;
     html += comboLineHtml(g.exercises);
     html += g.exercises.map((ex) => exerciseCard(ex, stats[ex.id], { expandable: true })).join('');
   });
-  html += tipHtml('progress-open', 'Tap an exercise for its history. Combo time is how long a whole day’s group takes together.');
+  html += tipHtml('progress-open', 'Tap a group to open it. Combo time is how long a whole day’s group takes together.');
   return html;
 }
 
@@ -2503,6 +2510,26 @@ function modalConfirmDeleteExercise(m) {
   </div>`;
 }
 
+/**
+ * Whether a schedule group is expanded. A lone group is open by default — there
+ * is nothing to tuck away — otherwise groups start collapsed and open on tap.
+ */
+function groupOpen(view, key, groupCount) {
+  const k = `${view}:${key}`;
+  return k in state.openGroups ? state.openGroups[k] : groupCount === 1;
+}
+
+/** Collapsible group header: label, a summary while tucked in, and a chevron. */
+function groupHeaderHtml(view, g, groupCount, summary) {
+  const open = groupOpen(view, g.key, groupCount);
+  const label = scheduleLabel({ schedule: g.days });
+  return `<button class="group-head" data-action="toggle-group" data-view="${view}" data-key="${escapeHtml(g.key)}" data-open="${open}" aria-expanded="${open}">
+      <span class="group-head-label">${escapeHtml(label)}</span>
+      <span class="group-head-meta">${open ? '' : escapeHtml(summary)}</span>
+      <span class="group-chev ${open ? 'open' : ''}">${ICONS.chevron}</span>
+    </button>`;
+}
+
 /** Quiet dumbbell-weight suffix after an exercise name; nothing for bodyweight. */
 function weightTag(ex) {
   if (!ex || ex.equipment !== 'dumbbell') return '';
@@ -2835,6 +2862,14 @@ document.addEventListener('click', async (e) => {
     case 'restore': await setArchived(btn.dataset.id, false); rerender(); break;
     case 'reorder': await reorder(btn.dataset.id, parseInt(btn.dataset.dir, 10)); rerender(); break;
     case 'toggle-archived': state.showArchived = !state.showArchived; renderView(); break;
+    case 'toggle-group': {
+      // Flip whatever is actually on screen — the rendered state carries the
+      // default (a lone group starts open), so the first tap never no-ops.
+      const k = `${btn.dataset.view}:${btn.dataset.key}`;
+      state.openGroups[k] = !(btn.dataset.open === 'true');
+      renderView();
+      break;
+    }
 
     case 'open-logger': state.modal = { type: 'logger', exId: btn.dataset.id }; renderModal(); break;
     case 'test-sound': {

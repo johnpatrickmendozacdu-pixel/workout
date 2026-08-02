@@ -1405,3 +1405,9 @@
   font-family:var(--font-mono);font-size:12px;text-transform:uppercase;}
 .wunit.on{background:var(--accent);color:var(--accent-ink);}
 .weight-tag{font-family:var(--font-mono);font-size:.72em;color:var(--text-faint);font-weight:400;letter-spacing:.02em;}
+
+/* ---- Schedule groups (Plan + Progress) ---- */
+.group-head{display:flex;align-items:center;justify-content:space-between;margin-top:18px;}
+.group-head .section-label{margin:0;}
+.combo-line{font-family:var(--font-mono);font-size:11.5px;color:var(--text-faint);
+  letter-spacing:.02em;margin:2px 0 10px;}

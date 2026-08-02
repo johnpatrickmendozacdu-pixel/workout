@@ -63,7 +63,7 @@ import {
   EMOM_DEFAULT_REST_SEC,
 } from './domain/domain.js';
 import * as gsync from './sync/googleSync.js';
-import { allStats, exerciseStats, recentDayStates, streakTier, dayHistory, trajectorySeries, formatDuration, formatTotalDuration, formatCount, formatClock } from './domain/stats.js';
+import { allStats, exerciseStats, recentDayStates, streakTier, dayHistory, trajectorySeries, formatDuration, formatTotalDuration, formatCount, formatClock, groupBySchedule, comboTimes } from './domain/stats.js';
 
 // Every number is on screen — no hunting, no typing. One tap applies it in
 // whichever direction the lever is set to.
@@ -1685,27 +1685,34 @@ function viewPlan() {
   if (active.length === 0) {
     html += `<div class="empty-card"><div class="glyph">➕</div><h3>Build your plan</h3><p>Add exercises with an optional daily target. Untargeted exercises still track totals, just don't affect your streak.</p><button class="primary-btn" data-action="open-add-exercise">Add an exercise</button></div>`;
   } else {
-    html += `<div class="section-label">Active</div>`;
-    active.forEach((ex, i) => {
-      const target = getEffectiveTarget(ex, todayISO());
-      const targetSub = target ? `${target} ${escapeHtml(ex.unit)}/day` : `no target · ${escapeHtml(ex.unit)}`;
-      html += `<div class="plan-row">
-        <button class="plan-row-open" data-action="open-edit-exercise" data-id="${ex.id}" aria-label="Edit ${escapeHtml(ex.name)}">
-        <div class="ex-icon-badge">${escapeHtml(ex.icon)}</div>
-        <div class="plan-row-body">
-          <div class="plan-row-name">${escapeHtml(ex.name)}${weightTag(ex)}</div>
-          <div class="plan-row-sub">${targetSub}</div>
-          <div class="plan-row-schedule">${escapeHtml(scheduleLabel(ex))}</div>
-        </div>
-        </button>
-        <div class="plan-row-actions">
-          <button class="mini-btn" data-action="reorder" data-dir="-1" data-id="${ex.id}" ${i === 0 ? 'disabled' : ''} aria-label="Move up">${ICONS.up}</button>
-          <button class="mini-btn" data-action="reorder" data-dir="1" data-id="${ex.id}" ${i === active.length - 1 ? 'disabled' : ''} aria-label="Move down">${ICONS.down}</button>
-          <button class="mini-btn" data-action="archive" data-id="${ex.id}" aria-label="Archive">${ICONS.archive}</button>
-          <button class="mini-btn danger" data-action="delete-exercise" data-id="${ex.id}" data-name="${escapeHtml(ex.name)}" aria-label="Delete permanently">${ICONS.trash}</button>
-        </div>
-      </div>`;
+    // Grouped by the days they share, so a plan with several schedules reads as
+    // a few short lists instead of one long one. Groups are derived each render,
+    // so changing an exercise's days moves it to its new group at once.
+    const groups = groupBySchedule(active, todayISO(), scheduleEffectiveOn);
+    groups.forEach((g) => {
+      const label = scheduleLabel({ schedule: g.days });
+      html += `<div class="section-label">${escapeHtml(label)}</div>`;
+      g.exercises.forEach((ex, i) => {
+        const target = getEffectiveTarget(ex, todayISO());
+        const targetSub = target ? `${target} ${escapeHtml(ex.unit)}/day` : `no target · ${escapeHtml(ex.unit)}`;
+        html += `<div class="plan-row">
+          <button class="plan-row-open" data-action="open-edit-exercise" data-id="${ex.id}" aria-label="Edit ${escapeHtml(ex.name)}">
+          <div class="ex-icon-badge">${escapeHtml(ex.icon)}</div>
+          <div class="plan-row-body">
+            <div class="plan-row-name">${escapeHtml(ex.name)}${weightTag(ex)}</div>
+            <div class="plan-row-sub">${targetSub}</div>
+          </div>
+          </button>
+          <div class="plan-row-actions">
+            <button class="mini-btn" data-action="reorder" data-dir="-1" data-id="${ex.id}" ${i === 0 ? 'disabled' : ''} aria-label="Move up">${ICONS.up}</button>
+            <button class="mini-btn" data-action="reorder" data-dir="1" data-id="${ex.id}" ${i === g.exercises.length - 1 ? 'disabled' : ''} aria-label="Move down">${ICONS.down}</button>
+            <button class="mini-btn" data-action="archive" data-id="${ex.id}" aria-label="Archive">${ICONS.archive}</button>
+            <button class="mini-btn danger" data-action="delete-exercise" data-id="${ex.id}" data-name="${escapeHtml(ex.name)}" aria-label="Delete permanently">${ICONS.trash}</button>
+          </div>
+        </div>`;
+      });
     });
+    html += tipHtml('plan-groups', 'Exercises on the same days are grouped. Change an exercise’s days and it moves to its new group.');
   }
   if (archived.length > 0) {
     html += `<button class="archived-toggle" data-action="toggle-archived">${state.showArchived ? ICONS.down : ICONS.chevron} Archived (${archived.length})</button>`;
@@ -1748,15 +1755,32 @@ function renderDayTargetPart(dt, dateStr, isToday) {
   return `<span class="day-sep">/</span><button class="day-num target" data-editable-day-target data-id="${dt.ex.id}" data-date="${dateStr}" aria-label="Edit target for this day">${dt.hasTarget ? dt.target : '—'}</button>`;
 }
 
+/** The combo-time line on a Progress group header, or '' before the first full day. */
+function comboLineHtml(groupExercises) {
+  if (groupExercises.length < 2) return ''; // a single exercise already shows its own Total time
+  const c = comboTimes(groupExercises, state.timersLog);
+  if (!c.days) return '';
+  return `<div class="combo-line">Combo · total ${formatTotalDuration(c.total)} · avg ${formatDuration(c.avg)} · best ${formatDuration(c.best)}</div>`;
+}
+
 function viewProgress() {
   const habit = weighInBlockHtml();
   const activeEx = state.exercises.filter((e) => e.active && !e.archived).sort((a, b) => a.order - b.order);
   // The habit is not an exercise, so an empty workout plan must not hide it.
   if (!activeEx.length) return habit || `<p class="rail-empty">Add an exercise to start a streak.</p>`;
   const stats = allStats(activeEx, state.setsLog, state.timersLog, null, state.streakOverrides);
-  return habit
-    + activeEx.map((ex) => exerciseCard(ex, stats[ex.id], { expandable: true })).join('')
-    + tipHtml('progress-open', 'Tap an exercise for its history and numbers.');
+  // Grouped by shared days, same as Plan, so Progress is segregated per combo
+  // and a card moves group the moment its schedule changes.
+  const groups = groupBySchedule(activeEx, todayISO(), scheduleEffectiveOn);
+  let html = habit;
+  groups.forEach((g) => {
+    const label = scheduleLabel({ schedule: g.days });
+    html += `<div class="group-head"><span class="section-label">${escapeHtml(label)}</span></div>`;
+    html += comboLineHtml(g.exercises);
+    html += g.exercises.map((ex) => exerciseCard(ex, stats[ex.id], { expandable: true })).join('');
+  });
+  html += tipHtml('progress-open', 'Tap an exercise for its history. Combo time is how long a whole day’s group takes together.');
+  return html;
 }
 
 /* ============================= MODALS ============================= */

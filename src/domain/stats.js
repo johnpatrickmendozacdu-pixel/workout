@@ -19,6 +19,34 @@ export function workoutDates(exId, setsLog) {
 
 /** Elapsed times (ms) of finished sessions, in date order. Only 'completed'
  *  counts — a session someone gave up on isn't a time. */
+/**
+ * Group exercises by the schedule in effect today, so the days they share put
+ * them under one heading. Derived every render and never stored, so an exercise
+ * moves to its new group the instant its days change. Ordered so daily comes
+ * first, then by earliest weekday, then larger groups before smaller.
+ */
+export function groupBySchedule(exercises, dateStr, scheduleEffectiveOn) {
+  const groups = new Map();
+  for (const ex of exercises) {
+    const sched = scheduleEffectiveOn(ex, dateStr);
+    const isDaily = !sched || sched === 'daily' || (Array.isArray(sched) && (sched.length === 0 || sched.length === 7));
+    const days = isDaily ? 'daily' : sched.slice().sort((a, b) => a - b);
+    const key = isDaily ? 'daily' : days.join(',');
+    if (!groups.has(key)) groups.set(key, { key, days, exercises: [] });
+    groups.get(key).exercises.push(ex);
+  }
+  const earliest = (days) => {
+    if (days === 'daily') return -1; // daily sorts first
+    const ordered = [1, 2, 3, 4, 5, 6, 0].filter((d) => days.includes(d));
+    return ordered.length ? [1, 2, 3, 4, 5, 6, 0].indexOf(ordered[0]) : 7;
+  };
+  return [...groups.values()].sort((a, b) => {
+    const ea = earliest(a.days), eb = earliest(b.days);
+    if (ea !== eb) return ea - eb;
+    return b.exercises.length - a.exercises.length;
+  });
+}
+
 export function completedTimes(exId, timersLog) {
   const out = [];
   Object.keys(timersLog).sort().forEach((d) => {
@@ -26,6 +54,34 @@ export function completedTimes(exId, timersLog) {
     if (t && t.status === 'completed' && t.elapsedMs > 0) out.push({ date: d, ms: t.elapsedMs });
   });
   return out;
+}
+
+/**
+ * Combo time for a group of exercises that share a schedule: how long the whole
+ * day's group takes together. A combo day is a date on which EVERY exercise in
+ * the group had a closed session — a partial day is not the combo — and its
+ * time is the sum of those sessions. Returns total across all combo days, plus
+ * average and best (fastest) combo day. A group of one degenerates to that
+ * exercise's own totals, which is correct.
+ */
+export function comboTimes(groupExercises, timersLog) {
+  if (!groupExercises || !groupExercises.length) return { total: 0, avg: null, best: null, days: 0 };
+  const dates = new Set();
+  Object.keys(timersLog || {}).forEach((d) => dates.add(d));
+  const dayMs = [];
+  for (const d of dates) {
+    let sum = 0;
+    let allDone = true;
+    for (const ex of groupExercises) {
+      const t = getTimer(timersLog, d, ex.id);
+      if (t && (t.status === 'completed' || t.status === 'gaveup') && t.elapsedMs > 0) sum += t.elapsedMs;
+      else { allDone = false; break; }
+    }
+    if (allDone && sum > 0) dayMs.push(sum);
+  }
+  if (!dayMs.length) return { total: 0, avg: null, best: null, days: 0 };
+  const total = dayMs.reduce((a, b) => a + b, 0);
+  return { total, avg: Math.round(total / dayMs.length), best: Math.min(...dayMs), days: dayMs.length };
 }
 
 /** Every closed session's time, finished or given up — total effort, not just wins. */

@@ -3,6 +3,8 @@ import {
   workoutDates,
   completedTimes,
   allSessionMs,
+  groupBySchedule,
+  comboTimes,
   streakInfo,
   lifetimeSince,
   exerciseStats,
@@ -531,5 +533,60 @@ describe('changing target stays local (boundary C)', () => {
     // 07-27 had target 20 and 30 reps → still a hit, unaffected by today's 40
     const s = streakInfo(raised, log, TODAY);
     expect(s.best).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe('groupBySchedule', () => {
+  const sched = (e) => e.schedule; // simple stand-in for scheduleEffectiveOn
+  it('puts exercises that share days under one group', () => {
+    const list = [
+      { id: 'a', schedule: [1, 4] }, { id: 'b', schedule: [1, 4] }, { id: 'c', schedule: 'daily' },
+    ];
+    const g = groupBySchedule(list, TODAY, sched);
+    expect(g.length).toBe(2);
+    const monThu = g.find((x) => x.key === '1,4');
+    expect(monThu.exercises.map((e) => e.id)).toEqual(['a', 'b']);
+  });
+  it('orders daily first, then by earliest weekday', () => {
+    const list = [
+      { id: 'w', schedule: [6, 0] }, { id: 'x', schedule: [2] }, { id: 'y', schedule: 'daily' },
+    ];
+    expect(groupBySchedule(list, TODAY, sched).map((x) => x.key)).toEqual(['daily', '2', '0,6']);
+  });
+  it('treats 7 days and empty as daily', () => {
+    const list = [{ id: 'a', schedule: [0,1,2,3,4,5,6] }, { id: 'b', schedule: 'daily' }];
+    expect(groupBySchedule(list, TODAY, sched).length).toBe(1);
+  });
+});
+
+describe('comboTimes', () => {
+  const grp = [{ id: 'a' }, { id: 'b' }];
+  it('sums a day only when every exercise was done', () => {
+    const timers = {
+      '2026-07-26': { a: { status: 'completed', elapsedMs: 600000 }, b: { status: 'completed', elapsedMs: 600000 } }, // 20m combo
+      '2026-07-27': { a: { status: 'completed', elapsedMs: 600000 } }, // b missing → not a combo day
+    };
+    const c = comboTimes(grp, timers);
+    expect(c.days).toBe(1);
+    expect(c.total).toBe(1200000);
+    expect(c.best).toBe(1200000);
+  });
+  it('averages and finds the fastest combo day', () => {
+    const timers = {
+      '2026-07-26': { a: { status: 'completed', elapsedMs: 600000 }, b: { status: 'completed', elapsedMs: 600000 } }, // 20m
+      '2026-07-27': { a: { status: 'completed', elapsedMs: 900000 }, b: { status: 'gaveup', elapsedMs: 300000 } },    // 20m
+      '2026-07-28': { a: { status: 'completed', elapsedMs: 300000 }, b: { status: 'completed', elapsedMs: 300000 } }, // 10m
+    };
+    const c = comboTimes(grp, timers);
+    expect(c.days).toBe(3);
+    expect(c.best).toBe(600000);
+    expect(c.avg).toBe(Math.round((1200000 + 1200000 + 600000) / 3));
+  });
+  it('a group of one is just that exercise’s sessions', () => {
+    const timers = { '2026-07-26': { a: { status: 'completed', elapsedMs: 600000 } } };
+    expect(comboTimes([{ id: 'a' }], timers).total).toBe(600000);
+  });
+  it('no complete combo day yields nulls', () => {
+    expect(comboTimes(grp, {}).avg).toBeNull();
   });
 });

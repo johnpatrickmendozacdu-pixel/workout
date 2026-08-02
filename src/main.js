@@ -8,6 +8,7 @@ import {
   uid,
   getEffectiveTarget,
   isScheduledOn,
+  scheduleEffectiveOn,
   scheduleLabel,
   isBreakDay,
   setDayOverride,
@@ -193,6 +194,15 @@ async function loadAll() {
     if (e.topSetSince === undefined) {
       e.topSetSince = today;
       if (e.topSetOverride !== undefined) delete e.topSetOverride;
+      migrated = true;
+    }
+    // Seed schedule history so past days keep the schedule they had. Anchored at
+    // the exercise's start with its current schedule, so this preserves today's
+    // computation exactly — no streak shifts on upgrade. The recovery of days a
+    // schedule change already hid comes from calcDayStats counting trained days,
+    // not from this.
+    if (e.scheduleHistory === undefined) {
+      e.scheduleHistory = [{ effectiveDate: e.createdDate || today, schedule: e.schedule || 'daily' }];
       migrated = true;
     }
   });
@@ -875,6 +885,7 @@ async function addExercise(data) {
     createdDate: now,
     topSetSince: now,
     schedule: data.schedule || 'daily',
+    scheduleHistory: [{ effectiveDate: now, schedule: data.schedule || 'daily' }],
     timerMode: data.timerMode === 'emom' ? 'emom' : 'normal',
     emomWorkSec: data.emomWorkSec || EMOM_DEFAULT_WORK_SEC,
     emomRestSec: data.emomRestSec != null ? data.emomRestSec : EMOM_DEFAULT_REST_SEC,
@@ -892,13 +903,33 @@ function applyTargetChange(ex, newTarget) {
     else ex.targetHistory.push({ effectiveDate: today, target: newTarget });
   }
 }
+
+/**
+ * A schedule change takes effect today and leaves every past day on the
+ * schedule it already had — the same append-don't-overwrite rule as targets,
+ * so changing your days can never move a streak or hide a trained day.
+ */
+function applyScheduleChange(ex, newSchedule) {
+  const today = todayISO();
+  const sched = newSchedule || 'daily';
+  if (!Array.isArray(ex.scheduleHistory)) {
+    ex.scheduleHistory = [{ effectiveDate: ex.createdDate || today, schedule: ex.schedule || 'daily' }];
+  }
+  const sameAsNow = JSON.stringify(scheduleEffectiveOn(ex, today)) === JSON.stringify(sched);
+  if (!sameAsNow) {
+    const todEntry = ex.scheduleHistory.find((h) => h.effectiveDate === today);
+    if (todEntry) todEntry.schedule = sched;
+    else ex.scheduleHistory.push({ effectiveDate: today, schedule: sched });
+  }
+  ex.schedule = sched; // mirror of the current value, for the editor and labels
+}
 async function updateExercise(id, data) {
   const ex = state.exercises.find((e) => e.id === id);
   if (!ex) return;
   ex.name = data.name.trim();
   ex.icon = data.icon || ex.icon;
   ex.unit = (data.unit || 'reps').trim();
-  ex.schedule = data.schedule || 'daily';
+  applyScheduleChange(ex, data.schedule || 'daily');
   if (data.timerMode !== undefined) ex.timerMode = data.timerMode === 'emom' ? 'emom' : 'normal';
   if (data.emomWorkSec != null) ex.emomWorkSec = data.emomWorkSec;
   if (data.emomRestSec != null) ex.emomRestSec = data.emomRestSec;

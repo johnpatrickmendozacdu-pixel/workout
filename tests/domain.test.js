@@ -30,6 +30,7 @@ import {
   bumpTargetIfPR,
   setTargetForDay,
   isScheduledOn,
+  scheduleEffectiveOn,
   isBreakDay,
   setDayOverride,
   migrateOverrides,
@@ -1481,5 +1482,65 @@ describe('mergeSyncSnapshots — deletes stay deleted', () => {
     const remote = snap(100, { exercises: [{ id: 'push', name: 'Push Ups' }] });
     const merged = mergeSyncSnapshots(local, remote);
     expect(merged.exercises.map((e) => e.id)).toEqual(['squat']);
+  });
+});
+
+describe('schedule change never rewrites history (bug A)', () => {
+  // Trained every day Mon 20th – Fri 24th, target 10, all met.
+  const log = {};
+  for (let d = 20; d <= 24; d++) log[`2026-07-${d}`] = { push: [10] };
+  const daily = {
+    id: 'push', name: 'Push', active: true, createdDate: '2026-07-20',
+    targetHistory: [{ effectiveDate: '2026-07-20', target: 10 }],
+    schedule: 'daily',
+    scheduleHistory: [{ effectiveDate: '2026-07-20', schedule: 'daily' }],
+  };
+
+  it('a day you trained still counts after switching to selected days only', () => {
+    // Switch to Mon/Thu today; the daily history must be untouched.
+    const switched = { ...daily, schedule: [1, 4],
+      scheduleHistory: [
+        { effectiveDate: '2026-07-20', schedule: 'daily' },
+        { effectiveDate: '2026-07-27', schedule: [1, 4] },
+      ] };
+    const before = calcStreakInfo([daily], log, '2026-07-24');
+    const after = calcStreakInfo([switched], log, '2026-07-24');
+    expect(after.longest).toBe(before.longest); // streak identical
+    expect(after.longest).toBe(5);           // all five trained days kept
+  });
+
+  it('a trained but unscheduled day is still in that day’s stats', () => {
+    // Wed 22nd is not in a Mon/Thu schedule, but it was trained.
+    const monThu = { ...daily, schedule: [1, 4],
+      scheduleHistory: [{ effectiveDate: '2026-07-20', schedule: [1, 4] }] };
+    const stats = calcDayStats([monThu], log, '2026-07-22');
+    expect(stats.countsForStreak).toBe(true);
+    expect(stats.allComplete).toBe(true);
+  });
+
+  it('an empty unscheduled day stays a neutral rest day', () => {
+    const monThu = { ...daily, schedule: [1, 4],
+      scheduleHistory: [{ effectiveDate: '2026-07-20', schedule: [1, 4] }] };
+    const stats = calcDayStats([monThu], {}, '2026-07-22'); // Wed, no reps
+    expect(stats.countsForStreak).toBe(false);
+  });
+});
+
+describe('scheduleEffectiveOn picks the schedule in effect', () => {
+  const ex = {
+    schedule: [1, 4],
+    scheduleHistory: [
+      { effectiveDate: '2026-07-20', schedule: 'daily' },
+      { effectiveDate: '2026-07-27', schedule: [1, 4] },
+    ],
+  };
+  it('returns the past schedule for a past date', () => {
+    expect(scheduleEffectiveOn(ex, '2026-07-25')).toBe('daily');
+  });
+  it('returns the new schedule from its effective date on', () => {
+    expect(scheduleEffectiveOn(ex, '2026-07-28')).toEqual([1, 4]);
+  });
+  it('falls back to the flat schedule with no history', () => {
+    expect(scheduleEffectiveOn({ schedule: 'daily' }, '2026-07-25')).toBe('daily');
   });
 });

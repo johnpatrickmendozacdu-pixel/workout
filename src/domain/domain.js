@@ -42,8 +42,26 @@ export function clampNum(n) {
  * 'daily' (or absent, for everything created before scheduling existed) or an
  * array of weekday numbers, 0=Sunday .. 6=Saturday.
  */
+/**
+ * The schedule that was in effect on a given date. Mirrors getEffectiveTarget:
+ * a schedule change appends a dated entry, so past days keep the schedule they
+ * had and changing days never rewrites history. Falls back to the flat
+ * `schedule` field for anything created before schedule history existed.
+ */
+export function scheduleEffectiveOn(exercise, dateStr) {
+  const hist = exercise.scheduleHistory;
+  if (!Array.isArray(hist) || !hist.length) return exercise.schedule;
+  let sched = hist[0].schedule;
+  const sorted = hist.slice().sort((a, b) => (a.effectiveDate < b.effectiveDate ? -1 : 1));
+  for (const h of sorted) {
+    if (h.effectiveDate <= dateStr) sched = h.schedule;
+    else break;
+  }
+  return sched;
+}
+
 export function isScheduledOn(exercise, dateStr) {
-  const sched = exercise.schedule;
+  const sched = scheduleEffectiveOn(exercise, dateStr);
   if (!sched || sched === 'daily') return true;
   if (!Array.isArray(sched) || !sched.length) return true;
   const day = new Date(dateStr + 'T00:00:00').getDay();
@@ -140,9 +158,13 @@ export function calcDayStats(exercises, setsLog, dateStr, overrides) {
     if (!ex.active) continue;
     if (ex.createdDate && ex.createdDate > dateStr) continue; // didn't exist yet
 
-    if (!isScheduledOn(ex, dateStr)) continue; // rest day — nothing was due
-    const target = getEffectiveTarget(ex, dateStr);
     const arr = (setsLog[dateStr] && setsLog[dateStr][ex.id]) || [];
+    // A day you actually trained is immutable history: it always counts, no
+    // matter what the schedule says now. Only an EMPTY unscheduled day is a
+    // rest day with nothing due. This is what keeps a schedule change from
+    // erasing days you did — the reps were never gone, only filtered out here.
+    if (!isScheduledOn(ex, dateStr) && arr.length === 0) continue;
+    const target = getEffectiveTarget(ex, dateStr);
     const total = calcTotal(arr);
     const hasTarget = !!target && target > 0;
 

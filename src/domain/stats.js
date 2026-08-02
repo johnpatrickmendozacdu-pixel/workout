@@ -65,9 +65,11 @@ export function streakInfo(ex, setsLog, todayOverride, overrides) {
 
   while (cursor <= today && guard < 20000) {
     const target = getEffectiveTarget(ex, cursor);
-    if (target && target > 0 && isScheduledOn(ex, cursor)) {
+    const total = calcTotal((setsLog[cursor] && setsLog[cursor][ex.id]) || []);
+    // A day you trained counts even if today's schedule no longer lists it —
+    // history is immutable. Only an empty unscheduled day is a rest day.
+    if (target && target > 0 && (isScheduledOn(ex, cursor) || total > 0)) {
       tracked++;
-      const total = calcTotal((setsLog[cursor] && setsLog[cursor][ex.id]) || []);
       // A claimed rest day keeps the run alive, and is counted as one of its days.
       if (isBreakDay(overrides, cursor, ex.id)) { run++; breaks++; if (run > best) best = run; }
       else if (total >= target) {
@@ -102,17 +104,17 @@ export function recentDayStates(ex, setsLog, overrides, n = 7, todayOverride) {
   const out = [];
   for (let i = n - 1; i >= 0; i--) {
     const date = addDays(today, -i);
+    const total = calcTotal((setsLog[date] && setsLog[date][ex.id]) || []);
     let state;
     if (ex.createdDate && date < ex.createdDate) state = 'none';
-    else if (!isScheduledOn(ex, date)) state = 'rest';
+    // A trained day is never a rest day — it shows what happened, whatever the
+    // schedule says now. Only an empty unscheduled day is rest.
+    else if (!isScheduledOn(ex, date) && total === 0) state = 'rest';
     else if (isBreakDay(overrides, date, ex.id)) state = 'break';
     else {
       const target = getEffectiveTarget(ex, date);
       if (!target || target <= 0) state = 'none';
-      else {
-        const total = calcTotal((setsLog[date] && setsLog[date][ex.id]) || []);
-        state = total >= target ? 'hit' : 'miss';
-      }
+      else state = total >= target ? 'hit' : 'miss';
     }
     out.push({ date, state, isToday: date === today });
   }
@@ -301,11 +303,13 @@ export function dayHistory(ex, setsLog, overrides, limit, todayOverride) {
   let guard = 0;
 
   while (cursor >= first && guard < 20000) {
-    if (isScheduledOn(ex, cursor)) {
+    const totalReps = calcTotal((setsLog[cursor] && setsLog[cursor][ex.id]) || []);
+    // A trained day belongs in the history whether or not the schedule lists it
+    // now — otherwise switching days makes days you did disappear from view.
+    if (isScheduledOn(ex, cursor) || totalReps > 0) {
       total++;
       if (rows.length < limit) {
         const target = getEffectiveTarget(ex, cursor);
-        const totalReps = calcTotal((setsLog[cursor] && setsLog[cursor][ex.id]) || []);
         rows.push({
           date: cursor,
           isToday: cursor === today,

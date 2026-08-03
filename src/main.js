@@ -1586,9 +1586,8 @@ function viewToday() {
   const today = todayISO();
   const all = state.exercises.filter((e) => e.active).sort((a, b) => a.order - b.order);
   const scheduled = all.filter((e) => isScheduledOn(e, today));
-  const resting = all.filter((e) => !isScheduledOn(e, today));
 
-  if (scheduled.length === 0 && resting.length === 0) {
+  if (all.length === 0) {
     return `<div class="empty-card">
       <div class="glyph">🗓️</div>
       <h3>No exercises yet</h3>
@@ -1660,18 +1659,19 @@ function viewToday() {
     html += `<div class="section-label">Done</div>` + done.map(doneRow).join('');
   }
 
-  if (resting.length) {
-    html += `<div class="section-label">Not scheduled</div>` + resting.map((ex) => `<div class="rest-row">
-      <span class="rest-icon">${escapeHtml(ex.icon)}</span>
-      <span class="rest-name">${escapeHtml(ex.name)}</span>
-      <span class="rest-when">${escapeHtml(scheduleLabel(ex))}</span>
-    </div>`).join('');
+  // Nothing due today and nothing logged: a quiet rest day rather than a blank
+  // screen. Exercises not scheduled for today are hidden — they belong to their
+  // own days, not this one.
+  if (scheduled.length === 0 && done.length === 0) {
+    html += `<div class="all-clear"><b>Nothing scheduled today</b><span>Enjoy the rest — your streak holds.</span></div>`;
   }
 
   const onBreak = scheduled.filter((ex) => isBreakDay(state.streakOverrides, today, ex.id));
-  html += onBreak.length
-    ? `<p class="break-nudge resting">🌙 Resting today: ${onBreak.map((e) => escapeHtml(e.name)).join(', ')}</p>`
-    : `<p class="break-nudge">Not training one today? Open it and take a break — the streak holds.</p>`;
+  if (onBreak.length) {
+    html += `<p class="break-nudge resting">🌙 Resting today: ${onBreak.map((e) => escapeHtml(e.name)).join(', ')}</p>`;
+  } else if (scheduled.length) {
+    html += `<p class="break-nudge">Not training one today? Open it and take a break — the streak holds.</p>`;
+  }
 
   html += weighInCardHtml();
 

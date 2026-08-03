@@ -1437,3 +1437,11 @@
 .onetime-add-input{flex:1;min-height:44px;min-width:0;}
 .onetime-done-btn{min-height:44px;padding:0 14px;border:1px solid var(--accent);background:transparent;
   color:var(--accent);font-family:var(--font-mono);font-size:12px;letter-spacing:.05em;text-transform:uppercase;}
+
+/* ---- Weigh-in done confirmation on Today ---- */
+.habit-done{display:flex;align-items:center;gap:10px;width:100%;text-align:left;
+  border:1px dashed var(--border);background:transparent;padding:13px 14px;}
+.habit-done-tick{display:inline-flex;flex:0 0 auto;}
+.habit-done-text{flex:1;font-size:14px;color:var(--text-dim);}
+.habit-done-text b{color:var(--text);}
+.habit-done-edit{font-family:var(--font-mono);font-size:11px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.05em;}

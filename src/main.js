@@ -365,17 +365,14 @@ function hasSyncAccount() {
  * because by then something really is stuck.
  */
 function noteSyncFailure(err) {
-  const code = err && err.message;
-  if (code === 'token-expired' || code === 'not-signed-in') {
-    // Never escalate an expired token into a demand. Google hands browser apps
-    // a token that lasts about an hour and no way to renew it without a server,
-    // so this WILL happen routinely and is not something the person did wrong.
-    // The backup waits; the profile sheet tells the truth to anyone who looks.
-    markSyncPending();
-    endSyncing('pending');
-  } else {
-    endSyncing('error', 'Could not reach Google Drive.');
-  }
+  // Every sync failure is non-actionable here: the work is already safe on the
+  // phone, and a backup being a little behind costs nothing. A dead token, a
+  // network blip, a slow Drive — all queue quietly and retry when the app next
+  // comes forward, rather than flashing a red "couldn't reach Drive" for a
+  // hiccup that fixes itself. Genuinely stuck sync is caught by the once-a-week
+  // line, which is the one place it's worth interrupting for.
+  markSyncPending();
+  endSyncing('pending');
 }
 
 /**
@@ -1569,8 +1566,17 @@ function renderView() {
 function weighInCardHtml() {
   const p = state.profile || {};
   const today = todayISO();
-  const loggedToday = (p.weightLog || []).some((e) => e && e.d === today && e.w > 0);
-  if (loggedToday) return '';
+  const todayEntry = (p.weightLog || []).find((e) => e && e.d === today && e.w > 0);
+  // Done for the day: a quiet confirmation rather than a vanished card, so it's
+  // clear the weigh-in registered. Tapping re-opens it to correct the number.
+  if (todayEntry) {
+    return `<div class="section-label">Health habit</div>
+      <button class="habit-done" data-action="open-weigh-in">
+        <span class="habit-done-tick">${ICONS.check}</span>
+        <span class="habit-done-text">Weighed in today · <b>${formatWeight(todayEntry.w, 'kg')}</b></span>
+        <span class="habit-done-edit">Edit</span>
+      </button>`;
+  }
   return `<div class="section-label">Health habit</div>
     <div class="habit-card">
       <div class="habit-text"><b>Daily weigh-in</b><span>A few seconds each morning. Your weekly average is on Progress.</span></div>

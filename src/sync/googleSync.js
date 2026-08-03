@@ -16,7 +16,7 @@ const BACKUP_FILENAME = 'workout-tracker-data.json';
 // While empty, every broker path below is skipped and the app uses the existing
 // Google Identity Services flow — so shipping this with an empty URL changes
 // nothing and cannot regress.
-const BROKER_URL = '';
+const BROKER_URL = 'https://sets-broker.johnpatrickmendoza-cdu.workers.dev';
 
 export function brokerConfigured() { return typeof BROKER_URL === 'string' && BROKER_URL.length > 0; }
 

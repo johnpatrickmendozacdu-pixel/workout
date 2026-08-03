@@ -3523,14 +3523,24 @@ let redirectResult = null;
 async function init() {
   // Before anything renders: a token handed back by the renewal redirect.
   try { redirectResult = gsync.consumeRedirectResult(); } catch (e) { redirectResult = null; }
-  // The broker code flow returns a ?code=… on launch; trade it for tokens before
-  // the first sync. Failure is silent — the app simply stays signed out.
-  if (redirectResult && redirectResult.pendingCode) {
-    try { await gsync.brokerExchange(redirectResult.pendingCode); } catch (e) { /* falls back to signed-out */ }
-  }
+  // Set the token listener FIRST — the broker exchange below stores the refresh
+  // token through it, and if it isn't wired yet that token is silently lost.
   gsync.setTokenListener((record) => {
     db.setItem('sync-token', record).catch(() => {});
   });
+  // The broker code flow returns a ?code=… on launch. Trade it for tokens and
+  // mark this device signed in (account + enabled), so tryResumeSync adopts the
+  // session, shows it as signed in, and syncs. Failure stays silent — the app
+  // just runs on local data, exactly as when signed out.
+  if (redirectResult && redirectResult.pendingCode) {
+    try {
+      if (await gsync.brokerExchange(redirectResult.pendingCode)) {
+        const email = gsync.getSignedInEmail() || await gsync.ensureEmail();
+        await db.setItem('sync-enabled', true).catch(() => {});
+        if (email) await db.setItem('sync-account', email).catch(() => {});
+      }
+    } catch (e) { /* stays signed out; the app still works locally */ }
+  }
   // Whose data this is has to be settled before a single key is read.
   await restoreNamespace();
   await loadAll();

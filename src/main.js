@@ -536,6 +536,11 @@ const pullAndMerge = syncNow;
 
 async function googleSignInHandler() {
   beginSyncing(); state.sync.error = null; renderModal();
+  // With the broker deployed, sign in through the code flow so we get a refresh
+  // token and never-stale sync. This leaves the page; the returned code is traded
+  // for tokens in init() on the way back. Without the broker, the popup flow below
+  // is unchanged.
+  if (gsync.brokerConfigured()) { gsync.brokerSignIn(state.sync.email || null); return; }
   const ok = await gsync.signIn();
   if (ok) {
     // The email may not have arrived yet (background lookup) — record the
@@ -3518,6 +3523,11 @@ let redirectResult = null;
 async function init() {
   // Before anything renders: a token handed back by the renewal redirect.
   try { redirectResult = gsync.consumeRedirectResult(); } catch (e) { redirectResult = null; }
+  // The broker code flow returns a ?code=… on launch; trade it for tokens before
+  // the first sync. Failure is silent — the app simply stays signed out.
+  if (redirectResult && redirectResult.pendingCode) {
+    try { await gsync.brokerExchange(redirectResult.pendingCode); } catch (e) { /* falls back to signed-out */ }
+  }
   gsync.setTokenListener((record) => {
     db.setItem('sync-token', record).catch(() => {});
   });

@@ -1575,3 +1575,18 @@ describe('weightProgression (D)', () => {
     expect(weightProgression({ equipment: 'dumbbell', weight: 8, weightUnit: 'lb' })).toMatchObject({ current: 8, unit: 'lb', changed: false });
   });
 });
+
+describe('mergeSyncSnapshots — one-time log (C)', () => {
+  const snap = (updatedAt, oneTimeLog) => ({ updatedAt, oneTimeLog, exercises: [], setsLog: {}, timersLog: {}, streakOverrides: {}, profile: {} });
+  it('keeps one-time entries from both devices, union by id', () => {
+    const local = snap(2, [{ id: 'a', date: '2026-08-01', name: 'Run', minutes: 30 }]);
+    const remote = snap(1, [{ id: 'b', date: '2026-08-02', name: 'Swim', minutes: 40 }]);
+    const ids = mergeSyncSnapshots(local, remote).oneTimeLog.map((e) => e.id).sort();
+    expect(ids).toEqual(['a', 'b']);
+  });
+  it('does not drop a log the other side never had', () => {
+    const local = snap(2, []);
+    const remote = snap(1, [{ id: 'x', date: '2026-08-01', name: 'Hike', minutes: 90 }]);
+    expect(mergeSyncSnapshots(local, remote).oneTimeLog).toHaveLength(1);
+  });
+});

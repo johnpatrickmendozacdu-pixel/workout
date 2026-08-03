@@ -1420,3 +1420,10 @@
 .traj-chart{width:100%;height:auto;display:block;margin:6px 0 4px;}
 .traj-chart .traj-dot{fill:var(--silver);}
 .traj-chart .traj-dot-current{fill:var(--accent);stroke:var(--surface);stroke-width:2;}
+
+/* ---- One-time workouts ---- */
+.onetime-list{margin-bottom:14px;}
+.onetime-row{display:flex;align-items:center;gap:10px;padding:11px 12px;border:1px solid var(--border);border-top:0;}
+.onetime-name{flex:1;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.onetime-min{font-family:var(--font-num);font-size:13px;color:var(--accent);}
+.onetime-date{font-family:var(--font-mono);font-size:11px;color:var(--text-faint);}

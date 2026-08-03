@@ -82,6 +82,7 @@ const state = {
   sync: { status: 'signed-out', email: null, error: null, pending: false },
   streakOverrides: {},
   deletedExercises: {},
+  oneTimeLog: [],
   storageError: false,
   updateAvailable: false,
   applyUpdate: null,
@@ -170,7 +171,7 @@ async function restoreNamespace() {
 }
 
 async function loadAll() {
-  const [exercises, setsLog, meta, timersLog, profile, streakOverrides, deletedExercises] = await Promise.all([
+  const [exercises, setsLog, meta, timersLog, profile, streakOverrides, deletedExercises, oneTimeLog] = await Promise.all([
     db.getItem('exercises'),
     db.getItem('sets-log'),
     db.getItem('app-meta'),
@@ -178,6 +179,7 @@ async function loadAll() {
     db.getItem('profile'),
     db.getItem('streak-overrides'),
     db.getItem('deleted-exercises'),
+    db.getItem('one-time-log'),
   ]);
 
   state.exercises = exercises || [];
@@ -187,6 +189,7 @@ async function loadAll() {
   state.profile = profile || { username: '', weight: null, height: null, weightLog: [], weighInDay: 6 };
   state.streakOverrides = migrateOverrides(streakOverrides || {});
   state.deletedExercises = deletedExercises || {};
+  state.oneTimeLog = Array.isArray(oneTimeLog) ? oneTimeLog : [];
 
   // One-time: start Top set fresh from today for every existing exercise, and
   // drop old manual corrections. Old and stray sets before today stop counting
@@ -276,6 +279,15 @@ async function persistProfile() {
     return false;
   }
 }
+async function persistOneTime() {
+  try {
+    await db.setItem('one-time-log', state.oneTimeLog);
+    markDirty();
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
 async function persistStreakOverrides() {
   try {
     await db.setItem('streak-overrides', state.streakOverrides);
@@ -300,6 +312,7 @@ function buildSyncSnapshot() {
     timersLog: state.timersLog,
     profile: state.profile,
     streakOverrides: state.streakOverrides,
+    oneTimeLog: state.oneTimeLog,
   };
 }
 
@@ -313,6 +326,7 @@ async function applyMergedSnapshot(merged) {
   state.timersLog = merged.timersLog || {};
   state.profile = merged.profile || { username: '', weight: null, height: null, weightLog: [], weighInDay: 6 };
   state.streakOverrides = merged.streakOverrides || {};
+  state.oneTimeLog = Array.isArray(merged.oneTimeLog) ? merged.oneTimeLog : [];
   state.meta.updatedAt = merged.updatedAt || Date.now();
   await Promise.all([
     db.setItem('exercises', state.exercises),
@@ -321,6 +335,7 @@ async function applyMergedSnapshot(merged) {
     db.setItem('timers-log', state.timersLog),
     db.setItem('profile', state.profile),
     db.setItem('streak-overrides', state.streakOverrides),
+    db.setItem('one-time-log', state.oneTimeLog),
     db.setItem('app-meta', state.meta),
   ]);
   applyingRemote = false;
@@ -1776,11 +1791,39 @@ function comboLineHtml(groupExercises) {
   return `<div class="combo-line">Combo · total ${formatTotalDuration(c.total)} · avg ${formatDuration(c.avg)} · best ${formatDuration(c.best)}</div>`;
 }
 
+/**
+ * The "One time" group: random workouts logged once, name and minutes only —
+ * none of the exercise metrics, deliberately spartan. Its own collapsible group
+ * so it never mixes with the scheduled plan.
+ */
+function oneTimeGroupHtml() {
+  const log = state.oneTimeLog || [];
+  if (!log.length) return '';
+  const entries = log.slice().sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+  const g = { key: 'one-time', days: 'one-time' };
+  // A tiny shim so the shared header renders a plain label instead of a schedule.
+  const open = groupOpen('progress', g.key, 99);
+  const header = `<button class="group-head" data-action="toggle-group" data-view="progress" data-key="one-time" data-open="${open}" aria-expanded="${open}">
+      <span class="group-head-label">One time</span>
+      <span class="group-head-meta">${open ? '' : `${entries.length} logged`}</span>
+      <span class="group-chev ${open ? 'open' : ''}">${ICONS.chevron}</span>
+    </button>`;
+  if (!open) return header;
+  const rows = entries.map((e) => `<div class="onetime-row">
+      <span class="onetime-name">${escapeHtml(e.name)}</span>
+      <span class="onetime-min">${e.minutes}m</span>
+      <span class="onetime-date">${escapeHtml(formatDisplayDate(e.date, { month: 'short', day: 'numeric' }))}</span>
+      <button class="mini-btn danger" data-action="delete-one-time" data-id="${escapeHtml(e.id)}" aria-label="Delete">${ICONS.trash}</button>
+    </div>`).join('');
+  return header + `<div class="onetime-list">${rows}</div>`;
+}
+
 function viewProgress() {
   const habit = weighInBlockHtml();
   const activeEx = state.exercises.filter((e) => e.active && !e.archived).sort((a, b) => a.order - b.order);
-  // The habit is not an exercise, so an empty workout plan must not hide it.
-  if (!activeEx.length) return habit || `<p class="rail-empty">Add an exercise to start a streak.</p>`;
+  const oneTime = oneTimeGroupHtml();
+  // The habit and one-time log are not exercises, so an empty plan must not hide them.
+  if (!activeEx.length) return (habit + oneTime) || `<p class="rail-empty">Add an exercise to start a streak.</p>`;
   const stats = allStats(activeEx, state.setsLog, state.timersLog, null, state.streakOverrides);
   // Grouped by shared days, same as Plan, so Progress is segregated per combo
   // and a card moves group the moment its schedule changes.
@@ -1797,7 +1840,8 @@ function viewProgress() {
     html += comboLineHtml(g.exercises);
     html += g.exercises.map((ex) => exerciseCard(ex, stats[ex.id], { expandable: true })).join('');
   });
-  html += tipHtml('progress-open', 'Tap a group to open it. Combo time is how long a whole day’s group takes together.');
+  html += oneTime;
+  html += tipHtml('progress-open', 'Tap a group to open it. One time holds random workouts — just name and minutes.');
   return html;
 }
 
@@ -2168,6 +2212,7 @@ function modalGuide() {
     plan: [
       ['Edit', 'Tap the exercise.'],
       ['Schedule', 'Every day, or pick weekdays. A day off is never a miss.'],
+      ['One-time', 'Add → One-time logs a workout you just did — name and minutes. Find it in Progress under One time.'],
       has.length && ['Retire', 'Archive keeps history. Delete removes it.'],
     ],
     progress: [
@@ -2375,6 +2420,8 @@ function captureExerciseDraft() {
   const d = state.modal.draft || {};
   const set = (k, v) => { if (v !== undefined) d[k] = v; };
   set('name', val('f-name'));
+  set('name', val('f-ot-name'));   // one-time shares the name draft
+  set('minutes', val('f-ot-min'));
   set('unit', val('f-unit'));
   set('target', val('f-target'));
   set('work', val('f-emom-work'));
@@ -2419,6 +2466,40 @@ function modalExerciseForm(exId) {
   const wVal = (state.modal && state.modal.weight !== undefined)
     ? state.modal.weight
     : (ex && ex.weight != null ? ex.weight : '');
+  // A one-time entry is create-only, so the type toggle shows only when adding.
+  const isOneTime = !editing && state.modal && state.modal.ptype === 'onetime';
+  const typeToggle = editing ? '' : `<div class="field">
+        <div class="sched-modes">
+          <button type="button" class="sched-mode ${isOneTime ? '' : 'on'}" data-action="plan-type" data-type="scheduled">Scheduled</button>
+          <button type="button" class="sched-mode ${isOneTime ? 'on' : ''}" data-action="plan-type" data-type="onetime">One-time</button>
+        </div>
+      </div>`;
+
+  if (isOneTime) {
+    return `<div class="modal-backdrop" data-action="backdrop">
+    <div class="modal-sheet" data-stop>
+      <div class="sheet-handle"></div>
+      <div class="sheet-head">
+        <h2>Log a one-time workout</h2>
+        <button class="sheet-close" data-action="close-modal">${ICONS.close}</button>
+      </div>
+      ${typeToggle}
+      <div class="field">
+        <label>Name</label>
+        <input id="f-ot-name" type="text" placeholder="e.g. Beach run" value="${escapeHtml(draft.name || '')}" autocomplete="off">
+      </div>
+      <div class="field">
+        <label>Minutes</label>
+        <input id="f-ot-min" type="number" min="1" step="1" inputmode="numeric" placeholder="e.g. 30" value="${escapeHtml(draft.minutes || '')}">
+        <div class="hint">A workout you just did once — logged for today, not scheduled. Find it in Progress under One time.</div>
+      </div>
+      <div class="form-actions">
+        <button class="primary-btn" data-action="save-one-time">Log it</button>
+      </div>
+    </div>
+  </div>`;
+  }
+
   return `<div class="modal-backdrop" data-action="backdrop">
     <div class="modal-sheet" data-stop>
       <div class="sheet-handle"></div>
@@ -2426,6 +2507,7 @@ function modalExerciseForm(exId) {
         <h2>${editing ? 'Edit exercise' : 'Add exercise'}</h2>
         <button class="sheet-close" data-action="close-modal">${ICONS.close}</button>
       </div>
+      ${typeToggle}
       <div class="field">
         <label>Name</label>
         <input id="f-name" type="text" placeholder="e.g. Push-ups" value="${escapeHtml(draft.name !== undefined ? draft.name : (ex ? ex.name : ''))}" autocomplete="off">
@@ -2899,6 +2981,26 @@ document.addEventListener('click', async (e) => {
     case 'timer-mode':
       captureExerciseDraft();
       if (state.modal) { state.modal.tmode = btn.dataset.mode; renderModal(); }
+      break;
+    case 'plan-type':
+      captureExerciseDraft();
+      if (state.modal) { state.modal.ptype = btn.dataset.type; renderModal(); }
+      break;
+    case 'save-one-time': {
+      const name = (document.getElementById('f-ot-name').value || '').trim();
+      const min = Math.round(parseFloat(document.getElementById('f-ot-min').value));
+      if (!name) { showToast('Name is required.'); return; }
+      if (!(min > 0)) { showToast('Enter the minutes.'); return; }
+      state.oneTimeLog = [{ id: uid('ot'), date: todayISO(), name: name.slice(0, 40), minutes: min }, ...state.oneTimeLog];
+      await persistOneTime();
+      closeModal(); rerender();
+      showToast('One-time workout logged');
+      break;
+    }
+    case 'delete-one-time':
+      state.oneTimeLog = state.oneTimeLog.filter((e) => e.id !== btn.dataset.id);
+      await persistOneTime();
+      renderView();
       break;
     case 'equip-mode':
       captureExerciseDraft();

@@ -1088,7 +1088,20 @@ export function mergeSyncSnapshots(local, remote) {
     timersLog: mergeByDayKey(winner.timersLog, loser.timersLog),
     streakOverrides: mergeByDayKey(winner.streakOverrides, loser.streakOverrides),
     profile: mergeProfiles(winner.profile, loser.profile),
+    oneTimeLog: mergeOneTimeLogs(winner.oneTimeLog, loser.oneTimeLog),
   };
+}
+
+/**
+ * Union by id, so one-time workouts logged on two devices both survive a sync —
+ * the same rule as the weight log, keyed by id rather than date since several
+ * one-time entries can share a day. The winner's copy wins an id collision.
+ */
+export function mergeOneTimeLogs(winner, loser) {
+  const byId = new Map();
+  (Array.isArray(loser) ? loser : []).forEach((e) => { if (e && e.id) byId.set(e.id, e); });
+  (Array.isArray(winner) ? winner : []).forEach((e) => { if (e && e.id) byId.set(e.id, e); });
+  return [...byId.values()].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)); // newest first
 }
 
 export function buildBackup(exercises, setsLog) {

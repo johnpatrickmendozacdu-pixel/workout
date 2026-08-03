@@ -1685,10 +1685,12 @@ function viewToday() {
     html += `<div class="section-label">Done</div>` + done.map(doneRow).join('');
   }
 
+  const pendingOneTime = (state.oneTimeLog || []).filter((e) => !e.done);
+
   // Nothing due today and nothing logged: a quiet rest day rather than a blank
   // screen. Exercises not scheduled for today are hidden — they belong to their
   // own days, not this one.
-  if (scheduled.length === 0 && done.length === 0) {
+  if (scheduled.length === 0 && done.length === 0 && !pendingOneTime.length) {
     html += `<div class="all-clear"><b>Nothing scheduled today</b><span>Enjoy the rest — your streak holds.</span></div>`;
   }
 
@@ -1697,6 +1699,24 @@ function viewToday() {
     html += `<p class="break-nudge resting">🌙 Resting today: ${onBreak.map((e) => escapeHtml(e.name)).join(', ')}</p>`;
   } else if (scheduled.length) {
     html += `<p class="break-nudge">Not training one today? Open it and take a break — the streak holds.</p>`;
+  }
+
+  // One-time workouts: no target, so they accumulate a running total and finish
+  // on a tap rather than by hitting a number. They sit until completed.
+  if (pendingOneTime.length) {
+    html += `<div class="section-label">One time</div>`;
+    html += pendingOneTime.map((e) => `<div class="onetime-today">
+      <div class="onetime-today-head">
+        <span class="onetime-today-name">${escapeHtml(e.name)}</span>
+        <span class="onetime-today-total">${e.total || 0} ${escapeHtml(e.unit)}</span>
+      </div>
+      <div class="onetime-today-actions">
+        <input id="ot-add-${e.id}" class="onetime-add-input" type="number" min="1" step="1" inputmode="numeric" placeholder="+ ${escapeHtml(e.unit)}">
+        <button class="mini-btn" data-action="onetime-add" data-id="${e.id}" aria-label="Add">${ICONS.plus}</button>
+        <button class="onetime-done-btn" data-action="onetime-complete" data-id="${e.id}">Complete</button>
+      </div>
+    </div>`).join('');
+    html += tipHtml('onetime-today', 'A one-time workout has no target — add as you go, then Complete when you’re done.');
   }
 
   html += weighInCardHtml();
@@ -1792,26 +1812,25 @@ function comboLineHtml(groupExercises) {
 }
 
 /**
- * The "One time" group: random workouts logged once, name and minutes only —
+ * The "One time" group: finished one-time workouts, name and total only —
  * none of the exercise metrics, deliberately spartan. Its own collapsible group
  * so it never mixes with the scheduled plan.
  */
 function oneTimeGroupHtml() {
-  const log = state.oneTimeLog || [];
-  if (!log.length) return '';
-  const entries = log.slice().sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
-  const g = { key: 'one-time', days: 'one-time' };
-  // A tiny shim so the shared header renders a plain label instead of a schedule.
-  const open = groupOpen('progress', g.key, 99);
+  // Progress shows the finished ones — the pending ones live on Today.
+  const entries = (state.oneTimeLog || []).filter((e) => e.done)
+    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+  if (!entries.length) return '';
+  const open = groupOpen('progress', 'one-time', 99);
   const header = `<button class="group-head" data-action="toggle-group" data-view="progress" data-key="one-time" data-open="${open}" aria-expanded="${open}">
       <span class="group-head-label">One time</span>
-      <span class="group-head-meta">${open ? '' : `${entries.length} logged`}</span>
+      <span class="group-head-meta">${open ? '' : `${entries.length} done`}</span>
       <span class="group-chev ${open ? 'open' : ''}">${ICONS.chevron}</span>
     </button>`;
   if (!open) return header;
   const rows = entries.map((e) => `<div class="onetime-row">
       <span class="onetime-name">${escapeHtml(e.name)}</span>
-      <span class="onetime-min">${e.minutes}m</span>
+      <span class="onetime-min">${e.total || 0} ${escapeHtml(e.unit)}</span>
       <span class="onetime-date">${escapeHtml(formatDisplayDate(e.date, { month: 'short', day: 'numeric' }))}</span>
       <button class="mini-btn danger" data-action="delete-one-time" data-id="${escapeHtml(e.id)}" aria-label="Delete">${ICONS.trash}</button>
     </div>`).join('');
@@ -1841,7 +1860,7 @@ function viewProgress() {
     html += g.exercises.map((ex) => exerciseCard(ex, stats[ex.id], { expandable: true })).join('');
   });
   html += oneTime;
-  html += tipHtml('progress-open', 'Tap a group to open it. One time holds random workouts — just name and minutes.');
+  html += tipHtml('progress-open', 'Tap a group to open it. One time holds finished one-off workouts.');
   return html;
 }
 
@@ -2212,7 +2231,7 @@ function modalGuide() {
     plan: [
       ['Edit', 'Tap the exercise.'],
       ['Schedule', 'Every day, or pick weekdays. A day off is never a miss.'],
-      ['One-time', 'Add → One-time logs a workout you just did — name and minutes. Find it in Progress under One time.'],
+      ['One-time', 'Add → One-time makes an unscheduled workout: name and a unit, no target. Log into it on Today, then Complete it.'],
       has.length && ['Retire', 'Archive keeps history. Delete removes it.'],
     ],
     progress: [
@@ -2421,7 +2440,6 @@ function captureExerciseDraft() {
   const set = (k, v) => { if (v !== undefined) d[k] = v; };
   set('name', val('f-name'));
   set('name', val('f-ot-name'));   // one-time shares the name draft
-  set('minutes', val('f-ot-min'));
   set('unit', val('f-unit'));
   set('target', val('f-target'));
   set('work', val('f-emom-work'));
@@ -2476,11 +2494,13 @@ function modalExerciseForm(exId) {
       </div>`;
 
   if (isOneTime) {
+    if (state.modal && state.modal.otUnit === undefined) state.modal.otUnit = draft.unit || 'reps';
+    const otUnit = state.modal ? state.modal.otUnit : 'reps';
     return `<div class="modal-backdrop" data-action="backdrop">
     <div class="modal-sheet" data-stop>
       <div class="sheet-handle"></div>
       <div class="sheet-head">
-        <h2>Log a one-time workout</h2>
+        <h2>One-time workout</h2>
         <button class="sheet-close" data-action="close-modal">${ICONS.close}</button>
       </div>
       ${typeToggle}
@@ -2489,12 +2509,15 @@ function modalExerciseForm(exId) {
         <input id="f-ot-name" type="text" placeholder="e.g. Beach run" value="${escapeHtml(draft.name || '')}" autocomplete="off">
       </div>
       <div class="field">
-        <label>Minutes</label>
-        <input id="f-ot-min" type="number" min="1" step="1" inputmode="numeric" placeholder="e.g. 30" value="${escapeHtml(draft.minutes || '')}">
-        <div class="hint">A workout you just did once — logged for today, not scheduled. Find it in Progress under One time.</div>
+        <label>Count in</label>
+        <div class="sched-modes">
+          ${[['reps', 'Reps'], ['minutes', 'Minutes'], ['rounds', 'Rounds']].map(([u, lbl]) =>
+            `<button type="button" class="sched-mode ${otUnit === u ? 'on' : ''}" data-action="ot-unit" data-unit="${u}">${lbl}</button>`).join('')}
+        </div>
+        <div class="hint">A workout you just do, not scheduled. It appears on Today — log into it, then Complete it. No target. Find finished ones in Progress under One time.</div>
       </div>
       <div class="form-actions">
-        <button class="primary-btn" data-action="save-one-time">Log it</button>
+        <button class="primary-btn" data-action="save-one-time">Add to Today</button>
       </div>
     </div>
   </div>`;
@@ -2986,17 +3009,35 @@ document.addEventListener('click', async (e) => {
       captureExerciseDraft();
       if (state.modal) { state.modal.ptype = btn.dataset.type; renderModal(); }
       break;
+    case 'ot-unit':
+      captureExerciseDraft();
+      if (state.modal) { state.modal.otUnit = btn.dataset.unit; renderModal(); }
+      break;
     case 'save-one-time': {
       const name = (document.getElementById('f-ot-name').value || '').trim();
-      const min = Math.round(parseFloat(document.getElementById('f-ot-min').value));
+      const unit = (state.modal && state.modal.otUnit) || 'reps';
       if (!name) { showToast('Name is required.'); return; }
-      if (!(min > 0)) { showToast('Enter the minutes.'); return; }
-      state.oneTimeLog = [{ id: uid('ot'), date: todayISO(), name: name.slice(0, 40), minutes: min }, ...state.oneTimeLog];
+      state.oneTimeLog = [{ id: uid('ot'), date: todayISO(), name: name.slice(0, 40), unit, total: 0, done: false }, ...state.oneTimeLog];
       await persistOneTime();
       closeModal(); rerender();
-      showToast('One-time workout logged');
+      showToast('Added to Today');
       break;
     }
+    case 'onetime-add': {
+      const input = document.getElementById(`ot-add-${btn.dataset.id}`);
+      const amt = input ? Math.round(parseFloat(input.value)) : NaN;
+      if (!(amt > 0)) { showToast('Enter an amount'); break; }
+      state.oneTimeLog = state.oneTimeLog.map((e) => e.id === btn.dataset.id ? { ...e, total: (e.total || 0) + amt } : e);
+      await persistOneTime();
+      renderView();
+      break;
+    }
+    case 'onetime-complete':
+      state.oneTimeLog = state.oneTimeLog.map((e) => e.id === btn.dataset.id ? { ...e, done: true, date: todayISO() } : e);
+      await persistOneTime();
+      renderView();
+      showToast('One-time workout complete');
+      break;
     case 'delete-one-time':
       state.oneTimeLog = state.oneTimeLog.filter((e) => e.id !== btn.dataset.id);
       await persistOneTime();

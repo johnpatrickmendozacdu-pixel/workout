@@ -1427,3 +1427,13 @@
 .onetime-name{flex:1;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
 .onetime-min{font-family:var(--font-num);font-size:13px;color:var(--accent);}
 .onetime-date{font-family:var(--font-mono);font-size:11px;color:var(--text-faint);}
+
+/* ---- One-time on Today ---- */
+.onetime-today{border:1px dashed var(--border);padding:12px;margin-bottom:8px;}
+.onetime-today-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;}
+.onetime-today-name{font-size:15px;font-weight:600;}
+.onetime-today-total{font-family:var(--font-num);font-size:14px;color:var(--accent);}
+.onetime-today-actions{display:flex;align-items:stretch;gap:8px;margin-top:10px;}
+.onetime-add-input{flex:1;min-height:44px;min-width:0;}
+.onetime-done-btn{min-height:44px;padding:0 14px;border:1px solid var(--accent);background:transparent;
+  color:var(--accent);font-family:var(--font-mono);font-size:12px;letter-spacing:.05em;text-transform:uppercase;}

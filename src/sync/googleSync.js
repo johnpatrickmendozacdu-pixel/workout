@@ -73,7 +73,16 @@ export function canRedirectRenew() {
  * refresh cannot replay a stale token.
  */
 export function consumeRedirectResult() {
-  if (typeof location === 'undefined' || !location.hash) return null;
+  if (typeof location === 'undefined') return null;
+  // Broker code flow returns ?code=…&state=sets-code in the query string. Hand the
+  // code back for main.js to exchange; clear it so a refresh cannot replay it.
+  const q = new URLSearchParams(location.search || '');
+  if (q.get('state') === 'sets-code' && q.get('code')) {
+    const code = q.get('code');
+    history.replaceState(null, '', location.pathname);
+    return { pendingCode: code };
+  }
+  if (!location.hash) return null;
   const raw = location.hash.slice(1);
   if (raw.indexOf('state=sets-renew') === -1) return null;
   const p = new URLSearchParams(raw);
@@ -81,7 +90,7 @@ export function consumeRedirectResult() {
   if (p.get('access_token')) {
     accessToken = p.get('access_token');
     tokenExpiresAt = Date.now() + (parseInt(p.get('expires_in'), 10) || 3500) * 1000;
-    if (onTokenStored) onTokenStored({ token: accessToken, expiresAt: tokenExpiresAt, email: signedInEmail });
+    if (onTokenStored) onTokenStored({ token: accessToken, expiresAt: tokenExpiresAt, refreshToken, email: signedInEmail });
     emailPromise = fetchEmail();
     return { ok: true };
   }
@@ -280,13 +289,80 @@ export async function trySilentSignIn(emailHint) {
 }
 
 /**
- * Access tokens last about an hour and there is no refresh token without a
- * backend, so we renew silently whenever the current one is missing or close
- * to expiring. Every Drive call goes through this first, which is what keeps
- * sync alive through a long session instead of dying at the hour mark.
+ * ===================== TOKEN BROKER (never-stale sync) =====================
+ * A stateless Cloudflare Worker holds the client secret and swaps tokens on
+ * demand. The refresh token lives on this device (persisted via onTokenStored),
+ * and the broker mints fresh access tokens in the background — no iframe, no
+ * redirect, so it sidesteps the Safari path that dies at the hour mark. Every
+ * broker call returns false on any failure, and the caller falls back to the
+ * existing flow, so the app can never regress when the broker is off or down.
+ */
+
+/** Begin the authorization-code redirect: the one-time consent that yields a
+ *  refresh token. Only used when the broker is configured (main.js decides). */
+export function brokerSignIn(emailHint) {
+  const url = new URL('https://accounts.google.com/o/oauth2/v2/auth');
+  url.searchParams.set('client_id', CLIENT_ID);
+  url.searchParams.set('redirect_uri', REDIRECT_URI);
+  url.searchParams.set('response_type', 'code');
+  url.searchParams.set('scope', SCOPE);
+  url.searchParams.set('access_type', 'offline');
+  url.searchParams.set('prompt', 'consent');
+  url.searchParams.set('include_granted_scopes', 'true');
+  if (emailHint || lastEmailHint) url.searchParams.set('login_hint', emailHint || lastEmailHint);
+  url.searchParams.set('state', 'sets-code');
+  location.assign(url.toString());
+}
+
+/** Trade an authorization code for tokens via the Worker; stores the refresh
+ *  token on this device. Returns false on any failure (caller falls back). */
+export async function brokerExchange(code) {
+  if (!brokerConfigured() || !code) return false;
+  try {
+    const res = await fetchWithTimeout(BROKER_URL + '/exchange', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }),
+    });
+    if (!res.ok) return false;
+    const j = await res.json();
+    if (!j.accessToken || !j.refreshToken) return false;
+    accessToken = j.accessToken;
+    tokenExpiresAt = j.expiresAt || (Date.now() + 3500 * 1000);
+    refreshToken = j.refreshToken;
+    if (j.email) { signedInEmail = j.email; lastEmailHint = j.email; }
+    lastAuthError = null;
+    if (onTokenStored) onTokenStored({ token: accessToken, expiresAt: tokenExpiresAt, refreshToken, email: signedInEmail });
+    return true;
+  } catch (e) { return false; }
+}
+
+/** Mint a fresh access token from the stored refresh token, fully in the
+ *  background. Returns false when the broker is off, there is no refresh token,
+ *  or Google rejects it (a dead token is dropped so the app re-auths). */
+export async function brokerRefresh() {
+  if (!brokerConfigured() || !refreshToken) return false;
+  try {
+    const res = await fetchWithTimeout(BROKER_URL + '/token', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ refreshToken }),
+    });
+    if (res.status === 401) { refreshToken = null; if (onTokenStored) onTokenStored({ token: accessToken, expiresAt: tokenExpiresAt, refreshToken: null, email: signedInEmail }); return false; }
+    if (!res.ok) return false;
+    const j = await res.json();
+    if (!j.accessToken) return false;
+    accessToken = j.accessToken;
+    tokenExpiresAt = j.expiresAt || (Date.now() + 3500 * 1000);
+    if (onTokenStored) onTokenStored({ token: accessToken, expiresAt: tokenExpiresAt, refreshToken, email: signedInEmail });
+    return true;
+  } catch (e) { return false; }
+}
+
+/**
+ * Access tokens last about an hour. The broker renews them silently in the
+ * background; only if it is off or fails do we fall back to the iframe/redirect
+ * path Safari fights with. Every Drive call goes through this first.
  */
 export async function ensureFreshToken() {
   if (accessToken && Date.now() < tokenExpiresAt - TOKEN_REFRESH_MARGIN_MS) return true;
+  if (await brokerRefresh()) return true;
   return trySilentSignIn(lastEmailHint);
 }
 

@@ -51,6 +51,8 @@ import {
   bmiSummary,
   weightTrend,
   weeklyAverages,
+  deepEqual,
+  sameSnapshotData,
   recordWeight,
   mergeTombstones,
   syncNudge,
@@ -1588,5 +1590,55 @@ describe('mergeSyncSnapshots — one-time log (C)', () => {
     const local = snap(2, []);
     const remote = snap(1, [{ id: 'x', date: '2026-08-01', name: 'Hike', minutes: 90 }]);
     expect(mergeSyncSnapshots(local, remote).oneTimeLog).toHaveLength(1);
+  });
+});
+
+describe('sameSnapshotData — the sync re-render guard', () => {
+  const base = () => ({
+    exercises: [{ id: 'a', name: 'Push' }],
+    deletedExercises: {}, setsLog: { '2026-08-01': { a: [10] } },
+    timersLog: {}, profile: { username: 'J' }, streakOverrides: {}, oneTimeLog: [],
+  });
+
+  it('sees identical data as identical, even with different key order', () => {
+    const a = base();
+    const b = base();
+    b.setsLog = { '2026-08-01': { a: [10] } }; // rebuilt object, same content
+    // reorder profile keys
+    b.profile = { username: 'J' };
+    expect(sameSnapshotData(a, b)).toBe(true);
+  });
+
+  it('ignores metadata differences (updatedAt, version)', () => {
+    const a = { ...base(), updatedAt: 1, version: 1 };
+    const b = { ...base(), updatedAt: 999, version: 1 };
+    expect(sameSnapshotData(a, b)).toBe(true);
+  });
+
+  it('detects a real change', () => {
+    const a = base();
+    const b = base();
+    b.setsLog = { '2026-08-01': { a: [10, 5] } }; // remote added a set
+    expect(sameSnapshotData(a, b)).toBe(false);
+  });
+
+  it('detects a new exercise from another device', () => {
+    const a = base();
+    const b = base();
+    b.exercises = [{ id: 'a', name: 'Push' }, { id: 'b', name: 'Squat' }];
+    expect(sameSnapshotData(a, b)).toBe(false);
+  });
+});
+
+describe('deepEqual', () => {
+  it('is order-insensitive for object keys', () => {
+    expect(deepEqual({ a: 1, b: 2 }, { b: 2, a: 1 })).toBe(true);
+  });
+  it('is order-sensitive for arrays', () => {
+    expect(deepEqual([1, 2], [2, 1])).toBe(false);
+  });
+  it('handles nested and null', () => {
+    expect(deepEqual({ x: { y: [1, { z: null }] } }, { x: { y: [1, { z: null }] } })).toBe(true);
+    expect(deepEqual({ a: 1 }, { a: 1, b: 2 })).toBe(false);
   });
 });

@@ -1068,6 +1068,33 @@ function mergeWeightLogs(winner, loser) {
   return [...byDate.values()].sort((a, b) => (a.d < b.d ? -1 : a.d > b.d ? 1 : 0));
 }
 
+/**
+ * Order-insensitive deep equality. A sync merge rebuilds the day-keyed maps, so
+ * their key order can differ from the local copy while the content is identical
+ * — JSON.stringify would call those different and trigger a needless re-render.
+ */
+export function deepEqual(a, b) {
+  if (a === b) return true;
+  if (typeof a !== typeof b || a === null || b === null || typeof a !== 'object') return a === b;
+  const aArr = Array.isArray(a), bArr = Array.isArray(b);
+  if (aArr !== bArr) return false;
+  if (aArr) return a.length === b.length && a.every((v, i) => deepEqual(v, b[i]));
+  const ka = Object.keys(a), kb = Object.keys(b);
+  if (ka.length !== kb.length) return false;
+  return ka.every((k) => Object.prototype.hasOwnProperty.call(b, k) && deepEqual(a[k], b[k]));
+}
+
+/**
+ * Whether two snapshots hold the same data. Metadata (version, updatedAt) is
+ * ignored — only the real content decides. This is what stops a backup cycle
+ * from re-rendering the whole app when the cloud brought back nothing new.
+ */
+export const SNAPSHOT_DATA_KEYS = ['exercises', 'deletedExercises', 'setsLog', 'timersLog', 'profile', 'streakOverrides', 'oneTimeLog'];
+export function sameSnapshotData(a, b) {
+  if (!a || !b) return false;
+  return SNAPSHOT_DATA_KEYS.every((k) => deepEqual(a[k] ?? null, b[k] ?? null));
+}
+
 export function mergeSyncSnapshots(local, remote) {
   if (!remote) return local;
   const localAt = local.updatedAt || 0;

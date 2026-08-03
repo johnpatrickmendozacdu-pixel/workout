@@ -47,6 +47,7 @@ import {
   validateBackup,
   mergeBackup,
   mergeSyncSnapshots,
+  sameSnapshotData,
   emomPhase,
   emomBeepSchedule,
   countInLeft,
@@ -510,9 +511,14 @@ async function runSyncCycle() {
   try {
     beginSyncing(); renderSyncUI();
     const remote = await gsync.downloadBackup();
-    const merged = mergeSyncSnapshots(buildSyncSnapshot(), remote);
-    // Only rewrite what is here when the cloud actually contributed something.
-    if (remote) await applyMergedSnapshot(merged);
+    const local = buildSyncSnapshot();
+    const merged = mergeSyncSnapshots(local, remote);
+    // Only rewrite and re-render when the cloud actually brought back something
+    // different. Every backup cycle used to rebuild the whole view even when the
+    // merge equalled what was already here — a full innerHTML swap mid-use, seen
+    // as a flash. On one device the merge almost always matches, so this is
+    // silent; a genuine change from another device still applies.
+    if (remote && !sameSnapshotData(local, merged)) await applyMergedSnapshot(merged);
     await gsync.uploadBackup(merged);
     await clearSyncPending();
     state.sync.lastBackupAt = Date.now();

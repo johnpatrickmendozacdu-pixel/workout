@@ -49,7 +49,7 @@ import {
   storedTokenUsable,
   bmiSummary,
   weightTrend,
-  weighInWeeks,
+  weeklyAverages,
   recordWeight,
   mergeTombstones,
   syncNudge,
@@ -1326,45 +1326,37 @@ describe('weightTrend', () => {
   });
 });
 
-describe('weighInWeeks', () => {
-  it('has no weeks at all before the first entry', () => {
-    expect(weighInWeeks([], '2026-07-31')).toEqual([]);
-    expect(weighInWeeks(null, '2026-07-31')).toEqual([]);
+describe('weeklyAverages', () => {
+  it('has no weeks before the first entry', () => {
+    expect(weeklyAverages([], '2026-07-31')).toEqual([]);
+    expect(weeklyAverages(null, '2026-07-31')).toEqual([]);
   });
 
-  it('counts buckets from the first entry, not from a calendar week', () => {
-    const weeks = weighInWeeks([{ d: '2026-07-01', w: 80 }], '2026-07-08');
-    expect(weeks[0]).toMatchObject({ n: 1, from: '2026-07-01', to: '2026-07-07', status: 'hit' });
-    expect(weeks[1]).toMatchObject({ n: 2, from: '2026-07-08', to: '2026-07-14', status: 'pending' });
+  it('averages each week from the first entry, one decimal', () => {
+    const log = [{ d: '2026-07-01', w: 80 }, { d: '2026-07-03', w: 79 }]; // week 1: (80+79)/2 = 79.5
+    const w = weeklyAverages(log, '2026-07-05');
+    expect(w).toHaveLength(1);
+    expect(w[0]).toMatchObject({ n: 1, weekStart: '2026-07-01', weekEnd: '2026-07-07', avg: 79.5, count: 2, isCurrent: true });
   });
 
-  it('counts any day inside the week, first day or last', () => {
-    const early = weighInWeeks([{ d: '2026-07-01', w: 80 }, { d: '2026-07-08', w: 79 }], '2026-07-20');
-    expect(early[1].status).toBe('hit');
-    const late = weighInWeeks([{ d: '2026-07-01', w: 80 }, { d: '2026-07-14', w: 79 }], '2026-07-20');
-    expect(late[1].status).toBe('hit');
+  it('omits weeks with no entry rather than plotting a zero', () => {
+    // entry in week 1 and week 3 only; week 2 is a gap
+    const log = [{ d: '2026-07-01', w: 80 }, { d: '2026-07-15', w: 78 }];
+    const w = weeklyAverages(log, '2026-07-20');
+    expect(w.map((x) => x.n)).toEqual([1, 3]);
+    expect(w.map((x) => x.avg)).toEqual([80, 78]);
   });
 
-  it('marks every skipped week, not just the last one', () => {
-    const weeks = weighInWeeks([{ d: '2026-07-01', w: 80 }], '2026-07-22');
-    expect(weeks.map((x) => x.status)).toEqual(['hit', 'missed', 'missed', 'pending']);
-  });
-
-  it('never calls the current week missed', () => {
-    const weeks = weighInWeeks([{ d: '2026-07-01', w: 80 }], '2026-07-13');
-    expect(weeks[weeks.length - 1].status).toBe('pending');
-  });
-
-  it('counts two entries in one week as a single hit', () => {
-    const weeks = weighInWeeks([{ d: '2026-07-01', w: 80 }, { d: '2026-07-03', w: 79 }], '2026-07-05');
-    expect(weeks).toHaveLength(1);
-    expect(weeks[0].status).toBe('hit');
+  it('flags the current week and finalizes past weeks', () => {
+    const log = [{ d: '2026-07-01', w: 80 }, { d: '2026-07-09', w: 78 }];
+    const w = weeklyAverages(log, '2026-07-10');
+    expect(w[0].isCurrent).toBe(false);
+    expect(w[w.length - 1].isCurrent).toBe(true);
   });
 
   it('ignores the order entries arrive in', () => {
-    const weeks = weighInWeeks([{ d: '2026-07-14', w: 79 }, { d: '2026-07-01', w: 80 }], '2026-07-16');
-    expect(weeks[0].from).toBe('2026-07-01');
-    expect(weeks.map((x) => x.status)).toEqual(['hit', 'hit', 'pending']);
+    const log = [{ d: '2026-07-09', w: 78 }, { d: '2026-07-01', w: 80 }];
+    expect(weeklyAverages(log, '2026-07-10').map((x) => x.avg)).toEqual([80, 78]);
   });
 });
 
@@ -1444,9 +1436,7 @@ describe('health habits are not exercises', () => {
     expect(log.every((e) => typeof e.w === 'number' && e.d)).toBe(true);
   });
 
-  it('a missed week cannot touch the exercise streak', () => {
-    const weeks = weighInWeeks([{ d: '2026-07-01', w: 80 }], '2026-07-22');
-    expect(weeks.some((x) => x.status === 'missed')).toBe(true);
+  it('logging a weight cannot touch the exercise streak', () => {
     const streak = calcStreakInfo(ex, setsLog, '2026-07-30', {});
     recordWeight([], '2026-07-30', 82.4);
     expect(calcStreakInfo(ex, setsLog, '2026-07-30', {})).toEqual(streak);

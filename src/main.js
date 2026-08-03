@@ -54,7 +54,7 @@ import {
   syncNudge,
   bmiSummary,
   weightTrend,
-  weighInWeeks,
+  weeklyAverages,
   recordWeight,
   enforceSingleEmom,
   emomSessionsToPause,
@@ -633,16 +633,14 @@ async function saveProfile() {
   const height = heightRaw === '' ? null : Math.max(0, parseFloat(heightRaw));
   // Spread what is already there: this form does not edit the photo, and
   // rebuilding the object from its fields alone silently deleted it.
-  const dayEl = document.getElementById('f-weighin-day');
   // Editing the profile is not weighing in. Correcting a username or a height
-  // must not tick the week off, so only the Log weight button writes history —
-  // the number here still moves BMI, it just does not claim a weigh-in.
+  // must not log a weight, so only the Log weight button writes the daily
+  // entry — the number here still moves BMI, it just does not claim a weigh-in.
   state.profile = {
     ...state.profile,
     username,
     weight: isNaN(weight) ? null : weight,
     height: isNaN(height) ? null : height,
-    weighInDay: dayEl ? Number(dayEl.value) : (state.profile.weighInDay ?? 6),
   };
   await persistProfile();
   renderTopbar();
@@ -1509,76 +1507,60 @@ function renderView() {
  * A health habit, not an exercise: no ring, no bar, no target, no "to go".
  * It sits below the exercises and is labelled, so it can never be read as one.
  *
- * It stays up all week rather than appearing on the day, because the point of
- * naming a day is to have something to work towards. Seeing "this Saturday"
- * on a Tuesday is the whole value — the day is a bar to aim at, not an alarm.
- * Any day's weight still satisfies the week.
+ * Daily now: it asks once a day and disappears the moment today is logged. The
+ * week's average is what Progress plots, so the value of logging is consistency,
+ * not hitting a particular day.
  */
 function weighInCardHtml() {
   const p = state.profile || {};
   const today = todayISO();
-  const weeks = weighInWeeks(p.weightLog, today);
-  const current = weeks[weeks.length - 1];
-  if (current && current.status === 'hit') return '';
-
-  const wantDay = p.weighInDay ?? 6;
-  const dayName = WEEKDAYS[wantDay];
-  let line;
-  let locked;
-  if (!current) {
-    // No history yet, so there is no week to measure against — fall back to
-    // the plain weekday. The escape hatch below is the same either way.
-    locked = new Date(today + 'T00:00:00').getDay() !== wantDay;
-    line = locked ? `Your day is ${dayName}. Come back then.` : `It's ${dayName}. Today's the day.`;
-  } else {
-    // Exactly one day in the current bucket falls on the chosen weekday.
-    const startDay = new Date(current.from + 'T00:00:00').getDay();
-    const dayOn = addDays(current.from, (wantDay - startDay + 7) % 7);
-    const daysAway = Math.round((new Date(dayOn + 'T00:00:00') - new Date(today + 'T00:00:00')) / 86400000);
-    locked = today < dayOn;
-    line = daysAway > 1 ? `${dayName} — ${daysAway} days to go. Make them count.`
-      : daysAway === 1 ? `${dayName} is tomorrow. Make it count.`
-      : daysAway === 0 ? `It's ${dayName}. Today's the day.`
-      : `${dayName} has passed — still counts before the week is out.`;
-  }
-
-  // Locked is a real guard, not a costume: the button carries no action at all
-  // until the day, and 'log-ahead' only ever explains how to move the day.
-  const buttons = locked
-    ? `<div class="habit-actions">
-        <span class="habit-btn locked" aria-disabled="true">${ICONS.lock}Log weight on ${escapeHtml(dayName)}</span>
-        <button class="habit-ahead" data-action="log-ahead">Log ahead?</button>
-      </div>`
-    : `<button class="habit-btn" data-action="open-weigh-in">Log weight</button>`;
-
+  const loggedToday = (p.weightLog || []).some((e) => e && e.d === today && e.w > 0);
+  if (loggedToday) return '';
   return `<div class="section-label">Health habit</div>
-    <div class="habit-card${locked ? ' is-locked' : ''}">
-      <div class="habit-text"><b>Weekly weigh-in</b><span>${escapeHtml(line)}</span></div>
-      ${buttons}
+    <div class="habit-card">
+      <div class="habit-text"><b>Daily weigh-in</b><span>A few seconds each morning. Your weekly average is on Progress.</span></div>
+      <button class="habit-btn" data-action="open-weigh-in">Log weight</button>
     </div>
-    ${tipHtml('weigh-in', 'Health habits are tracked apart from exercises — missing one never breaks your streak.')}`;
+    ${tipHtml('weigh-in', 'Tracked apart from exercises — weighing in never touches a streak. Log daily; Progress shows the weekly-average trend.')}`;
 }
 
 /**
- * The habit's own place on Progress, kept clear of the exercise cards. Every
- * week since the first weigh-in is shown; the strip scrolls rather than being
- * cut off, so a long history never crushes the markers together.
+ * The habit's own place on Progress: a line chart of each week's average weight,
+ * the progression a daily habit is for. Reuses the trajectory chart's shape.
  */
+function weightChartHtml(weeks) {
+  if (weeks.length < 2) {
+    return `<div class="traj-empty">Two weeks of weigh-ins and this becomes a trend.</div>`;
+  }
+  const W = 320, H = 120, padL = 8, padR = 8, padT = 10, padB = 18;
+  const vals = weeks.map((w) => w.avg);
+  const maxY = Math.max(...vals), minY = Math.min(...vals);
+  const span = maxY - minY || 1;
+  const x = (i) => padL + (i / (weeks.length - 1)) * (W - padL - padR);
+  const y = (v) => padT + (1 - (v - minY) / span) * (H - padT - padB);
+  const pts = weeks.map((w, i) => `${x(i).toFixed(1)},${y(w.avg).toFixed(1)}`).join(' ');
+  const dots = weeks.map((w, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(w.avg).toFixed(1)}" r="${w.isCurrent ? 3.5 : 2.5}" class="${w.isCurrent ? 'traj-dot-current' : 'traj-dot'}"><title>Week of ${w.weekStart}: ${w.avg} kg avg</title></circle>`).join('');
+  const first = weeks[0], last = weeks[weeks.length - 1];
+  return `<svg class="traj-chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Weekly average weight from ${first.avg} to ${last.avg} kg">
+    <polyline points="${pts}" class="traj-line" fill="none"/>
+    ${dots}
+    <text class="traj-axis" x="${padL}" y="${H - 4}" text-anchor="start">${escapeHtml(formatDisplayDate(first.weekStart, { month: 'short', day: 'numeric' }))}</text>
+    <text class="traj-axis" x="${W - padR}" y="${H - 4}" text-anchor="end">${escapeHtml(formatDisplayDate(last.weekStart, { month: 'short', day: 'numeric' }))}</text>
+  </svg>`;
+}
+
 function weighInBlockHtml() {
   const p = state.profile || {};
-  const weeks = weighInWeeks(p.weightLog, todayISO());
+  const weeks = weeklyAverages(p.weightLog, todayISO());
   if (!weeks.length) return '';
-  const marks = weeks.map((wk) => {
-    const glyph = wk.status === 'hit' ? '●' : wk.status === 'missed' ? '✕' : '○';
-    return `<span class="habit-mark ${wk.status}" title="Week ${wk.n}: ${wk.from} to ${wk.to}">${glyph}</span>`;
-  }).join('');
   const s = bmiSummary(p);
+  const thisWeek = weeks[weeks.length - 1];
+  const change = weeks.length >= 2 ? Math.round((thisWeek.avg - weeks[0].avg) * 10) / 10 : null;
   return `<div class="habit-block">
-    <div class="habit-block-head"><span class="section-label">Weekly weight tracking</span><span class="habit-tag">health habit</span></div>
-    <div class="habit-strip">${marks}</div>
-    ${s ? `<div class="bmi-line">Current ${p.weight} kg · BMI ${s.bmi} · ${BMI_LABEL[s.category]}</div>
-      ${s.toHealthy > 0 ? `<div class="bmi-line">About ${s.toHealthy} kg to the healthy range.</div>` : ''}` : ''}
-    ${weightTrendHtml(p.weightLog)}
+    <div class="habit-block-head"><span class="section-label">Weekly weight</span><span class="habit-tag">health habit</span></div>
+    ${weightChartHtml(weeks)}
+    <div class="bmi-line">This week avg ${thisWeek.avg} kg${thisWeek.isCurrent && thisWeek.count < 7 ? ' (so far)' : ''}${s ? ` · BMI ${s.bmi} · ${BMI_LABEL[s.category]}` : ''}</div>
+    ${change != null ? `<div class="bmi-line ${change < 0 ? 'down' : 'up'}">${change < 0 ? '↓' : '↑'} ${Math.abs(change)} kg since ${escapeHtml(formatDisplayDate(weeks[0].weekStart, { month: 'short', day: 'numeric' }))}</div>` : ''}
   </div>`;
 }
 
@@ -2164,7 +2146,7 @@ function modalGuide() {
       ['Open a card', 'Its numbers, best day and recent days.'],
       anyHistory && ['Fix a number', 'Tap a total or target inside a card.'],
       ['Top set vs Max', 'Best single set, versus biggest day.'],
-      (state.profile && (state.profile.weightLog || []).length) && ['Weight tracking', 'Green = weighed in, red = missed that week, hollow = this week.'],
+      (state.profile && (state.profile.weightLog || []).length) && ['Weight tracking', 'Log daily. The chart plots each week’s average weight, so you see the trend, not the daily noise.'],
     ],
   };
 
@@ -2666,13 +2648,6 @@ function modalProfile() {
         </div>
       </div>
       ${bmiBlockHtml(p)}
-      <div class="field">
-        <label>Weekly weigh-in day</label>
-        <select id="f-weighin-day">
-          ${WEEKDAYS.map((d, i) => `<option value="${i}"${(p.weighInDay ?? 6) === i ? ' selected' : ''}>${d}</option>`).join('')}
-        </select>
-        <div class="hint">The day you're aiming for, shown on Today all week. Any day still counts — only skipping the whole week is a miss.</div>
-      </div>
       <button class="secondary-btn" style="width:100%" data-action="save-profile">Save profile</button>
     </div>
   </div>`;
@@ -2962,11 +2937,6 @@ document.addEventListener('click', async (e) => {
       showToast('Resting everything today');
       break;
     }
-    case 'log-ahead':
-      // Deliberately logs nothing. Weighing in early would quietly move the
-      // day the weeks are measured against; changing the day is the honest way.
-      showToast('Want to weigh in earlier? Change your weigh-in day in Profile, then Save profile.');
-      break;
     case 'open-weigh-in':
       state.modal = { type: 'weighin' };
       renderModal();

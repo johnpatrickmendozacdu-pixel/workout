@@ -628,35 +628,37 @@ export function weightTrend(weightLog) {
 }
 
 /**
- * Each week since the first weigh-in, and whether it was logged.
- *
- * Weeks are seven-day buckets counted from the first entry. The day someone
- * weighs in is irrelevant — Sunday or Wednesday both count — so the reminder
- * day is deliberately not an input here. That is what stops a change of
- * reminder day from rewriting history: nothing in this function depends on it.
- *
- * Stores nothing. The habit's whole record is the weight log's dates.
+ * Weekly average weight since the first weigh-in — the progression a daily
+ * habit is for. Weeks are seven-day buckets counted from the first entry; each
+ * result is the mean of that week's logged weights, one decimal. Weeks with no
+ * entry are omitted, so a gap reads as a gap rather than a drop to zero. The
+ * bucket holding `today` is flagged current, since its average is still filling
+ * in until the week closes.
  */
-export function weighInWeeks(weightLog, today) {
+export function weeklyAverages(weightLog, today) {
   const log = Array.isArray(weightLog) ? weightLog.filter((e) => e && e.d && e.w > 0) : [];
   if (!log.length) return [];
   const dates = log.map((e) => e.d).sort();
   const start = dates[0];
   if (today < start) return [];
 
-  const weeks = [];
+  const round1 = (n) => Math.round(n * 10) / 10;
+  const out = [];
   let from = start;
   let n = 1;
   for (;;) {
     const to = addDays(from, 6);
-    const logged = dates.some((d) => d >= from && d <= to);
+    const inWeek = log.filter((e) => e.d >= from && e.d <= to);
     const current = today >= from && today <= to;
-    weeks.push({ n, from, to, status: logged ? 'hit' : current ? 'pending' : 'missed' });
+    if (inWeek.length) {
+      const avg = round1(inWeek.reduce((a, e) => a + e.w, 0) / inWeek.length);
+      out.push({ n, weekStart: from, weekEnd: to, avg, count: inWeek.length, isCurrent: current });
+    }
     if (current) break;
     from = addDays(from, 7);
     n += 1;
   }
-  return weeks;
+  return out;
 }
 
 /**

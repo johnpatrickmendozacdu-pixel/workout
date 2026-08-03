@@ -12,12 +12,21 @@ const CLIENT_ID = '515660891133-63v7l803od2cee981sineagm6snl3kfb.apps.googleuser
 const SCOPE = 'https://www.googleapis.com/auth/drive.appdata';
 const BACKUP_FILENAME = 'workout-tracker-data.json';
 
+// Empty until the Cloudflare Worker is deployed and its URL is filled in here.
+// While empty, every broker path below is skipped and the app uses the existing
+// Google Identity Services flow — so shipping this with an empty URL changes
+// nothing and cannot regress.
+const BROKER_URL = '';
+
+export function brokerConfigured() { return typeof BROKER_URL === 'string' && BROKER_URL.length > 0; }
+
 let tokenClient = null;
 let accessToken = null;
 let tokenExpiresAt = 0;
 let signedInEmail = null;
 let emailPromise = null;
 let lastAuthError = null;
+let refreshToken = null;
 
 /** Why the last sign-in attempt failed, or null. See googleSignInHandler. */
 export function getLastAuthError() { return lastAuthError; }
@@ -102,12 +111,18 @@ let onTokenStored = null;
 export function setTokenListener(cb) { onTokenStored = cb; }
 
 export function restoreSession(record) {
-  if (!record || !record.token || !record.expiresAt) return false;
-  if (record.expiresAt - Date.now() <= 30000) return false;
-  accessToken = record.token;
-  tokenExpiresAt = record.expiresAt;
+  if (!record) return false;
   if (record.email) { signedInEmail = record.email; lastEmailHint = record.email; }
-  return true;
+  // A refresh token restores the session even when the access token has expired:
+  // the broker can mint a fresh one silently, which is the whole point.
+  if (record.refreshToken) refreshToken = record.refreshToken;
+  const accessUsable = record.token && record.expiresAt && record.expiresAt - Date.now() > 30000;
+  if (accessUsable) {
+    accessToken = record.token;
+    tokenExpiresAt = record.expiresAt;
+    return true;
+  }
+  return brokerConfigured() && !!refreshToken;
 }
 
 function gisReady() {

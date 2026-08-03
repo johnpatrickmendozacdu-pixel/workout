@@ -682,10 +682,10 @@ export function weeklyAverages(weightLog, today) {
 }
 
 /**
- * One entry per weight *change*, not per save — saving the profile with the
- * same number on it should not manufacture a data point. A second weight on a
- * day already recorded corrects that day rather than adding to it, so fixing a
- * typo does not leave a spike in the history.
+ * One entry per day. Logging today always records today — even at the same
+ * weight as yesterday — so a daily weigh-in marks the day done and the card
+ * stops asking. Re-logging the same day corrects that day rather than adding a
+ * second point, so fixing a typo never leaves a spike.
  */
 export function recordWeight(weightLog, dateStr, w) {
   const log = Array.isArray(weightLog) ? weightLog : [];
@@ -694,11 +694,10 @@ export function recordWeight(weightLog, dateStr, w) {
   const sorted = [...log].sort((a, b) => (a.d < b.d ? -1 : a.d > b.d ? 1 : 0));
   const last = sorted[sorted.length - 1];
   if (last && last.d === dateStr) {
-    if (last.w === weight) return log;
-    return [...sorted.slice(0, -1), { d: dateStr, w: weight }];
+    if (last.w === weight) return log;                        // already logged today, unchanged
+    return [...sorted.slice(0, -1), { d: dateStr, w: weight }]; // same-day correction
   }
-  if (last && last.w === weight) return log;
-  return [...sorted, { d: dateStr, w: weight }];
+  return [...sorted, { d: dateStr, w: weight }];               // a new day always counts
 }
 
 /**

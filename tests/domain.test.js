@@ -1375,8 +1375,15 @@ describe('recordWeight', () => {
     ]);
   });
 
-  it('records nothing when the weight is unchanged', () => {
+  it('records a new day even at the same weight, so a daily log marks the day done', () => {
     const log = [{ d: '2026-06-12', w: 85.6 }];
+    expect(recordWeight(log, '2026-07-31', 85.6)).toEqual([
+      { d: '2026-06-12', w: 85.6 }, { d: '2026-07-31', w: 85.6 },
+    ]);
+  });
+
+  it('does not double-log the same day at the same weight', () => {
+    const log = [{ d: '2026-07-31', w: 85.6 }];
     expect(recordWeight(log, '2026-07-31', 85.6)).toEqual(log);
   });
 

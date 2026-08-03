@@ -12,10 +12,11 @@ which a browser cannot hold safely and which requires a server-side exchange.
 
 ## The idea, plainly
 
-A tiny always-free serverless **Cloudflare Worker** sits between the app and Google. It
-holds each user's refresh token (in Cloudflare KV) and, on request, quietly mints a fresh
-1-hour access token. The app calls it in the background whenever its token is about to
-expire — no redirect, no iframe, no tap. Sync just stays alive.
+A tiny always-free serverless **Cloudflare Worker** sits between the app and Google. It is
+**stateless** — it stores nothing. Each user's refresh token lives on their own device; the
+app hands it to the Worker only when it needs a fresh 1-hour access token, and the Worker
+does the exchange with Google and forgets it. The app calls this in the background whenever
+its token is about to expire — no redirect, no iframe, no tap. Sync just stays alive.
 
 **The Worker only ever touches OAuth tokens. Workout data never passes through it** — the
 app still talks to Google Drive directly with the access token, exactly as today. So there
@@ -23,8 +24,8 @@ is no data-migration and no data-loss surface.
 
 ## Guard rails, and how each is met
 
-- **100% free:** Cloudflare Workers free tier = 100k requests/day; KV = 100k reads/day,
-  1k writes/day, 1GB. A family will not approach this. No card, no trial.
+- **100% free:** Cloudflare Workers free tier = 100k requests/day. A family will not
+  approach this, and the stateless design needs no KV or storage at all. No card, no trial.
 - **One-time setup:** create a free Cloudflare account, deploy the Worker once, add one
   Google Console redirect URI and copy the client secret in once. Then never touched.
 - **Zero maintenance (of what we control):** the Worker is serverless — Cloudflare runs and
@@ -32,7 +33,7 @@ is no data-migration and no data-loss surface.
   months idle, a password change, or a user revoking access), which **self-heals**: the app
   falls back to a normal sign-in.
 - **Cannot break the app:** the broker is an *enhancement layer*. If the Worker is
-  unreachable, the sessionId is missing, or anything errors, `googleSync.js` falls straight
+  unreachable, the refresh token is missing, or anything errors, `googleSync.js` falls straight
   back to today's Google Identity Services flow — the app works offline and syncs on tap,
   exactly as now. The broker can only add reliability.
 
@@ -40,9 +41,19 @@ is no data-migration and no data-loss surface.
 
 Two deliverables, cleanly separated:
 
-1. **The Worker** (`worker/` — its own tiny project, deployed to Cloudflare).
+1. **The Worker** (`worker/` — its own tiny project, deployed to Cloudflare). **Stateless:
+   no KV, no stored user tokens.** It holds only the Google client secret (an env var) and
+   brokers token exchanges on demand.
 2. **App changes** (`src/sync/googleSync.js` — a preferred broker path with the existing
    flow kept as fallback).
+
+### On-device model
+
+The refresh token stays on the owner's device — in the app's IndexedDB, beside the access
+token already stored there — and is **never kept by the Worker**. Since everyone uses their
+own phone, each person's refresh token lives only where they are, so there is no central
+store of secrets to breach. The Worker sees a refresh token only in transit, for the
+milliseconds it takes to exchange it, and remembers nothing.
 
 ### Auth flow (authorization-code with refresh, replacing implicit as the *preferred* path)
 
@@ -53,57 +64,62 @@ Two deliverables, cleanly separated:
 2. Google returns to the app URL with `?code=…&state=…`. App verifies `state`, reads `code`.
 3. App POSTs `{ code }` to the Worker's `/exchange`.
 4. Worker exchanges `code` + `CLIENT_SECRET` with Google → `{ access_token, refresh_token,
-   expires_in }`. It stores the **refresh token in KV** under a fresh random `sessionId`,
-   and returns `{ sessionId, accessToken, expiresAt, email }`.
-5. App stores `sessionId` in **IndexedDB** (a bearer value, not a cookie — this sidesteps
-   the Safari/iOS cookie fragility that caused the original problem) and uses the access
-   token immediately.
+   expires_in }` and returns all three to the app. **It stores nothing.**
+5. App stores the **refresh token** and access token in **IndexedDB** (bearer values, not
+   cookies — this sidesteps the Safari/iOS cookie fragility that caused the original
+   problem) and uses the access token immediately.
 
 **Silent refresh (every time after, fully background — the whole point):**
-1. When the access token is within the refresh margin, the app POSTs `{ sessionId }` to the
-   Worker's `/token`.
-2. Worker looks up the refresh token in KV, calls Google's token endpoint with it, returns
-   a fresh `{ accessToken, expiresAt }`.
+1. When the access token is within the refresh margin, the app POSTs
+   `{ refreshToken }` to the Worker's `/token`.
+2. Worker calls Google's token endpoint with it + `CLIENT_SECRET`, returns a fresh
+   `{ accessToken, expiresAt }`, and forgets the refresh token.
 3. No redirect, no iframe, no user action.
 
-**Sign-out:** app POSTs `/revoke` with `sessionId`; Worker revokes the refresh token with
-Google and deletes the KV entry, then the app clears local auth as it does today.
+**Sign-out:** app POSTs `/revoke` with its `refreshToken`; Worker asks Google to revoke it;
+the app deletes it from IndexedDB and clears local auth as it does today.
 
 ### Worker endpoints
 
-- `POST /exchange { code }` → `{ sessionId, accessToken, expiresAt, email }`
-- `POST /token { sessionId }` → `{ accessToken, expiresAt }` (404 if session unknown →
-  app falls back to interactive sign-in)
-- `POST /revoke { sessionId }` → `{ ok: true }`
+- `POST /exchange { code }` → `{ refreshToken, accessToken, expiresAt, email }`
+- `POST /token { refreshToken }` → `{ accessToken, expiresAt }` (a Google `invalid_grant`
+  → 401, on which the app drops the dead refresh token and falls back to interactive
+  sign-in)
+- `POST /revoke { refreshToken }` → `{ ok: true }`
 - CORS locked to the app origin only. All responses JSON. Secrets (`CLIENT_ID`,
   `CLIENT_SECRET`, `ALLOWED_ORIGIN`) are Worker env vars, never shipped to the browser.
+- Stateless: no KV binding, no persistence of any kind.
 
 ### App changes (`googleSync.js`)
 
 - Add `brokerSignIn()` (starts the code redirect), `brokerExchange(code)`,
   `brokerRefresh()` (background), pointed at a compile-time `BROKER_URL`.
-- `ensureFreshToken()` prefers `brokerRefresh()` when a `sessionId` exists; on any failure
-  or absence, it falls through to the existing `trySilentSignIn` / redirect path unchanged.
+- `ensureFreshToken()` prefers `brokerRefresh()` when a `refreshToken` exists; on any
+  failure or absence, it falls through to the existing `trySilentSignIn` / redirect path
+  unchanged.
 - `consumeRedirectResult()` learns to recognise a `code` return (broker) alongside the
   existing `token` return (fallback).
-- `sessionId` persists via the existing token-listener → IndexedDB mechanism.
+- The stored token record gains a `refreshToken` field, persisted via the existing
+  token-listener → IndexedDB mechanism.
 - Everything else — Drive upload/download, the merge, the render-guard — is untouched.
 
 ## Security trade-off (named, not buried)
 
-Today each access token lives only in its owner's browser. The broker **centralises refresh
-tokens** in the Worker's KV. If the Worker or its KV were compromised, an attacker could
-mint access tokens to users' `drive.appdata` — the app's own hidden folder only, never the
-rest of their Drive. For a family app this is low-stakes, and the `sessionId` bearer is no
-more exposed than today's stored access token; but it is a real new concentration of
-secrets and is stated here so the choice is made with eyes open.
+The on-device model has **no central store** — each person's refresh token lives only in
+their own device's IndexedDB, and the Worker keeps nothing. The residual trade-off is only
+this: a refresh token is longer-lived than an access token, so the value sitting in a
+device's storage is a slightly larger secret than before. It never leaves that device
+except in transit to the Worker to be exchanged, and it still only ever reaches the app's
+own hidden `drive.appdata` folder — never the rest of the user's Drive, email, or anything
+else. On a personal phone this is the same threat surface as today's stored access token,
+just longer-lived.
 
 ## Testing
 
-- **Worker:** pure token-shaping/validation helpers (state check, response mapping, KV
-  key derivation) unit-tested. The Google exchange itself is integration-only and verified
-  manually with the user's account (only they can).
-- **App:** the fallback decision is pure and testable — given "no sessionId" or "broker
+- **Worker:** pure token-shaping/validation helpers (CORS/origin check, request-body
+  validation, Google response mapping) unit-tested. The Google exchange itself is
+  integration-only and verified manually with the user's account (only they can).
+- **App:** the fallback decision is pure and testable — given "no refresh token" or "broker
   error", `ensureFreshToken` chooses the legacy path. Test that it never throws and always
   degrades to the existing flow. The 278 existing tests must stay green.
 - **Verify by using:** the user confirms on their phone that sync survives past an hour
@@ -111,10 +127,10 @@ secrets and is stated here so the choice is made with eyes open.
 
 ## One-time setup (what the user does)
 
-1. **Cloudflare:** create a free account → Workers & Pages → create a KV namespace → deploy
-   the Worker (I provide the code; deploy via the dashboard editor or `wrangler`).
+1. **Cloudflare:** create a free account → Workers & Pages → deploy the Worker (I provide
+   the code; deploy via the dashboard editor or `wrangler`). No KV, no storage to set up.
 2. **Worker env vars:** paste `CLIENT_ID`, the Google **client secret**, and
-   `ALLOWED_ORIGIN` (the app URL); bind the KV namespace.
+   `ALLOWED_ORIGIN` (the app URL).
 3. **Google Console:** on the existing OAuth client (Web application), confirm the app URL
    is an Authorized redirect URI, and copy the **client secret** (used in step 2).
 4. Tell me the deployed Worker URL; I compile it into the app as `BROKER_URL` and ship.

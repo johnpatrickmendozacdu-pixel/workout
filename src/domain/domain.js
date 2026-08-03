@@ -115,6 +115,26 @@ export function formatWeight(value, unit) {
 }
 
 /**
+ * A dumbbell exercise's weight progression, for display only. Reads the dated
+ * weightHistory if present, else the flat weight. Returns null when there is no
+ * weight to show. `changed` is true once the current weight differs from the
+ * first recorded one, which is when the card shows "12 → 14 kg".
+ */
+export function weightProgression(exercise) {
+  const ex = exercise || {};
+  if (ex.equipment !== 'dumbbell') return null;
+  const hist = Array.isArray(ex.weightHistory) ? ex.weightHistory.filter((h) => h && h.weight > 0) : [];
+  if (hist.length) {
+    const sorted = hist.slice().sort((a, b) => (a.effectiveDate < b.effectiveDate ? -1 : 1));
+    const start = sorted[0].weight;
+    const last = sorted[sorted.length - 1];
+    return { start, current: last.weight, unit: last.unit === 'lb' ? 'lb' : 'kg', changed: last.weight !== start };
+  }
+  if (ex.weight > 0) return { start: ex.weight, current: ex.weight, unit: ex.weightUnit === 'lb' ? 'lb' : 'kg', changed: false };
+  return null;
+}
+
+/**
  * Day-level stats: how many active, targeted exercises existed on that day,
  * how many of them hit their target, and a per-exercise breakdown.
  * Untargeted exercises are tracked but never affect completion/streaks.

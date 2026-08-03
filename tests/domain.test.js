@@ -32,6 +32,7 @@ import {
   isScheduledOn,
   convertWeight,
   formatWeight,
+  weightProgression,
   scheduleEffectiveOn,
   isBreakDay,
   setDayOverride,
@@ -1552,5 +1553,25 @@ describe('weight conversion and formatting (equipment B)', () => {
   it('shows nothing without a weight', () => {
     expect(formatWeight(null, 'kg')).toBe('');
     expect(formatWeight(0, 'kg')).toBe('');
+  });
+});
+
+describe('weightProgression (D)', () => {
+  it('is null for a bodyweight exercise', () => {
+    expect(weightProgression({ equipment: 'bodyweight', weight: 10 })).toBeNull();
+  });
+  it('shows current when never changed', () => {
+    const ex = { equipment: 'dumbbell', weightHistory: [{ effectiveDate: '2026-07-01', weight: 12, unit: 'kg' }] };
+    expect(weightProgression(ex)).toMatchObject({ start: 12, current: 12, unit: 'kg', changed: false });
+  });
+  it('shows start and current once it has gone up', () => {
+    const ex = { equipment: 'dumbbell', weightHistory: [
+      { effectiveDate: '2026-07-01', weight: 12, unit: 'kg' },
+      { effectiveDate: '2026-07-20', weight: 14, unit: 'kg' },
+    ] };
+    expect(weightProgression(ex)).toMatchObject({ start: 12, current: 14, changed: true });
+  });
+  it('falls back to the flat weight with no history', () => {
+    expect(weightProgression({ equipment: 'dumbbell', weight: 8, weightUnit: 'lb' })).toMatchObject({ current: 8, unit: 'lb', changed: false });
   });
 });

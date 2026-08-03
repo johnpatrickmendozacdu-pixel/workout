@@ -11,6 +11,7 @@ import {
   scheduleEffectiveOn,
   scheduleLabel,
   convertWeight,
+  weightProgression,
   formatWeight,
   isBreakDay,
   setDayOverride,
@@ -206,6 +207,14 @@ async function loadAll() {
     // not from this.
     if (e.scheduleHistory === undefined) {
       e.scheduleHistory = [{ effectiveDate: e.createdDate || today, schedule: e.schedule || 'daily' }];
+      migrated = true;
+    }
+    // Seed weight history from the current weight, so a dumbbell exercise's
+    // progression starts from what it already is rather than from nothing.
+    if (e.weightHistory === undefined) {
+      e.weightHistory = e.weight > 0
+        ? [{ effectiveDate: e.createdDate || today, weight: e.weight, unit: e.weightUnit === 'lb' ? 'lb' : 'kg' }]
+        : [];
       migrated = true;
     }
   });
@@ -890,6 +899,7 @@ async function addExercise(data) {
     equipment: data.equipment === 'dumbbell' ? 'dumbbell' : 'bodyweight',
     weight: data.weight != null ? data.weight : null,
     weightUnit: data.weightUnit === 'lb' ? 'lb' : 'kg',
+    weightHistory: data.weight > 0 ? [{ effectiveDate: now, weight: data.weight, unit: data.weightUnit === 'lb' ? 'lb' : 'kg' }] : [],
     timerMode: data.timerMode === 'emom' ? 'emom' : 'normal',
     emomWorkSec: data.emomWorkSec || EMOM_DEFAULT_WORK_SEC,
     emomRestSec: data.emomRestSec != null ? data.emomRestSec : EMOM_DEFAULT_REST_SEC,
@@ -935,14 +945,32 @@ async function updateExercise(id, data) {
   ex.unit = (data.unit || 'reps').trim();
   applyScheduleChange(ex, data.schedule || 'daily');
   if (data.equipment !== undefined) ex.equipment = data.equipment === 'dumbbell' ? 'dumbbell' : 'bodyweight';
-  if (data.weight !== undefined) ex.weight = data.weight;
   if (data.weightUnit !== undefined) ex.weightUnit = data.weightUnit === 'lb' ? 'lb' : 'kg';
+  if (data.weight !== undefined) applyWeightChange(ex, data.weight, ex.weightUnit);
   if (data.timerMode !== undefined) ex.timerMode = data.timerMode === 'emom' ? 'emom' : 'normal';
   if (data.emomWorkSec != null) ex.emomWorkSec = data.emomWorkSec;
   if (data.emomRestSec != null) ex.emomRestSec = data.emomRestSec;
   applyTargetChange(ex, data.target || null);
   await persistExercises();
 }
+/**
+ * Records a dumbbell weight change with today's date, so Progress can show a
+ * progression. Weight is display-only and feeds no stat, so history exists just
+ * to remember the steps — appended when the number changes, never overwriting.
+ */
+function applyWeightChange(ex, weight, unit) {
+  const w = weight != null && weight > 0 ? weight : null;
+  ex.weight = w;
+  if (!Array.isArray(ex.weightHistory)) ex.weightHistory = [];
+  if (w == null) return; // clearing the weight leaves the history intact
+  const today = todayISO();
+  const last = ex.weightHistory[ex.weightHistory.length - 1];
+  if (last && last.effectiveDate === today) { last.weight = w; last.unit = unit; }
+  else if (!last || last.weight !== w || last.unit !== unit) {
+    ex.weightHistory.push({ effectiveDate: today, weight: w, unit });
+  }
+}
+
 /** Lightweight target-only edit, used by the inline Plan-row editor (no full form needed). */
 async function updateTargetHandler(id, rawValue) {
   const ex = state.exercises.find((e) => e.id === id);
@@ -1305,6 +1333,7 @@ function exerciseHistory(ex, s) {
     ${num('Best time', formatDuration(s.bestTime))}
     ${num('Average', formatDuration(s.avgTime))}
     ${num('Total time', formatTotalDuration(s.totalTime))}
+    ${weightTile(ex)}
   </dl>`;
 
   const chart = trajectoryChartHtml(ex);
@@ -1606,7 +1635,7 @@ function viewToday() {
     return `<button class="today-card" data-action="open-logger" data-id="${r.ex.id}">
       <span class="today-icon">${escapeHtml(r.ex.icon)}</span>
       <span class="today-body">
-        <span class="today-name">${escapeHtml(r.ex.name)}</span>
+        <span class="today-name">${escapeHtml(r.ex.name)}${weightTag(r.ex)}</span>
         <span class="today-meter" aria-hidden="true"><i style="width:${Math.round(r.pct * 100)}%"></i></span>
         <span class="today-sub">${r.hasTarget ? `${r.total} of ${r.target} ${escapeHtml(r.ex.unit)}` : `${r.total} ${escapeHtml(r.ex.unit)} · no target`}${running ? ` · <b data-elapsed="${r.ex.id}">${formatElapsed(timerElapsedMs(r.timer, Date.now()))}</b>` : ''}</span>
       </span>
@@ -2517,6 +2546,16 @@ function weightTag(ex) {
   if (!ex || ex.equipment !== 'dumbbell') return '';
   const w = formatWeight(ex.weight, ex.weightUnit);
   return w ? ` <span class="weight-tag">· ${escapeHtml(w)}</span>` : '';
+}
+
+/** A "Weight" stat tile showing progression: "12 → 14 kg" once it has changed. */
+function weightTile(ex) {
+  const p = weightProgression(ex);
+  if (!p) return '';
+  const val = p.changed
+    ? `${formatWeight(p.start, p.unit)} → ${formatWeight(p.current, p.unit)}`
+    : formatWeight(p.current, p.unit);
+  return `<div><dt>Weight</dt><dd>${escapeHtml(val)}</dd></div>`;
 }
 
 const BMI_LABEL = { underweight: 'Underweight', normal: 'Normal', overweight: 'Overweight', obese: 'Obese' };

@@ -8,10 +8,14 @@ Paste this into a new session to continue.
 
 **Sets**, a workout set tracker. Vanilla JS + Vite PWA, no framework, no runtime
 dependencies. Repo: `/Users/johnmendoza/Downloads/workout`.
-Live at **https://sets-workout.vercel.app** (Vercel, auto-deploys from `main`),
-and still at https://johnpatrickmendozacdu-pixel.github.io/workout/ (GitHub Pages,
-via Actions). Both run the same commit. Pages stays up until everyone has moved,
-then it can be retired.
+Live at **https://sets-workout.vercel.app** (Vercel, auto-deploys from `main`).
+
+The old GitHub Pages address was retired on 2026-08-05. It is not dead — Pages now
+publishes a one-page redirect (`pages-redirect/`) instead of the app, so an old
+bookmark forwards to the new address rather than serving a frozen copy that can
+never update. That page also unregisters the old service worker first, without
+which an installed PWA would keep showing its cached app and never see the
+redirect at all.
 
 **The app is no longer pinned to one address.** The redirect URI is derived from
 wherever it is running and sent to the broker, which checks it against a
@@ -37,9 +41,9 @@ Worker's pure helpers only — **not `main.js`, not `googleSync.js`**.
   itself, which needs the user's account. Everyone must sign in on the old
   address before moving, or their local data is stranded there (recoverable by
   export/import — the old link keeps working).
-- Two bits of cleanup waiting: the migration shim in `worker/exchange` for
-  clients cached before 2026-08-05, and a second unused Google client secret the
-  Console is warning about.
+- One bit of cleanup left, and it is the user's: a second unused Google client
+  secret the Console warns about. Check which one the Worker holds before
+  deleting the other.
 
 ## Architecture decisions that are settled — do not re-litigate
 

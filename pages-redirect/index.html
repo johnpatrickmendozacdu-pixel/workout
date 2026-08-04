@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sets has moved</title>
+<meta name="robots" content="noindex">
+<style>
+  :root{ --bg:#0A0C0B; --panel:#141917; --border:#2A312D;
+         --text:#EEF2EF; --dim:#9AA5A0; --accent:#3EE07F; --ink:#0A0C0B; }
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
+    background:var(--bg);color:var(--text);padding:24px;
+    font-family:'Manrope',system-ui,-apple-system,'Segoe UI',sans-serif;}
+  main{max-width:420px;width:100%;text-align:center}
+  h1{font-size:26px;margin:0 0 10px;letter-spacing:-.01em}
+  p{font-size:14.5px;line-height:1.55;color:var(--dim);margin:0 0 18px}
+  a.go{display:block;background:var(--accent);color:var(--ink);text-decoration:none;
+    font-weight:800;font-size:16px;padding:16px;min-height:44px}
+  .note{font-size:12.5px;color:#6E7975;margin-top:18px;line-height:1.5}
+  code{font-family:ui-monospace,'JetBrains Mono',monospace;font-size:12.5px;color:var(--text)}
+</style>
+</head>
+<body>
+<main>
+  <h1>Sets has moved</h1>
+  <p>This address is retired. The app now lives at<br><code>sets-workout.vercel.app</code></p>
+  <a class="go" id="go" href="https://sets-workout.vercel.app/">Open Sets</a>
+  <p class="note">
+    Sign in with Google there and your workouts come back from your Drive backup.
+    If you never signed in, your history is still on this device — reply to whoever
+    sent you this and it can be exported.
+  </p>
+</main>
+<script>
+/*
+ * An installed PWA keeps its own service worker, and that worker will keep
+ * serving the old cached app forever — a plain redirect never reaches it. So
+ * unregister every worker and drop every cache first, THEN leave. Without this
+ * the people most likely to be stuck are exactly the ones who used the app most.
+ */
+(async function () {
+  var TARGET = 'https://sets-workout.vercel.app/';
+  try {
+    if (navigator.serviceWorker) {
+      var regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(function (r) { return r.unregister(); }));
+    }
+    if (window.caches) {
+      var keys = await caches.keys();
+      await Promise.all(keys.map(function (k) { return caches.delete(k); }));
+    }
+  } catch (e) { /* redirecting matters more than tidying up */ }
+  // A beat so the button is readable if someone is watching, then go.
+  setTimeout(function () { location.replace(TARGET); }, 1200);
+})();
+</script>
+</body>
+</html>

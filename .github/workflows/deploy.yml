@@ -1,4 +1,17 @@
-name: Deploy to GitHub Pages
+# Retired 2026-08-05. The app moved to Vercel, which deploys itself from main.
+#
+# This no longer publishes the app — it publishes a one-page redirect, so the
+# old address forwards to the new one instead of serving a frozen copy that can
+# never be updated again. The redirect also unregisters the old service worker,
+# without which an installed PWA would keep showing the cached app forever and
+# never see the redirect at all.
+#
+# Tests are not duplicated here: test.yml already runs them on every push.
+#
+# To switch Pages off entirely, delete this file and disable Pages in
+# Settings → Pages. Keeping the redirect is kinder to anyone with an old
+# bookmark or a home-screen install.
+name: Redirect old GitHub Pages address
 
 on:
   push:
@@ -10,39 +23,4 @@ permissions:
   pages: write
   id-token: write
 
-concurrency:
-  group: pages
-  cancel-in-progress: true
-
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-      - run: npm ci
-      - run: npm test
-
-  build-and-deploy:
-    needs: test
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-      - run: npm ci
-      - run: npm run build
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: dist
-      - id: deployment
-        uses: actions/deploy-pages@v4
+concurr

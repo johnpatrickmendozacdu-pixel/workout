@@ -7,24 +7,65 @@
  * needing a re-record or a re-screenshot when the UI changes does not belong
  * in a guide — words describing what the app does survive a restyle.
  *
- * The order is the order you do things in, not a tidy filing of topics.
+ * Three orderings were tried. By subject read as a filing cabinet. By "what
+ * you do first" put training first and left a new phone unprotected for a
+ * week. This one puts the once-only setup first — sign in, profile, where the
+ * data lives — because the cost of doing that late is the only cost here that
+ * cannot be undone.
+ *
+ * `phase` chunks the steps for the eye. Twelve equal items is past what anyone
+ * scans; three groups of three to five is not. It lives on each section rather
+ * than in a nested structure so the numbering stays one flat sequence and
+ * reordering a step cannot leave it stranded in the wrong group.
  *
  * Every step is a `lead` and at most four `notes`. The lead alone has to be
  * enough: someone who reads that one line and nothing else must still be able
- * to do the step. The notes are for the person who wants them, and anything
- * that cannot earn its place inside four short lines is not a note, it is a
- * paragraph — and a paragraph in a guide is a paragraph nobody reads.
- *
- * The rule that shortened this the most: never label a sentence with a phrase
- * that restates it. "Open it — Tap the exercise on Today" is two ways of
- * saying one thing, and doubling the words is what made a complete guide feel
+ * to do the step. The rule that shortened this most: never label a sentence
+ * with a phrase that restates it. "Open it — Tap the exercise on Today" is one
+ * fact written twice, and that doubling is what made a complete guide feel
  * like an exhausting one.
  */
-export const GUIDE_INTRO = 'In the order you’ll do it. The first line of each step is enough — the rest is there if you want it.';
+export const GUIDE_INTRO = 'The first line of each step is enough. The rest is there if you want it.';
 
 export const GUIDE_SECTIONS = [
   {
+    id: 'google',
+    phase: 'Set up once',
+    title: 'Sign in with Google',
+    lead: 'Profile → Sign in with Google. Optional, but do it now and nothing can ever be lost.',
+    notes: [
+      'Use the Gmail you already have on this phone.',
+      'Google asks which account, then you tap Continue. That’s the whole thing.',
+      'It only ever sees its own hidden folder, never the rest of your Drive.',
+      '“Sync paused” just means tap Reconnect. Nothing is lost either way.',
+    ],
+  },
+  {
+    id: 'profile',
+    phase: 'Set up once',
+    title: 'Set up your profile',
+    lead: 'Tap your circle, top right. Add a photo, your name, your height and your weight.',
+    notes: [
+      'Height and weight together give you BMI.',
+      'The photo is shrunk to a small square first, so it never slows a backup.',
+      'Your name is just the greeting on Today.',
+      'Tap Save profile when you’re done.',
+    ],
+  },
+  {
+    id: 'data',
+    phase: 'Set up once',
+    title: 'Where your data lives',
+    lead: 'On this phone. Drive is only the spare copy.',
+    notes: [
+      'Each Google account gets its own separate data. Nobody’s mixes.',
+      'Progress → ⚙ → Export to move everything to another phone.',
+      'On iPhone, Safari can clear it after about a week unused — signing in protects you.',
+    ],
+  },
+  {
     id: 'add',
+    phase: 'Build your plan',
     title: 'Add your first exercise',
     lead: 'Plan → Add. Name it, then Save.',
     notes: [
@@ -36,6 +77,7 @@ export const GUIDE_SECTIONS = [
   },
   {
     id: 'schedule',
+    phase: 'Build your plan',
     title: 'Choose your days',
     lead: 'Every day, or tap just the days you train.',
     notes: [
@@ -46,6 +88,7 @@ export const GUIDE_SECTIONS = [
   },
   {
     id: 'target',
+    phase: 'Build your plan',
     title: 'Set a target, or don’t',
     lead: 'It’s the number Today counts down from. Optional.',
     notes: [
@@ -55,7 +98,18 @@ export const GUIDE_SECTIONS = [
     ],
   },
   {
+    id: 'onetime',
+    phase: 'Build your plan',
+    title: 'Log a one-off',
+    lead: 'Plan → Add → One-time. For a hike, a swim, a game.',
+    notes: [
+      'No schedule and no target. Add as you go, then Complete.',
+      'Finished ones live in Progress, under One time.',
+    ],
+  },
+  {
     id: 'logging',
+    phase: 'Every day',
     title: 'Log your reps',
     lead: 'Tap the exercise. Tap a number. That’s it.',
     notes: [
@@ -66,6 +120,7 @@ export const GUIDE_SECTIONS = [
   },
   {
     id: 'finish',
+    phase: 'Every day',
     title: 'Finish the session',
     lead: 'Hit your target and choose: Take the win, or Keep going.',
     notes: [
@@ -76,6 +131,7 @@ export const GUIDE_SECTIONS = [
   },
   {
     id: 'streaks',
+    phase: 'Every day',
     title: 'Rest without losing your streak',
     lead: 'Open the exercise → Take a break.',
     notes: [
@@ -85,17 +141,8 @@ export const GUIDE_SECTIONS = [
     ],
   },
   {
-    id: 'progress',
-    title: 'Watch it add up',
-    lead: 'Progress → tap any group.',
-    notes: [
-      'Filled = hit. 🌙 = rest. Hollow = missed.',
-      'Top set is one set. Max is a whole day.',
-      'Tap a number inside a card to correct it.',
-    ],
-  },
-  {
     id: 'weight',
+    phase: 'Every day',
     title: 'Weigh in',
     lead: 'One weight a day, on the Today card.',
     notes: [
@@ -105,42 +152,14 @@ export const GUIDE_SECTIONS = [
     ],
   },
   {
-    id: 'onetime',
-    title: 'Log a one-off',
-    lead: 'Plan → Add → One-time. For a hike, a swim, a game.',
+    id: 'progress',
+    phase: 'Every day',
+    title: 'Watch it add up',
+    lead: 'Progress → tap any group.',
     notes: [
-      'No schedule and no target. Add as you go, then Complete.',
-      'Finished ones live in Progress, under One time.',
-    ],
-  },
-  {
-    id: 'profile',
-    title: 'Set up your profile',
-    lead: 'Tap your circle, top right.',
-    notes: [
-      'Photo, name, height, weight — then Save profile.',
-      'Height is only used for BMI.',
-    ],
-  },
-  {
-    id: 'google',
-    title: 'Back it up with Google',
-    lead: 'Profile → Sign in with Google. Optional, and free.',
-    notes: [
-      'Google asks which account, then you tap Continue.',
-      'It only ever sees its own hidden folder — nothing else in your Drive.',
-      '“Sync paused” just means tap Reconnect. Nothing is lost.',
-      'Without it the app still works completely, online or off.',
-    ],
-  },
-  {
-    id: 'data',
-    title: 'Where your data lives',
-    lead: 'On this phone. Drive is only the spare copy.',
-    notes: [
-      'Each Google account gets its own separate data.',
-      'Progress → ⚙ → Export to move to another phone.',
-      'On iPhone, Safari can clear it after about a week unused — signing in protects you.',
+      'Filled = hit. 🌙 = rest. Hollow = missed.',
+      'Top set is one set. Max is a whole day.',
+      'Tap a number inside a card to correct it.',
     ],
   },
 ];

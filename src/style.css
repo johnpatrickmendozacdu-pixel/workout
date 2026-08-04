@@ -1384,7 +1384,10 @@
    each instead, so the eye runs down the numbers and the titles and meets no
    edges on the way. Only the step you opened gets a surface, because at that
    point it is the only thing being read. */
-.guide-intro{margin:2px 0 16px;font-size:13px;line-height:1.5;color:var(--text-faint);}
+.guide-intro{margin:2px 0 0;font-size:13px;line-height:1.5;color:var(--text-faint);}
+/* An opened step should arrive, not appear. Short and eased, because the row
+   above it has not moved and a slow reveal would only make the tap feel slow. */
+@keyframes guideIn{from{opacity:0;transform:translateY(-4px)} to{opacity:1;transform:none}}
 .guide-row{display:flex;align-items:center;gap:14px;width:100%;min-height:52px;
   padding:13px 2px;background:none;border:0;border-bottom:1px solid var(--border);
   text-align:left;cursor:pointer;}
@@ -1399,7 +1402,8 @@
    full size and full contrast; the notes step back to grey and never bold. The
    indent lines them up under the title, not the number, so the column of digits
    stays a clean edge down the page. */
-.guide-body{padding:0 2px 22px 30px;border-bottom:1px solid var(--border);}
+.guide-body{padding:0 2px 22px 30px;border-bottom:1px solid var(--border);
+  animation:guideIn .16s ease-out;}
 .guide-lead{margin:0;font-size:15px;line-height:1.45;color:var(--text);}
 .guide-notes{margin:12px 0 0;padding:0;list-style:none;display:flex;
   flex-direction:column;gap:9px;}

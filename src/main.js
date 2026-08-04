@@ -1534,16 +1534,22 @@ function renderView() {
  * so it cannot go stale against your data and there is nothing here to break.
  */
 function viewGuide() {
+  let lastPhase = null;
   const sections = GUIDE_SECTIONS.map((sec, i) => {
     const open = groupOpen('guide', sec.id, GUIDE_SECTIONS.length);
+    // The phase label is emitted on change rather than stored as a nesting
+    // level, so the step numbers stay one flat run from 1 to 12.
+    const label = sec.phase !== lastPhase
+      ? `<div class="section-label">${escapeHtml(sec.phase)}</div>` : '';
+    lastPhase = sec.phase;
     const head = `<button class="guide-row ${open ? 'open' : ''}" data-action="toggle-group" data-view="guide" data-key="${sec.id}" data-open="${open}" aria-expanded="${open}">
         <span class="guide-step">${i + 1}</span>
         <span class="guide-title">${escapeHtml(sec.title)}</span>
         <span class="group-chev ${open ? 'open' : ''}">${ICONS.chevron}</span>
       </button>`;
-    if (!open) return head;
+    if (!open) return label + head;
     const notes = sec.notes.map((n) => `<li>${escapeHtml(n)}</li>`).join('');
-    return `${head}<div class="guide-body">
+    return `${label}${head}<div class="guide-body">
         <p class="guide-lead">${escapeHtml(sec.lead)}</p>
         <ul class="guide-notes">${notes}</ul>
       </div>`;
@@ -2777,7 +2783,15 @@ document.addEventListener('click', async (e) => {
       // Flip whatever is actually on screen — the rendered state carries the
       // default (a lone group starts open), so the first tap never no-ops.
       const k = `${btn.dataset.view}:${btn.dataset.key}`;
-      state.openGroups[k] = !(btn.dataset.open === 'true');
+      const opening = btn.dataset.open !== 'true';
+      // One step at a time in the guide. Left free to stack, twelve open
+      // sections rebuild the exact wall of text this screen exists to avoid,
+      // and you lose your place scrolling back for the next number. Plan and
+      // Progress keep stacking — there you are comparing groups, not reading.
+      if (btn.dataset.view === 'guide' && opening) {
+        GUIDE_SECTIONS.forEach((s) => { state.openGroups[`guide:${s.id}`] = false; });
+      }
+      state.openGroups[k] = opening;
       renderView();
       break;
     }

@@ -56,6 +56,7 @@ import {
   recordWeight,
 } from './domain/domain.js';
 import { GUIDE_SECTIONS, GUIDE_INTRO } from './guide.js';
+import { CATEGORIES, categoryOf, categoryLabel, categoryIconUrl } from './categories.js';
 import * as gsync from './sync/googleSync.js';
 import { allStats, exerciseStats, recentDayStates, streakTier, dayHistory, trajectorySeries, formatDuration, formatTotalDuration, formatCount, formatClock, groupBySchedule, comboTimes } from './domain/stats.js';
 
@@ -95,28 +96,24 @@ const state = {
   panel: null,          // 'stats' — mobile drawer only
 };
 
-// Chosen to read as the movement itself at a glance, not generic "sport".
-// Every glyph here is Emoji 5.0 or older, so it renders on every iOS/Android
-// version in use — the newer additions (chair, rope) simply have no glyph on
-// older phones, which is why icons were showing up blank.
-const EMOJI_PRESETS = [
-  '🤸', // push ups
-  '🦵', // squats / legs
-  '🧗', // pull ups
-  '💪', // arms / curls
-  '🏋️', // dips / weights
-  '🤾', // burpees
-  '🏃', // cardio / run
-  '🚴', // cycling
-  '🏊', // swimming
-  '🧘', // mobility / stretch
-  '🥊', // boxing
-  '⛹️', // athletic / general
-  '🚶', // walking
-  '🤺', // lunges
-  '⏱', // timed hold / plank
-  '🔥', // finisher
-];
+/**
+ * An exercise's picture, drawn from its category. Exercises saved before
+ * categories existed have none, and render nothing rather than a placeholder —
+ * a blank space says "pick one" far better than a generic dumbbell that looks
+ * like a deliberate choice.
+ */
+function exIconHtml(ex, px) {
+  const cat = categoryOf(ex);
+  if (!cat) return '';
+  return `<img class="ex-icon" src="${categoryIconUrl(cat.key)}" alt="" width="${px}" height="${px}">`;
+}
+
+/** The category, as a quiet tag. Deliberately mono and faint: it labels the
+ *  exercise, it is never the number you are chasing. */
+function catTagHtml(ex) {
+  const label = categoryLabel(ex);
+  return label ? `<span class="cat-tag">${escapeHtml(label)}</span>` : '';
+}
 
 function formatElapsed(ms) {
   const totalSec = Math.max(0, Math.floor(ms / 1000));
@@ -869,7 +866,7 @@ async function addExercise(data) {
   const ex = {
     id: uid('ex'),
     name: data.name.trim(),
-    icon: data.icon || '💪',
+    category: data.category || null,
     unit: (data.unit || 'reps').trim(),
     active: true,
     archived: false,
@@ -920,7 +917,7 @@ async function updateExercise(id, data) {
   const ex = state.exercises.find((e) => e.id === id);
   if (!ex) return;
   ex.name = data.name.trim();
-  ex.icon = data.icon || ex.icon;
+  if (data.category !== undefined) ex.category = data.category;
   ex.unit = (data.unit || 'reps').trim();
   applyScheduleChange(ex, data.schedule || 'daily');
   if (data.equipment !== undefined) ex.equipment = data.equipment === 'dumbbell' ? 'dumbbell' : 'bodyweight';
@@ -1265,13 +1262,13 @@ function exerciseCard(ex, s, opts = {}) {
 
   const head = opts.expandable
     ? `<button class="ex-stat-head" data-action="toggle-ex-history" data-id="${ex.id}" aria-expanded="${open}">
-        <span class="ex-stat-icon">${escapeHtml(ex.icon)}</span>
-        <h3>${escapeHtml(ex.name)}${weightTag(ex)}</h3>
+        <span class="ex-stat-icon">${exIconHtml(ex, 26)}</span>
+        <h3>${escapeHtml(ex.name)}${weightTag(ex)}${categoryLabel(ex) ? `<span class="ex-stat-cat">${catTagHtml(ex)}</span>` : ''}</h3>
         ${action}
       </button>`
     : `<header class="ex-stat-head static">
-        <span class="ex-stat-icon">${escapeHtml(ex.icon)}</span>
-        <h3>${escapeHtml(ex.name)}${weightTag(ex)}</h3>
+        <span class="ex-stat-icon">${exIconHtml(ex, 26)}</span>
+        <h3>${escapeHtml(ex.name)}${weightTag(ex)}${categoryLabel(ex) ? `<span class="ex-stat-cat">${catTagHtml(ex)}</span>` : ''}</h3>
         ${action}
       </header>`;
 
@@ -1668,11 +1665,11 @@ function viewToday() {
   const todoCard = (r) => {
     const running = r.timer && r.timer.status === 'running';
     return `<button class="today-card" data-action="open-logger" data-id="${r.ex.id}">
-      <span class="today-icon">${escapeHtml(r.ex.icon)}</span>
+      <span class="today-icon">${exIconHtml(r.ex, 30)}</span>
       <span class="today-body">
         <span class="today-name">${escapeHtml(r.ex.name)}${weightTag(r.ex)}</span>
         <span class="today-meter" aria-hidden="true"><i style="width:${Math.round(r.pct * 100)}%"></i></span>
-        <span class="today-sub">${r.hasTarget ? `${r.total} of ${r.target} ${escapeHtml(r.ex.unit)}` : `${r.total} ${escapeHtml(r.ex.unit)} · no target`}${running ? ` · <b data-elapsed="${r.ex.id}">${formatElapsed(timerElapsedMs(r.timer, Date.now()))}</b>` : ''}</span>
+        <span class="today-sub">${r.hasTarget ? `${r.total} of ${r.target} ${escapeHtml(r.ex.unit)}` : `${r.total} ${escapeHtml(r.ex.unit)} · no target`}${categoryLabel(r.ex) ? ` · ${catTagHtml(r.ex)}` : ''}${running ? ` · <b data-elapsed="${r.ex.id}">${formatElapsed(timerElapsedMs(r.timer, Date.now()))}</b>` : ''}</span>
       </span>
       <span class="today-left">
         ${r.hasTarget ? `<b>${r.left}</b><em>to go</em>` : `<b>${r.total}</b><em>logged</em>`}
@@ -1762,12 +1759,19 @@ function viewPlan() {
       if (!groupOpen('plan', g.key, groups.length)) return;
       g.exercises.forEach((ex, i) => {
         const target = getEffectiveTarget(ex, todayISO());
-        const targetSub = target ? `${target} ${escapeHtml(ex.unit)}/day` : `no target · ${escapeHtml(ex.unit)}`;
+        // Four 44px buttons sit to the right of this text, leaving it about a
+        // third of the row. The name gets the one guaranteed line; everything
+        // else — category, target, weight — shares the line below and may wrap,
+        // because a wrapped target still reads and a truncated one does not.
+        const catBit = categoryLabel(ex) ? `${catTagHtml(ex)} · ` : '';
+        const wBit = formatWeight(ex.weight, ex.weightUnit) && ex.equipment === 'dumbbell'
+          ? ` · ${escapeHtml(formatWeight(ex.weight, ex.weightUnit))}` : '';
+        const targetSub = catBit + (target ? `${target} ${escapeHtml(ex.unit)}/day` : `no target · ${escapeHtml(ex.unit)}`) + wBit;
         html += `<div class="plan-row">
           <button class="plan-row-open" data-action="open-edit-exercise" data-id="${ex.id}" aria-label="Edit ${escapeHtml(ex.name)}">
-          <div class="ex-icon-badge">${escapeHtml(ex.icon)}</div>
+          <div class="ex-icon-badge">${exIconHtml(ex, 26)}</div>
           <div class="plan-row-body">
-            <div class="plan-row-name">${escapeHtml(ex.name)}${weightTag(ex)}</div>
+            <div class="plan-row-name">${escapeHtml(ex.name)}</div>
             <div class="plan-row-sub">${targetSub}</div>
           </div>
           </button>
@@ -1787,7 +1791,7 @@ function viewPlan() {
     if (state.showArchived) {
       archived.forEach((ex) => {
         html += `<div class="plan-row archived">
-          <div class="ex-icon-badge">${escapeHtml(ex.icon)}</div>
+          <div class="ex-icon-badge">${exIconHtml(ex, 26)}</div>
           <div class="plan-row-body">
             <div class="plan-row-name">${escapeHtml(ex.name)}</div>
             <div class="plan-row-sub">archived</div>
@@ -1972,7 +1976,7 @@ function modalComplete() {
   if (!ex) return '';
   return `<div class="modal-backdrop">
     <div class="modal-sheet center celebrate" data-stop>
-      <div class="celebrate-glyph">${escapeHtml(ex.icon)}</div>
+      <div class="celebrate-glyph">${exIconHtml(ex, 56)}</div>
       <h2>Target reached</h2>
       <div class="celebrate-line">${escapeHtml(ex.name)}</div>
       <div class="celebrate-stat">${m.total} ${escapeHtml(ex.unit)} <span>•</span> ${formatDuration(m.elapsedMs)}</div>
@@ -2002,7 +2006,7 @@ function modalGiveUp() {
   const done = target ? `${total} of ${target} ${escapeHtml(ex.unit)}` : `${total} ${escapeHtml(ex.unit)}`;
   return `<div class="modal-backdrop">
     <div class="modal-sheet center celebrate" data-stop>
-      <div class="celebrate-glyph">${escapeHtml(ex.icon)}</div>
+      <div class="celebrate-glyph">${exIconHtml(ex, 56)}</div>
       <h2>End here?</h2>
       <div class="celebrate-line">${escapeHtml(ex.name)}</div>
       <div class="celebrate-stat">${done} <span>•</span> ${formatDuration(timerElapsedMs(timer, Date.now()))}</div>
@@ -2215,7 +2219,7 @@ function modalLogger(exId) {
     <div class="modal-sheet" data-stop>
       <div class="sheet-handle"></div>
       <div class="sheet-head">
-        <h2>${escapeHtml(ex.icon)} ${escapeHtml(ex.name)}</h2>
+        <h2>${exIconHtml(ex, 24)}${escapeHtml(ex.name)}</h2>
         <button class="sheet-close" data-action="close-modal">${ICONS.close}</button>
       </div>
       <div class="logger-total-row">
@@ -2266,14 +2270,12 @@ function modalLogger(exId) {
 function captureExerciseDraft() {
   if (!state.modal) return;
   const val = (id) => { const el = document.getElementById(id); return el ? el.value : undefined; };
-  const picked = document.querySelector('.emoji-chip.selected');
   const d = state.modal.draft || {};
   const set = (k, v) => { if (v !== undefined) d[k] = v; };
   set('name', val('f-name'));
   set('name', val('f-ot-name'));   // one-time shares the name draft
   set('unit', val('f-unit'));
   set('target', val('f-target'));
-  if (picked) d.icon = picked.dataset.emoji;
   const wv = val('f-weight-val');
   if (wv !== undefined) state.modal.weight = wv;
   state.modal.draft = d;
@@ -2284,7 +2286,12 @@ function modalExerciseForm(exId) {
   const ex = editing ? state.exercises.find((e) => e.id === exId) : null;
   const target = ex ? getEffectiveTarget(ex, todayISO()) : null;
   const draft = (state.modal && state.modal.draft) || {};
-  const chosenIcon = draft.icon !== undefined ? draft.icon : (ex ? ex.icon : EMOJI_PRESETS[0]);
+  // Category is a draft like the rest, so picking one re-renders the chosen
+  // state without committing anything until Save.
+  if (state.modal && state.modal.cat === undefined) {
+    state.modal.cat = (ex && ex.category) || null;
+  }
+  const chosenCat = state.modal ? state.modal.cat : null;
   // Draft lives in modal state so toggling days re-renders without saving.
   if (state.modal && state.modal.sched === undefined) {
     state.modal.sched = ex && Array.isArray(ex.schedule) ? ex.schedule.slice() : 'daily';
@@ -2357,10 +2364,14 @@ function modalExerciseForm(exId) {
         <input id="f-name" type="text" placeholder="e.g. Push-ups" value="${escapeHtml(draft.name !== undefined ? draft.name : (ex ? ex.name : ''))}" autocomplete="off">
       </div>
       <div class="field">
-        <label>Icon</label>
-        <div class="emoji-row">
-          ${EMOJI_PRESETS.map((e) => `<button type="button" class="emoji-chip ${e === chosenIcon ? 'selected' : ''}" data-action="pick-emoji" data-emoji="${e}">${e}</button>`).join('')}
+        <label>Category</label>
+        <div class="cat-grid">
+          ${CATEGORIES.map((c) => `<button type="button" class="cat-chip ${c.key === chosenCat ? 'on' : ''}" data-action="pick-category" data-cat="${c.key}" aria-pressed="${c.key === chosenCat}">
+            <img src="${categoryIconUrl(c.key)}" alt="" width="30" height="30">
+            <span>${escapeHtml(c.label)}</span>
+          </button>`).join('')}
         </div>
+        <div class="hint">The category picks the icon, and shows on the card.</div>
       </div>
       <div class="field">
         <label>Unit</label>
@@ -2748,19 +2759,19 @@ document.addEventListener('click', async (e) => {
     case 'open-edit-exercise': state.modal = { type: 'exerciseForm', exId: btn.dataset.id }; renderModal(); break;
     case 'close-modal': closeModal(); break;
 
-    case 'pick-emoji': {
-      document.querySelectorAll('.emoji-chip').forEach((c) => c.classList.remove('selected'));
-      btn.classList.add('selected');
+    case 'pick-category':
+      // Held in modal state, not read back off the DOM at save time, so it
+      // survives the re-renders the rest of this form does.
+      captureExerciseDraft();
+      if (state.modal) { state.modal.cat = btn.dataset.cat; renderModal(); }
       break;
-    }
     case 'save-exercise': {
       const name = document.getElementById('f-name').value.trim();
       if (!name) { showToast('Name is required.'); return; }
       const unit = document.getElementById('f-unit').value.trim() || 'reps';
       const targetRaw = document.getElementById('f-target').value;
       const target = targetRaw === '' ? null : Math.max(0, parseFloat(targetRaw));
-      const iconEl = document.querySelector('.emoji-chip.selected');
-      const icon = iconEl ? iconEl.dataset.emoji : '💪';
+      const category = (state.modal && state.modal.cat) || null;
       const id = btn.dataset.id;
       const schedule = state.modal && state.modal.sched ? state.modal.sched : 'daily';
       const equipment = state.modal && state.modal.equip === 'dumbbell' ? 'dumbbell' : 'bodyweight';
@@ -2769,8 +2780,8 @@ document.addEventListener('click', async (e) => {
       const wParsed = wRaw && wRaw.value !== '' ? Math.max(0, parseFloat(wRaw.value)) : null;
       const weight = equipment === 'dumbbell' && wParsed > 0 ? Math.round(wParsed * 10) / 10 : null;
       const equip = { equipment, weight, weightUnit };
-      if (id) await updateExercise(id, { name, unit, target, icon, schedule, ...equip });
-      else await addExercise({ name, unit, target, icon, schedule, ...equip });
+      if (id) await updateExercise(id, { name, unit, target, category, schedule, ...equip });
+      else await addExercise({ name, unit, target, category, schedule, ...equip });
       closeModal(); rerender();
       break;
     }

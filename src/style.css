@@ -311,12 +311,29 @@
     padding:12px 14px; font-size:15px; color:var(--text);
   }
   .field input:focus, .field select:focus{border-color:var(--accent);}
-  .emoji-row{display:flex; flex-wrap:wrap; gap:8px;}
-  .emoji-chip{
-    width:42px; height:42px; border-radius:12px; background:var(--bg-card); border:1px solid var(--border-strong);
-    font-size:19px; display:flex; align-items:center; justify-content:center;
+  /* ---------- category picker ----------
+     Four across fits the eight in two rows at 375px without scrolling, so the
+     whole choice is visible at once rather than hidden behind a swipe. */
+  .cat-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:7px;}
+  .cat-chip{
+    background:var(--bg-card); border:1px solid var(--border-strong);
+    padding:9px 3px 7px; min-height:44px;
+    display:flex; flex-direction:column; align-items:center; gap:5px;
   }
-  .emoji-chip.selected{border-color:var(--accent); background:rgba(242,194,48,0.14);}
+  .cat-chip img{display:block;}
+  .cat-chip span{font-size:10px; font-weight:600; color:var(--text-faint); line-height:1.2; text-align:center;}
+  .cat-chip.on{border-color:var(--accent); background:rgba(62,224,127,0.09);}
+  .cat-chip.on span{color:var(--accent);}
+
+  /* The artwork carries its own colour, so it is never tinted — only sized. */
+  .ex-icon{display:block; object-fit:contain;}
+
+  /* A label, not a score: mono and faint, so it never competes with the count. */
+  .cat-tag{
+    font-family:var(--font-mono); font-size:10px; letter-spacing:0.09em;
+    text-transform:uppercase; color:var(--text-faint);
+  }
+  .ex-stat-cat{margin-left:8px;}
   .form-actions{display:flex; gap:10px; margin-top:6px;}
   .form-actions > *{flex:1;}
   .hint{font-size:12px; color:var(--text-faint); margin-top:6px; line-height:1.4;}
@@ -331,8 +348,12 @@
 
   /* ---------- plan rows ---------- */
   .plan-row{display:flex; align-items:center; gap:12px; background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-md); padding:12px 12px; margin-bottom:8px;}
-  .plan-row .ex-icon-badge{width:38px; height:38px; border-radius:11px; background:var(--bg-elevated); display:flex; align-items:center; justify-content:center; font-size:17px; flex-shrink:0;}
+  .plan-row .ex-icon-badge{width:38px; height:38px; border-radius:11px; background:var(--bg-elevated); display:flex; align-items:center; justify-content:center; flex-shrink:0;}
   .plan-row-body{flex:1; min-width:0;}
+  /* One line each, always. The row carries a name, a category, a target and
+     sometimes a weight, next to four buttons — left to wrap it turns a list
+     into a wall. Truncating keeps every row the same height whatever it holds. */
+  .plan-row-name{white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   .plan-row-name{font-weight:700; font-size:14.5px;}
   .plan-row-sub{font-size:12.5px; color:var(--text-faint); font-family:var(--font-mono); margin-top:2px;}
   .plan-row-actions{display:flex; align-items:center; gap:4px; flex-shrink:0;}
@@ -463,7 +484,7 @@
 
   /* completion dialog */
   .modal-sheet.celebrate{text-align:center; padding:30px 24px 24px;}
-  .celebrate-glyph{font-size:42px; animation:pop .32s cubic-bezier(.2,.9,.3,1.4);}
+  .celebrate-glyph{display:flex; justify-content:center; animation:pop .32s cubic-bezier(.2,.9,.3,1.4);}
   @keyframes pop{from{transform:scale(.5); opacity:0;} to{transform:scale(1); opacity:1;}}
   .modal-sheet.celebrate h2{margin:10px 0 4px; font-size:21px;}
   .celebrate-line{color:var(--text-dim); font-size:14px;}
@@ -769,7 +790,7 @@
   .ex-stat{padding:2px 2px 22px; margin-bottom:4px;}
   .ex-stat + .ex-stat{border-top:1px solid var(--border); padding-top:20px;}
   .ex-stat header{display:flex; align-items:center; gap:10px; margin-bottom:14px;}
-  .ex-stat-icon{font-size:19px; flex-shrink:0;}
+  .ex-stat-icon{display:flex; align-items:center; flex-shrink:0;}
   .ex-stat h3{flex:1; min-width:0; margin:0; font-size:15px; font-weight:700; color:var(--text-dim);
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
 
@@ -1197,7 +1218,7 @@
     transition:transform .09s ease, box-shadow .09s ease;
   }
   .today-card:active{transform:translate(2px,2px); box-shadow:2px 2px 0 var(--green-deep);}
-  .today-icon{font-size:26px; flex-shrink:0; line-height:1;}
+  .today-icon{display:flex; align-items:center; flex-shrink:0; line-height:1;}
   .today-body{flex:1; min-width:0; display:flex; flex-direction:column; gap:8px;}
   .today-name{font-size:17px; font-weight:800; letter-spacing:-0.01em; color:var(--text);}
   .today-meter{display:block; height:8px; background:#0F1412; border:2px solid var(--silver-deep);}

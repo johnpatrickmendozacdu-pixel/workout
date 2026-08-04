@@ -67,8 +67,9 @@ export const GUIDE_SECTIONS = [
     id: 'add',
     phase: 'Build your plan',
     title: 'Add your first exercise',
-    lead: 'Plan → Add. Name it, then Save.',
+    lead: 'Plan → Add. Name it, pick a category, then Save.',
     notes: [
+      'The category picks the icon and shows on the card. Nothing else to choose.',
       'Unit is whatever you count — reps, minutes, km.',
       'Using a dumbbell? Add the weight. It’s a label, not a score.',
       'Tap it in Plan any time to change anything.',

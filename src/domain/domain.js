@@ -61,6 +61,12 @@ export function scheduleEffectiveOn(exercise, dateStr) {
 }
 
 export function isScheduledOn(exercise, dateStr) {
+  // A one-time workout is scheduled on exactly one day and never again. Putting
+  // it here rather than in each view means Today, the streak maths, the day
+  // history and the stats all agree without any of them knowing it is special:
+  // every other day is simply a day it was not scheduled, which is already a
+  // day that cannot be missed.
+  if (exercise && exercise.oneTimeDate) return dateStr === exercise.oneTimeDate;
   const sched = scheduleEffectiveOn(exercise, dateStr);
   if (!sched || sched === 'daily') return true;
   if (!Array.isArray(sched) || !sched.length) return true;

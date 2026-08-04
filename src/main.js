@@ -1536,15 +1536,17 @@ function renderView() {
 function viewGuide() {
   const sections = GUIDE_SECTIONS.map((sec, i) => {
     const open = groupOpen('guide', sec.id, GUIDE_SECTIONS.length);
-    const head = `<button class="group-head" data-action="toggle-group" data-view="guide" data-key="${sec.id}" data-open="${open}" aria-expanded="${open}">
+    const head = `<button class="guide-row ${open ? 'open' : ''}" data-action="toggle-group" data-view="guide" data-key="${sec.id}" data-open="${open}" aria-expanded="${open}">
         <span class="guide-step">${i + 1}</span>
-        <span class="group-head-label">${escapeHtml(sec.title)}</span>
+        <span class="guide-title">${escapeHtml(sec.title)}</span>
         <span class="group-chev ${open ? 'open' : ''}">${ICONS.chevron}</span>
       </button>`;
     if (!open) return head;
-    const rows = sec.items.map(([what, how]) =>
-      `<div><dt>${escapeHtml(what)}</dt><dd>${escapeHtml(how)}</dd></div>`).join('');
-    return `${head}<dl class="guide-list guide-body">${rows}</dl>`;
+    const notes = sec.notes.map((n) => `<li>${escapeHtml(n)}</li>`).join('');
+    return `${head}<div class="guide-body">
+        <p class="guide-lead">${escapeHtml(sec.lead)}</p>
+        <ul class="guide-notes">${notes}</ul>
+      </div>`;
   }).join('');
   return `<p class="guide-intro">${escapeHtml(GUIDE_INTRO)}</p>${sections}`;
 }

@@ -1379,18 +1379,31 @@
   letter-spacing:.02em;margin:2px 0 10px;}
 
 /* ---- Guide screen ----
-   The body hangs off its header with no gap and no second border between the
-   two, so an open section reads as one object rather than a heading that has
-   come loose from its own text. */
-.group-head[data-view="guide"] .group-chev{margin-left:auto;}
-.guide-body{padding:15px 13px 16px;border:1px solid var(--border);border-top:0;
-  background:var(--bg-elevated);}
-.guide-body dt{font-family:var(--font-body);}
-.guide-intro{margin:2px 0 4px;font-size:13px;line-height:1.5;color:var(--text-dim);}
-/* The number carries the sequence, so the eye can follow 1-2-3 down the page
-   without the headings all shouting the same weight at it. */
-.guide-step{flex:0 0 auto;width:22px;font-family:var(--font-mono);font-size:12px;
-  color:var(--text-faint);text-align:left;}
+   Twelve outlined boxes is twelve rectangles competing for the same attention,
+   which is what made a short list feel cluttered. The rows carry one hairline
+   each instead, so the eye runs down the numbers and the titles and meets no
+   edges on the way. Only the step you opened gets a surface, because at that
+   point it is the only thing being read. */
+.guide-intro{margin:2px 0 16px;font-size:13px;line-height:1.5;color:var(--text-faint);}
+.guide-row{display:flex;align-items:center;gap:14px;width:100%;min-height:52px;
+  padding:13px 2px;background:none;border:0;border-bottom:1px solid var(--border);
+  text-align:left;cursor:pointer;}
+.guide-step{flex:0 0 auto;width:16px;font-family:var(--font-mono);font-size:12px;
+  color:var(--text-faint);}
+.guide-title{flex:1;font-size:15px;font-weight:600;color:var(--text);line-height:1.3;}
+.guide-row .group-chev{flex:0 0 auto;}
+.guide-row.open{border-bottom-color:transparent;}
+.guide-row.open .guide-step, .guide-row.open .group-chev{color:var(--accent);}
+
+/* The lead is the entire answer for anyone who stops reading there, so it keeps
+   full size and full contrast; the notes step back to grey and never bold. The
+   indent lines them up under the title, not the number, so the column of digits
+   stays a clean edge down the page. */
+.guide-body{padding:0 2px 22px 30px;border-bottom:1px solid var(--border);}
+.guide-lead{margin:0;font-size:15px;line-height:1.45;color:var(--text);}
+.guide-notes{margin:12px 0 0;padding:0;list-style:none;display:flex;
+  flex-direction:column;gap:9px;}
+.guide-notes li{font-size:13px;line-height:1.45;color:var(--text-dim);}
 
 /* ---- Weekly weight chart (reuses trajectory look) ---- */
 .traj-chart{width:100%;height:auto;display:block;margin:6px 0 4px;}

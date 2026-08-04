@@ -224,12 +224,16 @@
   .timer-status{font-size:12px; color:var(--text-dim); display:flex; align-items:center; gap:4px; text-transform:uppercase; letter-spacing:0.06em;}
   .status-completed .timer-status{color:var(--success);}
   .status-completed .timer-clock{color:var(--success);}
-  .timer-controls{display:flex; gap:8px; justify-content:center; margin-top:10px;}
+  /* Wraps because an untargeted session carries a fourth control, and four
+     pills do not fit a 375px phone on one line. Wrapping keeps every tap
+     target at 44px; shrinking them to fit would not. */
+  .timer-controls{display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin-top:10px;}
   .timer-btn{
     display:flex; align-items:center; justify-content:center; gap:5px;
     background:var(--bg-card); border:1px solid var(--border-strong);
     color:var(--text); font-size:13px; font-weight:600; padding:8px 12px; border-radius:999px;
     min-height:44px; /* these predated the 44px rule and shipped at 36 */
+    flex:0 1 auto; white-space:nowrap;
   }
   /* signage, same slot in every phase — it teaches the clock rather than
      announcing it once and retiring */
@@ -238,6 +242,10 @@
   .timer-btn:active{background:var(--bg-card-hover);}
   .timer-btn.giveup{color:var(--danger); border-color:rgba(228,87,46,0.35);}
   .timer-btn.giveup:active{background:rgba(228,87,46,0.12);}
+  /* Finishing an untargeted session is the win, so it takes the accent that
+     marks what is achieved — the same job the target does everywhere else. */
+  .timer-btn.finish{color:var(--accent); border-color:rgba(62,224,127,0.4);}
+  .timer-btn.finish:active{background:rgba(62,224,127,0.12);}
 
   .ex-time-badge{
     display:flex; align-items:center; gap:3px; justify-content:flex-end; margin-top:3px;
@@ -1111,6 +1119,7 @@
      live or won, and never the dormant or abandoned one. */
   .timer-btn{background:var(--surface); border:2px solid var(--ink); color:var(--text);}
   .timer-btn.giveup{color:var(--danger); border-color:var(--danger);}
+  .timer-btn.finish{color:var(--accent); border-color:var(--accent);}
   .timer-block.status-running{border-color:var(--accent);}
   .timer-block.status-running .timer-clock, .timer-block.status-running .timer-status{color:var(--accent);}
   .timer-block.status-idle{border-color:#2A312D; box-shadow:none;}

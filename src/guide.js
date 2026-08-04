@@ -72,8 +72,7 @@ export const GUIDE_SECTIONS = [
       'The category picks the icon and shows on the card. Nothing else to choose.',
       'Unit is whatever you count — reps, minutes, km.',
       'Using a dumbbell? Add the weight. It’s a label, not a score.',
-      'Tap it in Plan any time to change anything.',
-      'Archive keeps its history. Delete doesn’t.',
+      'Edit it any time in Plan. Archive keeps its history, Delete doesn’t.',
     ],
   },
   {
@@ -126,9 +125,9 @@ export const GUIDE_SECTIONS = [
     title: 'Finish the session',
     lead: 'Hit your target and choose: Take the win, or Keep going.',
     notes: [
-      'Give up ends it early. Your reps still count.',
+      'No target? Tap Complete when you’re done — it banks the time the same way.',
+      'Give up ends it early. Your reps still count, the time doesn’t.',
       'Reset clears the clock, never the reps.',
-      'Finished exercises drop to a quiet line at the bottom.',
     ],
   },
   {

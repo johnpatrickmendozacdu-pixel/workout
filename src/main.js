@@ -1890,9 +1890,12 @@ const TIMER_COPY_SEALED = {
   paused: ['Paused', 'Stopped where you left it.'],
 };
 
-function timerBlockHtml(exId, timer, sealed) {
+function timerBlockHtml(exId, timer, sealed, hasTarget) {
   const phase = timerPhase(timer);
-  const [statusLabel, note] = (sealed && TIMER_COPY_SEALED[phase]) || TIMER_COPY[phase];
+  let [statusLabel, note] = (sealed && TIMER_COPY_SEALED[phase]) || TIMER_COPY[phase];
+  // "Target hit" is a lie on an exercise that never had one. Same banked time,
+  // honest word for it.
+  if (phase === 'completed' && !hasTarget) statusLabel = 'Workout complete';
   const elapsed = formatElapsed(timerElapsedMs(timer, Date.now()));
   const finishedClock = timer ? formatClock(timer.finishedAt) : null;
   // A day sealed by its target can still be sitting on a merely-paused clock,
@@ -1905,6 +1908,7 @@ function timerBlockHtml(exId, timer, sealed) {
       ${phase === 'running'
         ? `<button class="timer-btn" data-action="pause-timer" data-id="${exId}">${ICONS.pause}Pause</button>`
         : `<button class="timer-btn" data-action="resume-timer" data-id="${exId}">${ICONS.play}Resume</button>`}
+      ${hasTarget ? '' : `<button class="timer-btn finish" data-action="take-the-win" data-id="${exId}">${ICONS.check}Complete</button>`}
       <button class="timer-btn giveup" data-action="giveup-timer" data-id="${exId}">${ICONS.flag}Give up</button>
       <button class="timer-btn reset" data-action="reset-timer" data-id="${exId}">${ICONS.restore}Reset</button>
     </div>` : '';
@@ -2163,7 +2167,7 @@ function modalLogger(exId) {
       : `<div class="logger-total editable-target" data-editable-logger-total data-id="${exId}" title="Tap to edit total">${total}</div>`;
 
   const timer = getTimerPure(state.timersLog, today, exId);
-  const timerHtml = timerBlockHtml(exId, timer, sealed);
+  const timerHtml = timerBlockHtml(exId, timer, sealed, hasTarget);
 
   return `<div class="modal-backdrop" data-action="backdrop">
     <div class="modal-sheet" data-stop>

@@ -8,8 +8,15 @@ Paste this into a new session to continue.
 
 **Sets**, a workout set tracker. Vanilla JS + Vite PWA, no framework, no runtime
 dependencies. Repo: `/Users/johnmendoza/Downloads/workout`.
-Live at https://johnpatrickmendozacdu-pixel.github.io/workout/ (GitHub Pages,
-deploys from `main` via Actions). **The app URL has never changed and should not.**
+Live at **https://sets-workout.vercel.app** (Vercel, auto-deploys from `main`),
+and still at https://johnpatrickmendozacdu-pixel.github.io/workout/ (GitHub Pages,
+via Actions). Both run the same commit. Pages stays up until everyone has moved,
+then it can be retired.
+
+**The app is no longer pinned to one address.** The redirect URI is derived from
+wherever it is running and sent to the broker, which checks it against a
+comma-separated `ALLOWED_ORIGIN`. Adding a host is a Google Console entry plus
+one Cloudflare variable — never a code change.
 
 - `src/domain/domain.js` + `src/domain/stats.js` — pure, hold every rule
 - `src/main.js` — all rendering and events (large; no test coverage)
@@ -18,22 +25,30 @@ deploys from `main` via Actions). **The app URL has never changed and should not
 - `src/sync/googleSync.js` — self-contained Google auth + Drive (no test coverage)
 - `worker/` — the Cloudflare token-broker (deployed separately, see below)
 
-**260 tests, all passing** (`npm test`). They cover the pure domain layer and the
+**267 tests, all passing** (`npm test`). They cover the pure domain layer and the
 Worker's pure helpers only — **not `main.js`, not `googleSync.js`**.
 
 ## State right now
 
-- `main` = **`f1e1db8`** deployed; category + one-time work committed on top and
-  deployed the same way. Byte-verify every deploy against a fresh local build.
-- Everything the user asked for is shipped. **Nothing is outstanding.**
-- The one thing unconfirmed: whether broker sync genuinely survives past an hour on
-  the user's phone. Only they can verify (needs their Google account).
+- `main` = **`caae02b`**, live on both hosts. Byte-verify every deploy against a
+  fresh local build — `__BUILD_ID__` is the commit SHA, so build the *pushed*
+  commit or the hashes will never match.
+- **Mid-migration.** Vercel is verified end to end except the Google sign-in
+  itself, which needs the user's account. Everyone must sign in on the old
+  address before moving, or their local data is stranded there (recoverable by
+  export/import — the old link keeps working).
+- Two bits of cleanup waiting: the migration shim in `worker/exchange` for
+  clients cached before 2026-08-05, and a second unused Google client secret the
+  Console is warning about.
 
 ## Architecture decisions that are settled — do not re-litigate
 
-**Hosting stays on GitHub Pages.** Vercel was evaluated and rejected (identical for a
-static PWA; migrating means redoing OAuth and losing IndexedDB data, which is
-per-origin). Supabase was evaluated and rejected (its free tier pauses after 7 days
+**Hosting moved to Vercel on 2026-08-05**, for one reason only: a free
+`sets-workout.vercel.app` reads better than `<long-username>.github.io/workout`.
+Everything else about the two is identical for a static PWA. The cost is the
+per-origin one: IndexedDB does not follow, so everyone must sign in on the new
+address to pull their data back from Drive. Pages runs in parallel so there is no
+flag day. Supabase was evaluated and rejected (its free tier pauses after 7 days
 idle, breaking "100% functional"; full data migration is the highest risk to "no lost
 data"). The user's use case — family and friends, each on their own phone, each Gmail
 with its own data — already works.
@@ -60,8 +75,11 @@ through it.
   Services path, so the broker can only add reliability.
 - Deploy steps for the user: `worker/README.md`. Paste-ready single file:
   `worker/deploy-this.js`.
-- Verified by curl: correct origin → 204 + CORS; foreign origin → 403; bogus token →
-  401 from Google. The end-to-end hour-long test is the user's.
+- `ALLOWED_ORIGIN` is a **comma-separated list**. The response echoes the caller's
+  own origin, never the list — a browser accepts exactly one value.
+- Verified by curl on 2026-08-05: both origins → 204 + CORS; foreign origin → 403;
+  a redirect pointing at another site, or a lookalike like
+  `sets-workout.vercel.app.evil.com` → `bad-redirect`. The hour-long test is the user's.
 
 ## Hard-won facts — do not re-derive these
 

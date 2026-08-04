@@ -13,6 +13,7 @@ deploys from `main` via Actions). **The app URL has never changed and should not
 
 - `src/domain/domain.js` + `src/domain/stats.js` — pure, hold every rule
 - `src/main.js` — all rendering and events (large; no test coverage)
+- `src/guide.js` — the Guide tab's content, as data. No logic.
 - `src/db/db.js` — IndexedDB wrapper, namespaced per Google account
 - `src/sync/googleSync.js` — self-contained Google auth + Drive (no test coverage)
 - `worker/` — the Cloudflare token-broker (deployed separately, see below)
@@ -86,12 +87,15 @@ External vs Internal were all red herrings. The consent screen's **Data Access**
 was empty — `drive.appdata` was never registered. It is a **non-sensitive** scope, so
 there is no verification requirement and no "unverified app" warning.
 
-**Audio.** Never use Web Audio for cues. iOS silences it with the ring/silent switch;
-`<audio>` elements play on the media channel. Cues are WAV tones generated in code,
-primed muted inside the first tap.
+**EMOM is gone.** Removed on 2026-08-04 as faulty, along with everything only it
+used: the count-in, the round band, the one-EMOM-at-a-time rule, and the whole cue
+sound system (~400 lines). The normal workout clock is untouched. Old exercises keep
+dead `timerMode`/`emomWorkSec` fields — nothing reads them, so there was no migration
+and no risk to anyone's Drive backup.
 
-**EMOM stores nothing.** Pure function of the workout clock's `elapsedMs`. The 5s
-count-in works by putting `runStartedAt` in the *future*.
+**If sound ever comes back:** never use Web Audio. iOS silences it with the
+ring/silent switch; `<audio>` elements play on the media channel. The removed version
+generated WAV tones in code and primed them muted inside the first tap.
 
 **Never rebuild a stored object from the fields one form edits.** `saveProfile` did
 `{username, weight, height}` and destroyed the avatar; sync then propagated the
@@ -110,6 +114,7 @@ asking.
 | Plan | Grouped by shared schedule, collapsed by default, tap to open. Add → Scheduled or One-time. Equipment: bodyweight / dumbbell + kg/lb. |
 | Progress | Same schedule groups + combo times (total/avg/best per group). Weekly-average weight chart. BMI. "One time" group. Per-exercise: top set, best day, lifetime, best/avg/total time, weight progression. |
 | Health habit | Daily weigh-in, weekly-average line chart. Never touches any exercise streak. |
+| Guide | Fourth nav tab. Every section collapsed on arrival; open one to read it. Content is data in `src/guide.js` — one table, one source of truth. Adding a feature means adding a row there, not re-writing an explanation somewhere else. |
 | Sync | Per-Google-account namespaced data; Drive appdata backup; token-broker keeps it alive. Failures queue quietly — no red alarms. |
 
 ## How this user works

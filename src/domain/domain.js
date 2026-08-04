@@ -555,19 +555,6 @@ export function timerElapsedMs(timer, nowMs) {
   return timer.elapsedMs + runningBit;
 }
 
-export const EMOM_DEFAULT_WORK_SEC = 60;
-export const EMOM_DEFAULT_REST_SEC = 60;
-/** Five, like every other EMOM timer. Long enough to put the phone down. */
-export const EMOM_COUNT_IN_SEC = 5;
-
-/** Seconds of count-in still to run, or 0. Derived from runStartedAt sitting in
- *  the future — see startTimer. */
-export function countInLeft(timer, nowMs) {
-  if (!timer || timer.status !== 'running' || !timer.runStartedAt) return 0;
-  const ms = timer.runStartedAt - nowMs;
-  return ms > 0 ? Math.ceil(ms / 1000) : 0;
-}
-
 /**
  * Whether a token kept from a previous run can still be used.
  *
@@ -701,170 +688,12 @@ export function recordWeight(weightLog, dateStr, w) {
 }
 
 /**
- * The running EMOM sessions that would have to yield to `keepExId`.
- * Separate from enforcing it so the app can name what it paused.
- */
-export function emomSessionsToPause(timersLog, exercises, dateStr, keepExId) {
-  const day = (timersLog && timersLog[dateStr]) || {};
-  return Object.keys(day).filter((id) => {
-    if (id === keepExId) return false;
-    const t = day[id];
-    if (!t || t.status !== 'running') return false;
-    const ex = (exercises || []).find((e) => e.id === id);
-    return !!(ex && ex.timerMode === 'emom');
-  });
-}
-
-/**
- * One EMOM session at a time.
- *
- * You cannot do two structured workouts at once, and two sets of rounds cueing
- * over each other is worse than either alone. Starting or resuming an EMOM
- * session therefore pauses any other that is running — paused, not ended, so
- * every second it earned is kept and it can be picked up again later.
- *
- * Normal-mode clocks are left alone: they are stopwatches, not a schedule
- * competing for your attention.
- */
-export function enforceSingleEmom(timersLog, exercises, dateStr, keepExId, nowMs) {
-  const doomed = emomSessionsToPause(timersLog, exercises, dateStr, keepExId);
-  if (!doomed.length) return timersLog;
-  return doomed.reduce((log, id) => pauseTimer(log, dateStr, id, nowMs), timersLog);
-}
-
-/**
- * Which EMOM session owns the cues right now.
- *
- * You can only do one exercise at a time, so only one may beep — two running
- * sessions cueing over each other is worse than either alone. The card you have
- * open wins, because that is where your attention is; otherwise it is the
- * session you started most recently, which is the one you moved on to. Resuming
- * a paused session re-asserts it, since resuming sets a fresh runStartedAt.
- */
-export function activeEmomId(timersLog, exercises, dateStr, openExId) {
-  const day = (timersLog && timersLog[dateStr]) || {};
-  const live = Object.keys(day).filter((id) => {
-    const t = day[id];
-    if (!t || t.status !== 'running') return false;
-    const ex = (exercises || []).find((e) => e.id === id);
-    return !!(ex && ex.timerMode === 'emom');
-  });
-  if (!live.length) return null;
-  if (openExId && live.includes(openExId)) return openExId;
-  return live.sort((a, b) => (day[b].runStartedAt || 0) - (day[a].runStartedAt || 0))[0];
-}
-
-/**
- * The beeps due between now and now+lookahead, each with the exact millisecond
- * it should sound at.
- *
- * Returning times rather than firing on detection is the point. A beep fired
- * when a one-second tick *notices* the phase changed can be a full second late,
- * and vanishes entirely if the tab is throttled — useless for a count-in, whose
- * only value is being exactly on time. Every boundary here is arithmetic on
- * timestamps, so the caller can hand these to the audio clock in advance.
- *
- * Ticks belong to the phase they end: a rest shorter than the countdown emits
- * only the ticks that fit inside it, instead of spraying beeps back through the
- * work period.
- */
-export function emomBeepSchedule(timer, workSec, restSec, nowMs, lookaheadMs) {
-  const out = [];
-  if (!timer || timer.status !== 'running') return out;
-  const work = Number(workSec);
-  const rest = Number(restSec);
-  if (!(work > 0) || !(rest >= 0)) return out;
-
-  const until = nowMs + (lookaheadMs > 0 ? lookaheadMs : 0);
-  const start = timer.runStartedAt - timer.elapsedMs; // wall time of elapsed 0
-  // A small grace window backwards: the first tick of a count-in lands on the
-  // very tap that started it, and would otherwise be a few milliseconds stale
-  // by the time anything looks — costing the "5" of 5-4-3-2-1. The caller
-  // clamps a slightly-past time to "now", so it still sounds on the beat.
-  const GRACE_MS = 300;
-  const add = (atMs, kind, notBefore) => {
-    if (atMs < nowMs - GRACE_MS || atMs > until) return;
-    if (notBefore != null && atMs < notBefore) return;
-    out.push({ atMs, kind });
-  };
-
-  // The count-in: five ticks, then the tone that starts round 1.
-  if (timer.runStartedAt > nowMs) {
-    for (let k = EMOM_COUNT_IN_SEC; k >= 1; k--) add(timer.runStartedAt - k * 1000, 'tick');
-    add(timer.runStartedAt, 'work');
-  }
-
-  // Phase boundaries, walked forward from whichever cycle the window touches.
-  const cycle = work + rest;
-  const elapsedAtUntil = Math.max(0, until - start);
-  let n = Math.max(0, Math.floor((Math.max(0, nowMs - start) - cycle * 1000) / (cycle * 1000)));
-  for (; n * cycle * 1000 <= elapsedAtUntil + cycle * 1000; n++) {
-    const cycleStart = start + n * cycle * 1000;
-    // work -> rest, and the rest period is skipped entirely when it is zero
-    if (rest > 0) {
-      const boundary = cycleStart + work * 1000;
-      for (let k = Math.min(EMOM_COUNT_IN_SEC, work); k >= 1; k--) add(boundary - k * 1000, 'tick', cycleStart);
-      add(boundary, 'rest');
-    }
-    // -> next work
-    const nextWork = cycleStart + cycle * 1000;
-    const phaseStart = rest > 0 ? cycleStart + work * 1000 : cycleStart;
-    const room = rest > 0 ? rest : work;
-    for (let k = Math.min(EMOM_COUNT_IN_SEC, room); k >= 1; k--) add(nextWork - k * 1000, 'tick', phaseStart);
-    add(nextWork, 'work');
-  }
-
-  out.sort((a, b) => a.atMs - b.atMs);
-  // The count-in's final tone and a boundary can land together; keep one.
-  return out.filter((e, i) => i === 0 || e.atMs !== out[i - 1].atMs);
-}
-
-/**
- * Where you are in an every-minute-on-the-minute cycle.
- *
- * EMOM stores nothing. It is a pure function of the workout clock's elapsed
- * time, and elapsedMs already excludes paused time — so pausing for the
- * bathroom freezes the cycle, resetting puts it back to round 1, and closing
- * the session stops it, all without a line of new logic. A separate EMOM start
- * timestamp would have had to re-earn every one of those behaviours, and the
- * pause case is the exact reason the pause button exists.
- *
- * A rest of 0 is legal: continuous work with rounds still counting. A cycle
- * that cannot be divided by returns null rather than dividing by zero.
- */
-export function emomPhase(elapsedMs, workSec, restSec) {
-  const work = Number(workSec);
-  const rest = Number(restSec);
-  if (!(work > 0) || !(rest >= 0)) return null;
-  const cycleSec = work + rest;
-  if (!(cycleSec > 0)) return null;
-
-  const t = Math.floor(Math.max(0, elapsedMs) / 1000);
-  const pos = t % cycleSec;
-  const working = pos < work;
-  return {
-    phase: working ? 'work' : 'rest',
-    round: Math.floor(t / cycleSec) + 1,
-    secondsLeft: working ? work - pos : cycleSec - pos,
-    cycleSec,
-  };
-}
-
-/**
  * Starts a fresh timer for this exercise today. No-op if one already exists
  * (so logging more sets later in the day never resets progress).
- *
- * delayMs holds both clocks at zero for a count-in. It needs no extra state:
- * runStartedAt is simply set in the future, and timerElapsedMs already clamps
- * its running portion at zero, so the workout clock reads 0:00 throughout and
- * begins moving at the precise instant the first round does. "A count-in is
- * running" is therefore derivable — runStartedAt is ahead of now — rather than
- * being a second piece of state that could drift out of step.
  */
-export function startTimer(timersLog, dateStr, exId, nowMs, delayMs) {
+export function startTimer(timersLog, dateStr, exId, nowMs) {
   if (getTimer(timersLog, dateStr, exId)) return timersLog;
-  const delay = delayMs > 0 ? delayMs : 0;
-  return setTimerRecord(timersLog, dateStr, exId, { status: 'running', elapsedMs: 0, runStartedAt: nowMs + delay });
+  return setTimerRecord(timersLog, dateStr, exId, { status: 'running', elapsedMs: 0, runStartedAt: nowMs });
 }
 
 /* Transitions spread the existing record rather than rebuilding it, so a flag

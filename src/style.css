@@ -1245,41 +1245,6 @@
      marks what is running or winnable */
   .tip.sealed-note{border-left-color:var(--silver); color:var(--text);}
 
-  /* ---------- EMOM round band ----------
-     The phase word leads because the beep cannot be relied on: iOS mutes Web
-     Audio on the silent switch and suspends it in the background, so the screen
-     is the signal and the sound is a bonus. Neon marks WORK because that is
-     what is live; rest takes silver, keeping green rationed to one job. */
-  .emom-band{
-    display:flex; align-items:baseline; justify-content:space-between; gap:10px;
-    margin-top:10px; padding:9px 12px; border:2px solid var(--ink); background:#0F1412;
-  }
-  .emom-phase{
-    font-family:var(--font-mono); font-size:15px; font-weight:700;
-    letter-spacing:0.12em; text-transform:uppercase;
-  }
-  .emom-left{font-family:var(--font-mono); font-size:13px; color:var(--text-dim);}
-  .emom-left b{font-size:22px; color:var(--text);}
-  .emom-round{
-    font-family:var(--font-mono); font-size:11px; letter-spacing:0.08em;
-    text-transform:uppercase; color:var(--text-faint);
-  }
-  .emom-band.phase-work{border-color:var(--accent);}
-  .emom-band.phase-work .emom-phase, .emom-band.phase-work .emom-left b{color:var(--accent);}
-  .emom-band.phase-rest{border-color:var(--silver);}
-  .emom-band.phase-rest .emom-phase{color:var(--silver);}
-
-  /* work/rest inputs in Plan, greyed until EMOM is chosen */
-  .emom-fields{display:flex; gap:8px; margin-top:8px;}
-  .emom-sub{
-    flex:1; display:flex; align-items:center; gap:8px; font-size:12.5px; color:var(--text-dim);
-  }
-  .emom-sub input{
-    flex:1; min-width:0; min-height:44px; text-align:center;
-    font-family:var(--font-mono); font-weight:700;
-  }
-  .emom-fields.disabled{opacity:0.4; pointer-events:none;}
-
   /* ---------- trajectory chart ----------
      Silver line, never neon: a whole chart in the accent would spend the one
      signal this palette rations to "live or achieved". A day that met its
@@ -1338,10 +1303,6 @@
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
   }
 
-  /* Count-in: nothing is live yet, so it takes silver like rest rather than the
-     neon reserved for what is actually running. */
-  .emom-band.phase-ready{border-color:var(--silver);}
-  .emom-band.phase-ready .emom-phase{color:var(--silver);}
 
   .test-sound{min-height:44px; width:100%; margin-top:8px;}
 
@@ -1407,7 +1368,8 @@
 .weight-tag{font-family:var(--font-mono);font-size:.72em;color:var(--text-faint);font-weight:400;letter-spacing:.02em;}
 
 /* ---- Schedule groups (Plan + Progress) ---- */
-.group-head{display:flex;align-items:center;gap:10px;width:100%;margin-top:16px;padding:11px 12px;
+/* 44px floor: on the Guide screen every single control is one of these. */
+.group-head{display:flex;align-items:center;gap:10px;width:100%;margin-top:16px;padding:11px 12px;min-height:44px;
   background:var(--bg-elevated);border:1px solid var(--border);text-align:left;cursor:pointer;}
 .group-head-label{font-family:var(--font-mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--text);}
 .group-head-meta{margin-left:auto;font-family:var(--font-mono);font-size:11px;color:var(--text-faint);}
@@ -1415,6 +1377,15 @@
 .group-chev.open{transform:rotate(90deg);}
 .combo-line{font-family:var(--font-mono);font-size:11.5px;color:var(--text-faint);
   letter-spacing:.02em;margin:2px 0 10px;}
+
+/* ---- Guide screen ----
+   The body hangs off its header with no gap and no second border between the
+   two, so an open section reads as one object rather than a heading that has
+   come loose from its own text. */
+.group-head[data-view="guide"] .group-chev{margin-left:auto;}
+.guide-body{padding:15px 13px 16px;border:1px solid var(--border);border-top:0;
+  background:var(--bg-elevated);}
+.guide-body dt{font-family:var(--font-body);}
 
 /* ---- Weekly weight chart (reuses trajectory look) ---- */
 .traj-chart{width:100%;height:auto;display:block;margin:6px 0 4px;}

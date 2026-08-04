@@ -48,22 +48,14 @@ import {
   mergeBackup,
   mergeSyncSnapshots,
   sameSnapshotData,
-  emomPhase,
-  emomBeepSchedule,
-  countInLeft,
-  activeEmomId,
   storedTokenUsable,
   syncNudge,
   bmiSummary,
   weightTrend,
   weeklyAverages,
   recordWeight,
-  enforceSingleEmom,
-  emomSessionsToPause,
-  EMOM_COUNT_IN_SEC,
-  EMOM_DEFAULT_WORK_SEC,
-  EMOM_DEFAULT_REST_SEC,
 } from './domain/domain.js';
+import { GUIDE_SECTIONS } from './guide.js';
 import * as gsync from './sync/googleSync.js';
 import { allStats, exerciseStats, recentDayStates, streakTier, dayHistory, trajectorySeries, formatDuration, formatTotalDuration, formatCount, formatClock, groupBySchedule, comboTimes } from './domain/stats.js';
 
@@ -690,15 +682,8 @@ async function logSet(exId, value) {
   const total = calcTotal(getSetsFor(exId, d));
   const now = Date.now();
 
-  // First logged set of the day for this exercise auto-starts its timer. On an
-  // EMOM exercise it starts a count-in instead: the workout clock and the first
-  // round then begin together, five seconds later.
-  const countIn = ex && ex.timerMode === 'emom' ? EMOM_COUNT_IN_SEC * 1000 : 0;
-  const hadTimer = !!getTimerPure(state.timersLog, d, exId);
-  state.timersLog = startTimerPure(state.timersLog, d, exId, now, countIn);
-  // Only a session that has just begun takes over; logging into one already
-  // running must not keep re-pausing whatever else you left going.
-  const emomNote = hadTimer ? null : takeOverEmom(exId, now, false);
+  // First logged set of the day for this exercise auto-starts its timer.
+  state.timersLog = startTimerPure(state.timersLog, d, exId, now);
 
   let newPR = false;
   if (ex) {
@@ -720,9 +705,6 @@ async function logSet(exId, value) {
   }
 
   await Promise.all([persistSets(), persistTimers(), newPR ? persistExercises() : Promise.resolve()]);
-  // Book the count-in immediately. Waiting for the next tick would let its
-  // first beep fall into the past unheard.
-  scheduleEmomBeeps(Date.now());
 
   const unit = ex && ex.unit ? ' ' + ex.unit : '';
   if (crossed) {
@@ -731,7 +713,7 @@ async function logSet(exId, value) {
     renderModal();
   } else {
     const base = newPR ? `🏆 New PR! Target raised to ${total}${unit}` : `Logged ${value}${unit}`;
-    showToast(emomNote ? `${base} · ${emomNote}` : base, () => undoLastSetHandler(exId));
+    showToast(base, () => undoLastSetHandler(exId));
   }
   rerender();
 }
@@ -754,7 +736,6 @@ async function keepGoingHandler(exId) {
   // target now, so without this marker the next pause would seal it.
   state.timersLog = markPushingOn(state.timersLog, todayISO(), exId);
   const now = Date.now();
-  takeOverEmom(exId, now);
   state.timersLog = resumeTimerPure(state.timersLog, todayISO(), exId, now);
   await persistTimers();
   // Straight back into the logger — "keep going" means keep logging, so
@@ -820,7 +801,6 @@ async function pauseTimerHandler(exId) {
 }
 async function resumeTimerHandler(exId) {
   const now = Date.now();
-  takeOverEmom(exId, now);
   state.timersLog = resumeTimerPure(state.timersLog, todayISO(), exId, now);
   await persistTimers();
   renderModal();
@@ -849,27 +829,6 @@ function sealedToday(exId, dateStr) {
 }
 
 /** The deliberate way out of a sealed day. Lands paused, keeping the time. */
-/**
- * Applies the one-EMOM-at-a-time rule and names what it paused, because a
- * session going quiet on its own would otherwise look like a bug.
- */
-function takeOverEmom(exId, now, announce) {
-  const d = todayISO();
-  const ex = state.exercises.find((e) => e.id === exId);
-  if (!ex || ex.timerMode !== 'emom') return null;
-  const paused = emomSessionsToPause(state.timersLog, state.exercises, d, exId);
-  if (!paused.length) return null;
-  state.timersLog = enforceSingleEmom(state.timersLog, state.exercises, d, exId, now);
-  const names = paused
-    .map((id) => (state.exercises.find((e) => e.id === id) || {}).name)
-    .filter(Boolean);
-  const note = `paused ${names.join(' and ')}`;
-  // logSet posts its own toast a moment later and would bury this, so it takes
-  // the note and says both. Everywhere else, say it here.
-  if (announce !== false) showToast(`One EMOM at a time — ${note}`);
-  return note;
-}
-
 async function reopenSessionHandler(exId) {
   state.timersLog = reopenTimerPure(state.timersLog, todayISO(), exId);
   await persistTimers();
@@ -923,9 +882,6 @@ async function addExercise(data) {
     weight: data.weight != null ? data.weight : null,
     weightUnit: data.weightUnit === 'lb' ? 'lb' : 'kg',
     weightHistory: data.weight > 0 ? [{ effectiveDate: now, weight: data.weight, unit: data.weightUnit === 'lb' ? 'lb' : 'kg' }] : [],
-    timerMode: data.timerMode === 'emom' ? 'emom' : 'normal',
-    emomWorkSec: data.emomWorkSec || EMOM_DEFAULT_WORK_SEC,
-    emomRestSec: data.emomRestSec != null ? data.emomRestSec : EMOM_DEFAULT_REST_SEC,
     targetHistory: [{ effectiveDate: now, target: data.target || null }],
   };
   state.exercises.push(ex);
@@ -970,9 +926,6 @@ async function updateExercise(id, data) {
   if (data.equipment !== undefined) ex.equipment = data.equipment === 'dumbbell' ? 'dumbbell' : 'bodyweight';
   if (data.weightUnit !== undefined) ex.weightUnit = data.weightUnit === 'lb' ? 'lb' : 'kg';
   if (data.weight !== undefined) applyWeightChange(ex, data.weight, ex.weightUnit);
-  if (data.timerMode !== undefined) ex.timerMode = data.timerMode === 'emom' ? 'emom' : 'normal';
-  if (data.emomWorkSec != null) ex.emomWorkSec = data.emomWorkSec;
-  if (data.emomRestSec != null) ex.emomRestSec = data.emomRestSec;
   applyTargetChange(ex, data.target || null);
   await persistExercises();
 }
@@ -1401,6 +1354,7 @@ const NAV_ITEMS = [
   { view: 'today', label: 'Today', icon: 'today' },
   { view: 'plan', label: 'Plan', icon: 'plan' },
   { view: 'progress', label: 'Progress', icon: 'progress' },
+  { view: 'guide', label: 'Guide', icon: 'help' },
 ];
 
 function renderNav() {
@@ -1532,6 +1486,17 @@ function renderTopbar() {
           ${avatarChipHtml()}
         </div>
       </div>`;
+  } else if (state.view === 'guide') {
+    // No ? chip here: this screen is what the chip is a shortcut to, and a
+    // guide to the guide is the kind of thing that makes an app feel padded.
+    el.innerHTML = `
+      <div class="topbar-row">
+        <div class="topbar-left">${LOGO_MARK}<div class="screen-title">Guide</div></div>
+        <div class="topbar-right">
+          ${versionChipHtml()}
+          ${avatarChipHtml()}
+        </div>
+      </div>`;
   } else {
     el.innerHTML = `
       <div class="topbar-row">
@@ -1551,7 +1516,31 @@ function renderView() {
   if (!el) return;
   if (state.view === 'today') el.innerHTML = viewToday();
   else if (state.view === 'plan') el.innerHTML = viewPlan();
+  else if (state.view === 'guide') el.innerHTML = viewGuide();
   else el.innerHTML = viewProgress();
+}
+
+/* ============================= VIEW: GUIDE =============================
+ * Every section closed on arrival, so the screen opens as a short list of
+ * questions rather than a wall of answers — the same collapsed-until-asked
+ * pattern the Plan and Progress groups already use, and the reason this can
+ * be complete without being cluttered.
+ *
+ * It reads GUIDE_SECTIONS and nothing else. No app state, no derived numbers,
+ * so it cannot go stale against your data and there is nothing here to break.
+ */
+function viewGuide() {
+  return GUIDE_SECTIONS.map((sec) => {
+    const open = groupOpen('guide', sec.id, GUIDE_SECTIONS.length);
+    const head = `<button class="group-head" data-action="toggle-group" data-view="guide" data-key="${sec.id}" data-open="${open}" aria-expanded="${open}">
+        <span class="group-head-label">${escapeHtml(sec.title)}</span>
+        <span class="group-chev ${open ? 'open' : ''}">${ICONS.chevron}</span>
+      </button>`;
+    if (!open) return head;
+    const rows = sec.items.map(([what, how]) =>
+      `<div><dt>${escapeHtml(what)}</dt><dd>${escapeHtml(how)}</dd></div>`).join('');
+    return `${head}<dl class="guide-list guide-body">${rows}</dl>`;
+  }).join('');
 }
 
 /* ============================= VIEW: TODAY ============================= */
@@ -1904,8 +1893,6 @@ function ensureGlobalTick() {
       const t = getTimerPure(state.timersLog, todayISO(), el.dataset.elapsed);
       if (t) el.textContent = formatElapsed(timerElapsedMs(t, now));
     });
-    tickEmomBands(now);
-    scheduleEmomBeeps(now);
   }, 1000);
 }
 
@@ -1959,195 +1946,8 @@ function timerBlockHtml(exId, timer, sealed) {
       <span class="timer-clock" id="timer-display" data-elapsed="${exId}" data-status="${phase}">${elapsed}</span>
       <span class="timer-status">${phase === 'completed' ? ICONS.trophy : ''}${statusLabel}${finishedClock ? ` · ${escapeHtml(finishedClock)}` : ''}</span>
     </div>
-    ${live ? emomBandHtml(exId, timer) : ''}
     ${controls}
     <p class="timer-note">${escapeHtml(note)}</p>
-  </div>`;
-}
-
-/**
- * ===================== CUE SOUNDS =====================
- * Tones are generated as WAV data in code and played through <audio> elements
- * rather than Web Audio.
- *
- * That choice is the whole fix. On iOS, Web Audio is silenced by the physical
- * ring/silent switch, while media elements play on the media channel — the same
- * one that carries video and music. The symptom that led here was a phone where
- * every other sound worked, the app reported the beep as played, and nothing was
- * audible: that is precisely what a muted Web Audio output looks like, and no
- * amount of unlocking fixes it.
- *
- * Still free and still offline: nothing is fetched, the waveform is written a
- * sample at a time and handed over as a data URI.
- */
-const TONE_SPECS = {
-  tick: { freq: 660, len: 0.09, gain: 0.35 },  // counting down
-  work: { freq: 990, len: 0.22, gain: 0.55 },  // go
-  rest: { freq: 420, len: 0.22, gain: 0.45 },  // ease off
-};
-
-function toneDataUri({ freq, len, gain }) {
-  const rate = 11025;
-  const n = Math.floor(rate * len);
-  const buf = new ArrayBuffer(44 + n * 2);
-  const dv = new DataView(buf);
-  const str = (off, v) => { for (let i = 0; i < v.length; i++) dv.setUint8(off + i, v.charCodeAt(i)); };
-  str(0, 'RIFF'); dv.setUint32(4, 36 + n * 2, true); str(8, 'WAVE');
-  str(12, 'fmt '); dv.setUint32(16, 16, true); dv.setUint16(20, 1, true);
-  dv.setUint16(22, 1, true); dv.setUint32(24, rate, true);
-  dv.setUint32(28, rate * 2, true); dv.setUint16(32, 2, true); dv.setUint16(34, 16, true);
-  str(36, 'data'); dv.setUint32(40, n * 2, true);
-  for (let i = 0; i < n; i++) {
-    const t = i / rate;
-    // short attack and release so it reads as a cue, not a click or an alarm
-    const env = Math.max(0, Math.min(1, t / 0.006, (len - t) / 0.03));
-    const square = Math.sin(2 * Math.PI * freq * t) >= 0 ? 1 : -1;
-    dv.setInt16(44 + i * 2, Math.round(square * gain * env * 32767), true);
-  }
-  const bytes = new Uint8Array(buf);
-  let bin = '';
-  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-  return 'data:audio/wav;base64,' + btoa(bin);
-}
-
-const toneEls = {};
-let audioPrimed = false;
-
-function toneEl(kind) {
-  if (!toneEls[kind]) {
-    const el = new Audio(toneDataUri(TONE_SPECS[kind] || TONE_SPECS.tick));
-    el.preload = 'auto';
-    toneEls[kind] = el;
-  }
-  return toneEls[kind];
-}
-
-/**
- * iOS will not play a media element that has never been started from a gesture.
- * Starting each one muted inside the tap, then rewinding it, buys the right to
- * play it later from a timer.
- */
-function unlockAudio() {
-  try {
-    Object.keys(TONE_SPECS).forEach((kind) => {
-      const el = toneEl(kind);
-      if (audioPrimed) return;
-      el.muted = true;
-      const p = el.play();
-      const settle = () => { el.pause(); el.currentTime = 0; el.muted = false; };
-      if (p && p.then) p.then(settle).catch(() => { el.muted = false; });
-      else settle();
-    });
-    audioPrimed = true;
-  } catch (e) { /* no audio available; the band on screen is the real signal */ }
-}
-
-/** Whether a cue can actually be played, for the Test sound button. */
-function audioReady() {
-  return audioPrimed && !!toneEls.tick;
-}
-
-function playTone(kind) {
-  try {
-    const el = toneEl(kind);
-    el.currentTime = 0;
-    const p = el.play();
-    if (p && p.catch) p.catch(() => {});
-  } catch (e) { /* never let a cue break the workout */ }
-}
-
-/**
- * Books upcoming beeps. Reads state rather than the DOM, so the count-in and
- * the round cues keep sounding after you close the card and carry on elsewhere
- * in the app — the clock does, so the beeps must too.
- *
- * Each cue is booked once, on a timer set to its exact millisecond, rather than
- * played when a tick happens to notice the phase changed: that could be a full
- * second late, which is useless for a countdown.
- */
-const BEEP_LOOKAHEAD_MS = 2500;
-let beepBooked = new Set();
-let beepTimers = [];
-let beepOwner = null;
-
-/** Drops every cue already booked. Used when the active session changes, so a
- *  session you have moved on from cannot beep over the one you are doing. */
-function clearBookedBeeps() {
-  beepTimers.forEach(clearTimeout);
-  beepTimers = [];
-  beepBooked = new Set();
-}
-
-function scheduleEmomBeeps(now) {
-  if (!audioPrimed) return;
-  const openExId = state.modal && state.modal.type === 'logger' ? state.modal.exId : null;
-  const exId = activeEmomId(state.timersLog, state.exercises, todayISO(), openExId);
-
-  // Handing the cues to a different session cancels the old one's booked beeps;
-  // they were scheduled minutes ahead and would otherwise still fire.
-  if (exId !== beepOwner) { clearBookedBeeps(); beepOwner = exId; }
-  if (!exId) return;
-  if (beepBooked.size > 400) beepBooked = new Set();
-
-  const t = (state.timersLog[todayISO()] || {})[exId];
-  const ex = state.exercises.find((e) => e.id === exId);
-  if (!t || !ex) return;
-  emomBeepSchedule(t, ex.emomWorkSec, ex.emomRestSec, now, BEEP_LOOKAHEAD_MS).forEach((ev) => {
-    const key = `${exId}:${ev.atMs}`;
-    if (beepBooked.has(key)) return;
-    beepBooked.add(key);
-    beepTimers.push(setTimeout(() => playTone(ev.kind), Math.max(0, ev.atMs - Date.now())));
-  });
-}
-
-/**
- * Repaints any EMOM band in place. Text-only updates, so a running EMOM session
- * costs no re-renders — the same approach the elapsed clock already uses.
- */
-function tickEmomBands(now) {
-  document.querySelectorAll('[data-emom]').forEach((el) => {
-    const exId = el.dataset.emom;
-    const ex = state.exercises.find((e) => e.id === exId);
-    const t = getTimerPure(state.timersLog, todayISO(), exId);
-    if (!ex || !t) return;
-    const view = emomBandView(ex, t, now);
-    if (!view) return;
-    el.className = `emom-band phase-${view.phase}`;
-    const phaseEl = el.querySelector('.emom-phase');
-    const leftEl = el.querySelector('.emom-left b');
-    const roundEl = el.querySelector('.emom-round');
-    if (phaseEl) phaseEl.textContent = view.label;
-    if (leftEl) leftEl.textContent = view.secondsLeft;
-    if (roundEl) roundEl.textContent = view.round;
-  });
-}
-
-/** What the band should say right now: the count-in, or the live round. */
-function emomBandView(ex, timer, now) {
-  const ready = countInLeft(timer, now);
-  if (ready > 0) return { phase: 'ready', label: 'Get ready', secondsLeft: ready, round: 'Starting' };
-  const e = emomPhase(timerElapsedMs(timer, now), ex.emomWorkSec, ex.emomRestSec);
-  if (!e) return null;
-  return { phase: e.phase, label: e.phase === 'work' ? 'Work' : 'Rest', secondsLeft: e.secondsLeft, round: `Round ${e.round}` };
-}
-
-/**
- * The EMOM round, shown only while a session is live on an EMOM exercise.
- *
- * The phase word is the largest element on purpose: the beep cannot be relied
- * on (iOS mutes Web Audio on the silent switch, and a backgrounded tab has its
- * audio suspended), so the screen has to be the primary signal and the sound
- * only a bonus.
- */
-function emomBandHtml(exId, timer) {
-  const ex = state.exercises.find((e) => e.id === exId);
-  if (!ex || ex.timerMode !== 'emom') return '';
-  const view = emomBandView(ex, timer, Date.now());
-  if (!view) return '';
-  return `<div class="emom-band phase-${view.phase}" data-emom="${exId}">
-    <span class="emom-phase">${view.label}</span>
-    <span class="emom-left"><b>${view.secondsLeft}</b>s</span>
-    <span class="emom-round">${view.round}</span>
   </div>`;
 }
 
@@ -2243,7 +2043,7 @@ function modalGuide() {
       anyTarget && ['Once it is done', 'Hitting the target locks the card. Train again to reopen it.'],
       anyTarget && ['Rest a day', 'Open the exercise, Take a break. Streak holds.'],
       !has.length && ['Start', 'Add an exercise.'],
-      ['Weekly weigh-in', 'A health habit, not an exercise. Set your day in Profile — it shows all week so you can work towards it.'],
+      ['Daily weigh-in', 'A health habit, not an exercise. It never touches a streak, and it disappears once today is logged.'],
     ],
     plan: [
       ['Edit', 'Tap the exercise.'],
@@ -2459,8 +2259,6 @@ function captureExerciseDraft() {
   set('name', val('f-ot-name'));   // one-time shares the name draft
   set('unit', val('f-unit'));
   set('target', val('f-target'));
-  set('work', val('f-emom-work'));
-  set('rest', val('f-emom-rest'));
   if (picked) d.icon = picked.dataset.emoji;
   const wv = val('f-weight-val');
   if (wv !== undefined) state.modal.weight = wv;
@@ -2480,14 +2278,6 @@ function modalExerciseForm(exId) {
   const draftSched = state.modal ? state.modal.sched : 'daily';
   const schedIsDaily = draftSched === 'daily';
   const schedDays = Array.isArray(draftSched) ? draftSched : [];
-  // Timer mode is a draft too, so toggling it reveals the work/rest fields
-  // without saving anything yet.
-  if (state.modal && state.modal.tmode === undefined) {
-    state.modal.tmode = (ex && ex.timerMode === 'emom') ? 'emom' : 'normal';
-  }
-  const isEmom = state.modal ? state.modal.tmode === 'emom' : false;
-  const workSec = (ex && ex.emomWorkSec) || EMOM_DEFAULT_WORK_SEC;
-  const restSec = (ex && ex.emomRestSec != null) ? ex.emomRestSec : EMOM_DEFAULT_REST_SEC;
   // Equipment + weight are drafts too, so switching to dumbbell reveals the
   // weight fields and flipping kg/lb converts the number, all without saving.
   if (state.modal && state.modal.equip === undefined) {
@@ -2593,21 +2383,6 @@ function modalExerciseForm(exId) {
         <label>Daily target (optional)</label>
         <input id="f-target" type="number" min="0" step="any" placeholder="Leave blank for no target" value="${draft.target !== undefined ? escapeHtml(draft.target) : (target ? target : '')}">
         <div class="hint">${editing ? 'Changing this only affects today onward — past days keep their original target.' : 'Untargeted exercises still track totals but don’t count toward your streak.'}</div>
-      </div>
-      <div class="field">
-        <label>Timer</label>
-        <div class="sched-modes">
-          <button type="button" class="sched-mode ${isEmom ? '' : 'on'}" data-action="timer-mode" data-mode="normal">Normal</button>
-          <button type="button" class="sched-mode ${isEmom ? 'on' : ''}" data-action="timer-mode" data-mode="emom">EMOM</button>
-        </div>
-        <div class="emom-fields ${isEmom ? '' : 'disabled'}">
-          <label class="emom-sub">Work<input id="f-emom-work" type="number" min="1" max="3600" step="1" value="${draft.work !== undefined ? escapeHtml(draft.work) : workSec}"></label>
-          <label class="emom-sub">Rest<input id="f-emom-rest" type="number" min="0" max="3600" step="1" value="${draft.rest !== undefined ? escapeHtml(draft.rest) : restSec}"></label>
-        </div>
-        ${isEmom ? '<button type="button" class="secondary-btn test-sound" data-action="test-sound">Test sound</button>' : ''}
-        <div class="hint">${isEmom
-          ? 'Seconds. Work then rest, on repeat, while the normal clock keeps running. Pausing freezes the round too. Counts you in 5-4-3-2-1, and beeps the last five seconds of every round.'
-          : 'Normal runs one clock from your first rep. EMOM adds work/rest rounds on top of it.'}</div>
       </div>
       <div class="form-actions">
         <button class="secondary-btn" data-action="close-modal">Cancel</button>
@@ -2974,22 +2749,14 @@ document.addEventListener('click', async (e) => {
       const icon = iconEl ? iconEl.dataset.emoji : '💪';
       const id = btn.dataset.id;
       const schedule = state.modal && state.modal.sched ? state.modal.sched : 'daily';
-      const timerMode = state.modal && state.modal.tmode === 'emom' ? 'emom' : 'normal';
-      // Read the fields even in normal mode so switching back to EMOM later
-      // remembers what you had typed rather than snapping to the defaults.
-      const rawWork = parseInt(document.getElementById('f-emom-work').value, 10);
-      const rawRest = parseInt(document.getElementById('f-emom-rest').value, 10);
-      const emomWorkSec = rawWork > 0 ? Math.min(3600, rawWork) : EMOM_DEFAULT_WORK_SEC;
-      const emomRestSec = rawRest >= 0 ? Math.min(3600, rawRest) : EMOM_DEFAULT_REST_SEC;
-      const timer = { timerMode, emomWorkSec, emomRestSec };
       const equipment = state.modal && state.modal.equip === 'dumbbell' ? 'dumbbell' : 'bodyweight';
       const weightUnit = state.modal && state.modal.wunit === 'lb' ? 'lb' : 'kg';
       const wRaw = document.getElementById('f-weight-val');
       const wParsed = wRaw && wRaw.value !== '' ? Math.max(0, parseFloat(wRaw.value)) : null;
       const weight = equipment === 'dumbbell' && wParsed > 0 ? Math.round(wParsed * 10) / 10 : null;
       const equip = { equipment, weight, weightUnit };
-      if (id) await updateExercise(id, { name, unit, target, icon, schedule, ...timer, ...equip });
-      else await addExercise({ name, unit, target, icon, schedule, ...timer, ...equip });
+      if (id) await updateExercise(id, { name, unit, target, icon, schedule, ...equip });
+      else await addExercise({ name, unit, target, icon, schedule, ...equip });
       closeModal(); rerender();
       break;
     }
@@ -3008,20 +2775,6 @@ document.addEventListener('click', async (e) => {
     }
 
     case 'open-logger': state.modal = { type: 'logger', exId: btn.dataset.id }; renderModal(); break;
-    case 'test-sound': {
-      captureExerciseDraft();
-      unlockAudio();
-      // Give resume() a moment, then say what is true rather than assuming it
-      // worked — if this stays silent the reason is off the web platform.
-      playTone('tick');
-      setTimeout(() => playTone('work'), 400);
-      showToast(audioReady() ? 'Played two beeps.' : 'This device is blocking sound for web apps.');
-      break;
-    }
-    case 'timer-mode':
-      captureExerciseDraft();
-      if (state.modal) { state.modal.tmode = btn.dataset.mode; renderModal(); }
-      break;
     case 'plan-type':
       captureExerciseDraft();
       if (state.modal) { state.modal.ptype = btn.dataset.type; renderModal(); }
@@ -3175,8 +2928,6 @@ document.addEventListener('click', async (e) => {
       renderModal();
       break;
     case 'rep-tap': {
-      // This tap is the gesture iOS requires before a page may make sound.
-      unlockAudio();
       const n = parseFloat(btn.dataset.val);
       if (state.repMode === 'sub') await decrementHandler(btn.dataset.id, n);
       else await logSet(btn.dataset.id, n);
@@ -3283,7 +3034,6 @@ document.addEventListener('click', async (e) => {
       await pauseTimerHandler(btn.dataset.id);
       break;
     case 'resume-timer':
-      unlockAudio();
       await resumeTimerHandler(btn.dataset.id);
       break;
     case 'giveup-timer':

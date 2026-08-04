@@ -1,4 +1,4 @@
-import { corsHeaders, validateBody, mapGoogleToken, jsonResponse } from './broker.js';
+import { corsHeaders, safeRedirectUri, validateBody, mapGoogleToken, jsonResponse } from './broker.js';
 
 const GOOGLE_TOKEN = 'https://oauth2.googleapis.com/token';
 const GOOGLE_REVOKE = 'https://oauth2.googleapis.com/revoke';
@@ -26,11 +26,17 @@ export default {
 // code + client secret -> access + refresh token, plus the account email
 async function exchange(body, env, cors) {
   if (!validateBody(body, ['code'])) return jsonResponse({ error: 'bad-body' }, 400, cors);
+  // Migration shim: an app cached before 2026-08-05 does not send its redirect
+  // URI. Fall back to the legacy GitHub Pages path so a stale service worker
+  // can still sign in. Safe to delete once nobody is on that build.
+  const sent = body.redirectUri || (String(env.ALLOWED_ORIGIN || '').split(',')[0].trim() + '/workout/');
+  const redirectUri = safeRedirectUri(sent, env.ALLOWED_ORIGIN);
+  if (!redirectUri) return jsonResponse({ error: 'bad-redirect' }, 400, cors);
   const params = new URLSearchParams({
     code: body.code,
     client_id: env.CLIENT_ID,
     client_secret: env.CLIENT_SECRET,
-    redirect_uri: env.ALLOWED_ORIGIN + '/workout/',
+    redirect_uri: redirectUri,
     grant_type: 'authorization_code',
   });
   const res = await fetch(GOOGLE_TOKEN, { method: 'POST', body: params });

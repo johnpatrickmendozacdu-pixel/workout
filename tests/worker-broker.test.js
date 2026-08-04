@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { corsHeaders, validateBody, mapGoogleToken } from '../worker/broker.js';
+import { corsHeaders, safeRedirectUri, validateBody, mapGoogleToken } from '../worker/broker.js';
 
 describe('corsHeaders', () => {
   it('returns headers only for the allowed origin', () => {
@@ -9,6 +9,45 @@ describe('corsHeaders', () => {
   it('returns null for any other origin', () => {
     expect(corsHeaders('https://evil.example', 'https://app.example')).toBeNull();
     expect(corsHeaders(null, 'https://app.example')).toBeNull();
+  });
+});
+
+describe('more than one allowed origin', () => {
+  const both = 'https://old.example,https://new.example';
+
+  it('lets either address through, echoing the caller back', () => {
+    expect(corsHeaders('https://old.example', both)['Access-Control-Allow-Origin']).toBe('https://old.example');
+    expect(corsHeaders('https://new.example', both)['Access-Control-Allow-Origin']).toBe('https://new.example');
+  });
+
+  it('still refuses anyone else', () => {
+    expect(corsHeaders('https://evil.example', both)).toBeNull();
+  });
+
+  it('never echoes the whole list — a browser accepts exactly one value', () => {
+    expect(corsHeaders('https://old.example', both)['Access-Control-Allow-Origin']).not.toContain(',');
+  });
+});
+
+describe('safeRedirectUri', () => {
+  const both = 'https://old.example,https://new.example';
+
+  it('accepts a redirect under an allowed origin', () => {
+    expect(safeRedirectUri('https://new.example/', both)).toBe('https://new.example/');
+    expect(safeRedirectUri('https://old.example/workout/', both)).toBe('https://old.example/workout/');
+  });
+
+  it('refuses somebody else\'s site', () => {
+    expect(safeRedirectUri('https://evil.example/', both)).toBeNull();
+  });
+
+  it('refuses a lookalike that only starts the same', () => {
+    expect(safeRedirectUri('https://new.example.evil.com/', both)).toBeNull();
+  });
+
+  it('refuses nothing at all', () => {
+    expect(safeRedirectUri('', both)).toBeNull();
+    expect(safeRedirectUri(undefined, both)).toBeNull();
   });
 });
 

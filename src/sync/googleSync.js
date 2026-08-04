@@ -57,11 +57,21 @@ let lastEmailHint = null;
  * first-party during it, so the Google session cookie is sent and `prompt=none`
  * returns a token with no interaction at all — a flash on open rather than a
  * login. Returns you straight back here.
- *
- * Hard-coded rather than derived from location so it matches the Authorized
- * redirect URI exactly; a mismatch is the one thing Google rejects outright.
  */
-const REDIRECT_URI = 'https://johnpatrickmendozacdu-pixel.github.io/workout/';
+/**
+ * Where Google sends you back to. Derived from wherever the app is actually
+ * running rather than written down, so moving hosts is a Google Console entry
+ * and nothing else — the old hardcoded URL was the single thing that made a
+ * host change a code change.
+ *
+ * Every address this may resolve to must be registered in Google Cloud as an
+ * authorised redirect URI, or sign-in fails there.
+ */
+const REDIRECT_URI = (() => {
+  if (typeof location === 'undefined') return '';
+  const path = location.pathname.replace(/index\.html$/, '');
+  return location.origin + (path.endsWith('/') ? path : path + '/');
+})();
 
 export function canRedirectRenew() {
   return typeof location !== 'undefined' && (location.origin + location.pathname) === REDIRECT_URI;
@@ -320,7 +330,7 @@ export async function brokerExchange(code) {
   if (!brokerConfigured() || !code) return false;
   try {
     const res = await fetchWithTimeout(BROKER_URL + '/exchange', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }),
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code, redirectUri: REDIRECT_URI }),
     });
     if (!res.ok) return false;
     const j = await res.json();

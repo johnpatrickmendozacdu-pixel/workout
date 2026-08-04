@@ -4,13 +4,27 @@
 // ============================================================================
 
 function corsHeaders(origin, allowed) {
-  if (!origin || origin !== allowed) return null;
+  // ALLOWED_ORIGIN is a comma-separated list, so the app can live at more than
+  // one address at once — the only way to change hosts without a flag day.
+  if (!origin) return null;
+  const list = String(allowed || '').split(',').map((s) => s.trim()).filter(Boolean);
+  if (!list.includes(origin)) return null;
   return {
-    'Access-Control-Allow-Origin': allowed,
+    'Access-Control-Allow-Origin': origin,
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
     'Access-Control-Max-Age': '86400',
+    Vary: 'Origin',
   };
+}
+
+// Only the app knows its own path, so it sends its redirect_uri and this checks
+// the address belongs to us. Trusting it unchecked would let anyone point the
+// exchange at their own site.
+function safeRedirectUri(sent, allowed) {
+  if (typeof sent !== 'string' || !sent) return null;
+  const list = String(allowed || '').split(',').map((s) => s.trim()).filter(Boolean);
+  return list.some((o) => sent.startsWith(o + '/')) ? sent : null;
 }
 
 function validateBody(body, required) {
@@ -56,11 +70,17 @@ export default {
 
 async function exchange(body, env, cors) {
   if (!validateBody(body, ['code'])) return jsonResponse({ error: 'bad-body' }, 400, cors);
+  // Migration shim: an app cached before 2026-08-05 does not send its redirect
+  // URI. Fall back to the legacy GitHub Pages path so a stale service worker
+  // can still sign in. Safe to delete once nobody is on that build.
+  const sent = body.redirectUri || (String(env.ALLOWED_ORIGIN || '').split(',')[0].trim() + '/workout/');
+  const redirectUri = safeRedirectUri(sent, env.ALLOWED_ORIGIN);
+  if (!redirectUri) return jsonResponse({ error: 'bad-redirect' }, 400, cors);
   const params = new URLSearchParams({
     code: body.code,
     client_id: env.CLIENT_ID,
     client_secret: env.CLIENT_SECRET,
-    redirect_uri: env.ALLOWED_ORIGIN + '/workout/',
+    redirect_uri: redirectUri,
     grant_type: 'authorization_code',
   });
   const res = await fetch(GOOGLE_TOKEN, { method: 'POST', body: params });

@@ -8,39 +8,36 @@
  * does not belong in a guide — words describing what the app does survive a
  * restyle, pictures of it do not.
  *
+ * The order is the order you do things in, not a tidy filing of topics. A
+ * newcomer reads top to bottom and ends up with an exercise, a schedule, a
+ * logged set and a backup; anyone else opens the one step they are stuck on.
+ * Ordering by subject instead — every screen, every setting, every feature —
+ * is what made this read as a pile rather than a path.
+ *
  * Each section is [term, explanation] pairs: the thing on the left, what it
  * does beneath. Half the words of a paragraph and twice as scannable, which is
  * what someone hunting one answer actually needs.
  */
+export const GUIDE_INTRO = 'Four screens: Today is what’s left to do, Plan is what you’ve set up, Progress is your numbers, and this one never changes anything. The steps below are in the order you’ll do them — new here, start at 1.';
+
 export const GUIDE_SECTIONS = [
   {
-    id: 'basics',
-    title: 'The four screens',
-    items: [
-      ['Today', 'What is still to do today, and what is already done. Only exercises scheduled for today appear.'],
-      ['Plan', 'Your exercises. Add, edit, reschedule, archive or delete them here.'],
-      ['Progress', 'Every number the app keeps: streaks, best days, totals, times and your weight trend.'],
-      ['Guide', 'This screen. Nothing here changes your data — read it as often as you like.'],
-      ['The ? button', 'On every screen, a short guide to that screen alone.'],
-    ],
-  },
-  {
     id: 'add',
-    title: 'Adding an exercise',
+    title: 'Add your first exercise',
     items: [
-      ['Start', 'Plan → Add. Scheduled is something you repeat; One-time is a one-off.'],
+      ['Where', 'Plan → Add. Pick Scheduled for anything you repeat.'],
       ['Name', 'Whatever you call it. Push-ups, Plank, Evening walk.'],
       ['Icon', 'Pick one from the row. Decoration only — it changes nothing.'],
-      ['Unit', 'What you are counting: reps, minutes, km, laps. It is a label; the app counts whatever you tap.'],
-      ['Equipment', 'Bodyweight, or Dumbbell with a weight in kg or lb. The weight never changes a total or a streak — it is recorded so Progress can show it going up.'],
-      ['Save', 'It appears on Today on the days you scheduled it.'],
-      ['Change your mind', 'Tap the exercise in Plan to edit anything, any time.'],
-      ['Retire it', 'Archive keeps all its history and takes it off Today. Delete removes it and its history for good.'],
+      ['Unit', 'What you are counting: reps, minutes, km, laps. It is only a label; the app counts whatever you tap.'],
+      ['Equipment', 'Bodyweight, or Dumbbell with a weight in kg or lb. The weight never changes a total or a streak — it is kept so Progress can show it going up.'],
+      ['Save', 'It appears on Today, on the days you scheduled it.'],
+      ['Changing it later', 'Tap the exercise in Plan to edit anything, any time.'],
+      ['Getting rid of it', 'Archive takes it off Today and keeps all its history. Delete removes it and its history for good.'],
     ],
   },
   {
     id: 'schedule',
-    title: 'Schedules',
+    title: 'Choose your days',
     items: [
       ['Every day', 'It shows on Today, every day.'],
       ['Chosen days', 'Tap the day letters. It shows on those days only.'],
@@ -50,45 +47,35 @@ export const GUIDE_SECTIONS = [
     ],
   },
   {
-    id: 'targets',
-    title: 'Targets',
+    id: 'target',
+    title: 'Set a target, or don’t',
     items: [
-      ['Optional', 'Leave it blank and the exercise still counts everything you log — it just will not count toward a streak.'],
-      ['With a target', 'Today shows how many are left. Reaching it completes the day.'],
+      ['It is optional', 'Leave it blank and the exercise still counts everything you log — it just will not count toward a streak.'],
+      ['With a target', 'Today shows how many you have left. Reaching it completes the day.'],
       ['Beating it', 'Go past your target and the app raises the target to what you actually did.'],
       ['Changing it', 'Takes effect from today. Past days keep the target they were done under.'],
     ],
   },
   {
     id: 'logging',
-    title: 'Logging a set',
+    title: 'Log your reps',
     items: [
       ['Open it', 'Tap the exercise on Today.'],
       ['Add', 'Tap any number. It is logged straight away — there is no confirm step.'],
       ['Take it back', 'Flip the lever to Subtract and tap a number, or tap Undo on the message that appears.'],
       ['Type an exact number', 'Tap the big total to type it in directly.'],
       ['Today’s sets', 'Listed under the keypad, each with an ✕ to remove just that one.'],
+      ['The clock', 'Starts on your first rep — there is no start button to forget. Pause stops it; your reps still count and nothing is lost.'],
     ],
   },
   {
-    id: 'clock',
-    title: 'The clock',
+    id: 'finish',
+    title: 'Finish the session',
     items: [
-      ['It starts itself', 'On your first rep. There is no start button to forget.'],
-      ['Pause', 'Stops the clock. Your reps still count and nothing is lost.'],
       ['Target reached', 'Take the win banks the time. Keep going carries on counting reps, sets and time.'],
       ['Give up', 'Ends the session early. Your reps still count; the time is left out of your best and average.'],
       ['Reset', 'Puts today’s clock back to 0:00 and leaves every rep alone.'],
-    ],
-  },
-  {
-    id: 'onetime',
-    title: 'One-time workouts',
-    items: [
-      ['What it is', 'Something you just did, with no schedule and no target.'],
-      ['Add one', 'Plan → Add → One-time. Give it a name and a unit.'],
-      ['Use it', 'It sits on Today. Add to it as you go, then Complete when you are done.'],
-      ['Afterwards', 'It moves to Progress, under One time.'],
+      ['Done for the day', 'A finished exercise drops into a quiet line at the bottom of Today. Tap it to reopen.'],
     ],
   },
   {
@@ -102,8 +89,19 @@ export const GUIDE_SECTIONS = [
     ],
   },
   {
+    id: 'progress',
+    title: 'Watch it add up',
+    items: [
+      ['The strip', 'Filled = target hit. 🌙 = rest. Hollow = missed. Faint = a day the exercise was not scheduled.'],
+      ['Open a card', 'Its totals, best day, times and recent days.'],
+      ['Top set vs Max', 'Top set is your biggest single set. Max is your biggest whole day.'],
+      ['Fixing a number', 'Tap a total or a target inside a card to correct it.'],
+      ['Combo times', 'For a group of exercises sharing days: the total, average and best time across the group.'],
+    ],
+  },
+  {
     id: 'weight',
-    title: 'Weigh-in, weight and BMI',
+    title: 'Weigh in',
     items: [
       ['The card on Today', 'One weight a day. It disappears once today is logged.'],
       ['It is not an exercise', 'It has no target and it touches no streak, ever.'],
@@ -114,19 +112,18 @@ export const GUIDE_SECTIONS = [
     ],
   },
   {
-    id: 'progress',
-    title: 'Reading Progress',
+    id: 'onetime',
+    title: 'One-off workouts',
     items: [
-      ['The strip', 'Filled = target hit. 🌙 = rest. Hollow = missed. Faint = a day the exercise was not scheduled.'],
-      ['Open a card', 'Its totals, best day, times and recent days.'],
-      ['Top set vs Max', 'Top set is your biggest single set. Max is your biggest whole day.'],
-      ['Fixing a number', 'Tap a total or a target inside a card to correct it.'],
-      ['Combo times', 'For a group of exercises sharing days: the total, average and best time across the group.'],
+      ['What it is for', 'Something you just did, with no schedule and no target. A hike, a swim, a game.'],
+      ['Add one', 'Plan → Add → One-time. Give it a name and a unit.'],
+      ['Use it', 'It sits on Today. Add to it as you go, then Complete when you are done.'],
+      ['Afterwards', 'It moves to Progress, under One time.'],
     ],
   },
   {
     id: 'profile',
-    title: 'Your profile',
+    title: 'Set up your profile',
     items: [
       ['Where', 'The circle at the top right of any screen.'],
       ['Photo', 'Add photo, then pick one. It is shrunk to a small square before saving, so it never bloats a backup.'],
@@ -138,7 +135,7 @@ export const GUIDE_SECTIONS = [
   },
   {
     id: 'google',
-    title: 'Signing in with Google',
+    title: 'Back it up with Google',
     items: [
       ['Why bother', 'It copies your data to your own Google Drive, so a lost or replaced phone is not lost training history.'],
       ['It is optional', 'The app is completely functional without it, online or off. Nothing is held back.'],

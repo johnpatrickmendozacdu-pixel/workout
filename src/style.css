@@ -1386,6 +1386,11 @@
 .guide-body{padding:15px 13px 16px;border:1px solid var(--border);border-top:0;
   background:var(--bg-elevated);}
 .guide-body dt{font-family:var(--font-body);}
+.guide-intro{margin:2px 0 4px;font-size:13px;line-height:1.5;color:var(--text-dim);}
+/* The number carries the sequence, so the eye can follow 1-2-3 down the page
+   without the headings all shouting the same weight at it. */
+.guide-step{flex:0 0 auto;width:22px;font-family:var(--font-mono);font-size:12px;
+  color:var(--text-faint);text-align:left;}
 
 /* ---- Weekly weight chart (reuses trajectory look) ---- */
 .traj-chart{width:100%;height:auto;display:block;margin:6px 0 4px;}

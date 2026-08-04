@@ -55,7 +55,7 @@ import {
   weeklyAverages,
   recordWeight,
 } from './domain/domain.js';
-import { GUIDE_SECTIONS } from './guide.js';
+import { GUIDE_SECTIONS, GUIDE_INTRO } from './guide.js';
 import * as gsync from './sync/googleSync.js';
 import { allStats, exerciseStats, recentDayStates, streakTier, dayHistory, trajectorySeries, formatDuration, formatTotalDuration, formatCount, formatClock, groupBySchedule, comboTimes } from './domain/stats.js';
 
@@ -1526,13 +1526,18 @@ function renderView() {
  * pattern the Plan and Progress groups already use, and the reason this can
  * be complete without being cluttered.
  *
+ * The step number is drawn from the position in the list rather than stored
+ * on each section, so reordering the guide renumbers it and there is no second
+ * copy of the sequence to fall out of step with the first.
+ *
  * It reads GUIDE_SECTIONS and nothing else. No app state, no derived numbers,
  * so it cannot go stale against your data and there is nothing here to break.
  */
 function viewGuide() {
-  return GUIDE_SECTIONS.map((sec) => {
+  const sections = GUIDE_SECTIONS.map((sec, i) => {
     const open = groupOpen('guide', sec.id, GUIDE_SECTIONS.length);
     const head = `<button class="group-head" data-action="toggle-group" data-view="guide" data-key="${sec.id}" data-open="${open}" aria-expanded="${open}">
+        <span class="guide-step">${i + 1}</span>
         <span class="group-head-label">${escapeHtml(sec.title)}</span>
         <span class="group-chev ${open ? 'open' : ''}">${ICONS.chevron}</span>
       </button>`;
@@ -1541,6 +1546,7 @@ function viewGuide() {
       `<div><dt>${escapeHtml(what)}</dt><dd>${escapeHtml(how)}</dd></div>`).join('');
     return `${head}<dl class="guide-list guide-body">${rows}</dl>`;
   }).join('');
+  return `<p class="guide-intro">${escapeHtml(GUIDE_INTRO)}</p>${sections}`;
 }
 
 /* ============================= VIEW: TODAY ============================= */

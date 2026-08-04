@@ -590,3 +590,23 @@ describe('comboTimes', () => {
     expect(comboTimes(grp, {}).avg).toBeNull();
   });
 });
+
+describe('a one-off never joins a scheduled group', () => {
+  it('gets its own group rather than sitting under Every day', () => {
+    const rows = groupBySchedule(
+      [{ id: 'a', schedule: 'daily' }, { id: 'b', oneTimeDate: '2026-08-04', schedule: 'daily' }],
+      '2026-08-04', (e) => e.schedule,
+    );
+    expect(rows.map((g) => g.key)).toContain('one-time');
+    expect(rows.find((g) => g.key === 'one-time').exercises.map((e) => e.id)).toEqual(['b']);
+    expect(rows.find((g) => g.key === 'daily').exercises.map((e) => e.id)).toEqual(['a']);
+  });
+
+  it('sorts below the real plan', () => {
+    const rows = groupBySchedule(
+      [{ id: 'b', oneTimeDate: '2026-08-04' }, { id: 'a', schedule: 'daily' }],
+      '2026-08-04', (e) => e.schedule,
+    );
+    expect(rows[rows.length - 1].key).toBe('one-time');
+  });
+});

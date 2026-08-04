@@ -76,6 +76,7 @@ export function isScheduledOn(exercise, dateStr) {
 
 export function scheduleLabel(exercise) {
   const sched = exercise.schedule;
+  if (sched === 'one-time' || (exercise && exercise.oneTimeDate)) return 'One time';
   if (!sched || sched === 'daily' || !Array.isArray(sched) || sched.length === 7) return 'Every day';
   if (!sched.length) return 'Every day';
   const NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -923,7 +924,11 @@ export function deepEqual(a, b) {
  * ignored — only the real content decides. This is what stops a backup cycle
  * from re-rendering the whole app when the cloud brought back nothing new.
  */
-export const SNAPSHOT_DATA_KEYS = ['exercises', 'deletedExercises', 'setsLog', 'timersLog', 'profile', 'streakOverrides', 'oneTimeLog'];
+// oneTimeLog retired 2026-08-04 with the separate one-time feature. Dropping the
+// key is what actually bins those entries: the merge was a union by id, so
+// clearing them locally would have let the next Drive sync hand them straight
+// back. Old snapshots still carry the field; nothing reads it.
+export const SNAPSHOT_DATA_KEYS = ['exercises', 'deletedExercises', 'setsLog', 'timersLog', 'profile', 'streakOverrides'];
 export function sameSnapshotData(a, b) {
   if (!a || !b) return false;
   return SNAPSHOT_DATA_KEYS.every((k) => deepEqual(a[k] ?? null, b[k] ?? null));
@@ -949,20 +954,7 @@ export function mergeSyncSnapshots(local, remote) {
     timersLog: mergeByDayKey(winner.timersLog, loser.timersLog),
     streakOverrides: mergeByDayKey(winner.streakOverrides, loser.streakOverrides),
     profile: mergeProfiles(winner.profile, loser.profile),
-    oneTimeLog: mergeOneTimeLogs(winner.oneTimeLog, loser.oneTimeLog),
   };
-}
-
-/**
- * Union by id, so one-time workouts logged on two devices both survive a sync —
- * the same rule as the weight log, keyed by id rather than date since several
- * one-time entries can share a day. The winner's copy wins an id collision.
- */
-export function mergeOneTimeLogs(winner, loser) {
-  const byId = new Map();
-  (Array.isArray(loser) ? loser : []).forEach((e) => { if (e && e.id) byId.set(e.id, e); });
-  (Array.isArray(winner) ? winner : []).forEach((e) => { if (e && e.id) byId.set(e.id, e); });
-  return [...byId.values()].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0)); // newest first
 }
 
 export function buildBackup(exercises, setsLog) {

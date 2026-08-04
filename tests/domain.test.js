@@ -1340,18 +1340,32 @@ describe('weightProgression (D)', () => {
   });
 });
 
-describe('mergeSyncSnapshots — one-time log (C)', () => {
-  const snap = (updatedAt, oneTimeLog) => ({ updatedAt, oneTimeLog, exercises: [], setsLog: {}, timersLog: {}, streakOverrides: {}, profile: {} });
-  it('keeps one-time entries from both devices, union by id', () => {
-    const local = snap(2, [{ id: 'a', date: '2026-08-01', name: 'Run', minutes: 30 }]);
-    const remote = snap(1, [{ id: 'b', date: '2026-08-02', name: 'Swim', minutes: 40 }]);
-    const ids = mergeSyncSnapshots(local, remote).oneTimeLog.map((e) => e.id).sort();
-    expect(ids).toEqual(['a', 'b']);
+describe('one-time workouts are scheduled on exactly one day', () => {
+  const oneOff = { id: 'ot', oneTimeDate: '2026-08-04', schedule: 'daily' };
+
+  it('is scheduled on its own date', () => {
+    expect(isScheduledOn(oneOff, '2026-08-04')).toBe(true);
   });
-  it('does not drop a log the other side never had', () => {
-    const local = snap(2, []);
-    const remote = snap(1, [{ id: 'x', date: '2026-08-01', name: 'Hike', minutes: 90 }]);
-    expect(mergeSyncSnapshots(local, remote).oneTimeLog).toHaveLength(1);
+
+  it('is not scheduled on any other day, so it can never be a missed day', () => {
+    expect(isScheduledOn(oneOff, '2026-08-05')).toBe(false);
+    expect(isScheduledOn(oneOff, '2026-08-03')).toBe(false);
+  });
+
+  it('ignores a schedule it happens to carry — the date wins', () => {
+    const withDays = { id: 'ot2', oneTimeDate: '2026-08-04', schedule: [0, 1, 2, 3, 4, 5, 6] };
+    expect(isScheduledOn(withDays, '2026-08-05')).toBe(false);
+  });
+
+  it('leaves ordinary exercises alone', () => {
+    expect(isScheduledOn({ id: 'a', schedule: 'daily' }, '2026-08-05')).toBe(true);
+  });
+});
+
+describe('a one-off is labelled One time, not a weekday list', () => {
+  it('labels by the one-off flag rather than the schedule it happens to carry', () => {
+    expect(scheduleLabel({ schedule: 'one-time' })).toBe('One time');
+    expect(scheduleLabel({ schedule: 'daily', oneTimeDate: '2026-08-04' })).toBe('One time');
   });
 });
 
@@ -1359,7 +1373,7 @@ describe('sameSnapshotData — the sync re-render guard', () => {
   const base = () => ({
     exercises: [{ id: 'a', name: 'Push' }],
     deletedExercises: {}, setsLog: { '2026-08-01': { a: [10] } },
-    timersLog: {}, profile: { username: 'J' }, streakOverrides: {}, oneTimeLog: [],
+    timersLog: {}, profile: { username: 'J' }, streakOverrides: {},
   });
 
   it('sees identical data as identical, even with different key order', () => {

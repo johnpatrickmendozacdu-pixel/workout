@@ -28,15 +28,20 @@ export function workoutDates(exId, setsLog) {
 export function groupBySchedule(exercises, dateStr, scheduleEffectiveOn) {
   const groups = new Map();
   for (const ex of exercises) {
-    const sched = scheduleEffectiveOn(ex, dateStr);
-    const isDaily = !sched || sched === 'daily' || (Array.isArray(sched) && (sched.length === 0 || sched.length === 7));
-    const days = isDaily ? 'daily' : sched.slice().sort((a, b) => a - b);
-    const key = isDaily ? 'daily' : days.join(',');
+    // A one-off has no weekly pattern, so it cannot share a group with one. It
+    // gets its own, or it would sit under "Every day" claiming a schedule it
+    // does not have.
+    const sched = ex.oneTimeDate ? 'one-time' : scheduleEffectiveOn(ex, dateStr);
+    const isOneTime = sched === 'one-time';
+    const isDaily = !isOneTime && (!sched || sched === 'daily' || (Array.isArray(sched) && (sched.length === 0 || sched.length === 7)));
+    const days = isOneTime ? 'one-time' : (isDaily ? 'daily' : sched.slice().sort((a, b) => a - b));
+    const key = isOneTime ? 'one-time' : (isDaily ? 'daily' : days.join(','));
     if (!groups.has(key)) groups.set(key, { key, days, exercises: [] });
     groups.get(key).exercises.push(ex);
   }
   const earliest = (days) => {
     if (days === 'daily') return -1; // daily sorts first
+    if (days === 'one-time') return 8; // and a one-off sorts last, below the plan
     const ordered = [1, 2, 3, 4, 5, 6, 0].filter((d) => days.includes(d));
     return ordered.length ? [1, 2, 3, 4, 5, 6, 0].indexOf(ordered[0]) : 7;
   };

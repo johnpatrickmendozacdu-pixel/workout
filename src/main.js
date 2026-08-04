@@ -76,7 +76,6 @@ const state = {
   sync: { status: 'signed-out', email: null, error: null, pending: false },
   streakOverrides: {},
   deletedExercises: {},
-  oneTimeLog: [],
   storageError: false,
   updateAvailable: false,
   applyUpdate: null,
@@ -106,6 +105,16 @@ function exIconHtml(ex, px) {
   const cat = categoryOf(ex);
   if (!cat) return '';
   return `<img class="ex-icon" src="${categoryIconUrl(cat.key)}" alt="" width="${px}" height="${px}">`;
+}
+
+/**
+ * A one-off belongs to its day. After that it is hidden everywhere rather than
+ * deleted: deletions travel through Drive sync, and this app has been bitten
+ * once by a deletion propagating where it shouldn't. Hiding costs a few dozen
+ * bytes and cannot corrupt another device.
+ */
+function isCurrent(ex) {
+  return !ex.oneTimeDate || ex.oneTimeDate === todayISO();
 }
 
 /** The category, as a quiet tag. Deliberately mono and faint: it labels the
@@ -161,7 +170,7 @@ async function restoreNamespace() {
 }
 
 async function loadAll() {
-  const [exercises, setsLog, meta, timersLog, profile, streakOverrides, deletedExercises, oneTimeLog] = await Promise.all([
+  const [exercises, setsLog, meta, timersLog, profile, streakOverrides, deletedExercises] = await Promise.all([
     db.getItem('exercises'),
     db.getItem('sets-log'),
     db.getItem('app-meta'),
@@ -169,7 +178,6 @@ async function loadAll() {
     db.getItem('profile'),
     db.getItem('streak-overrides'),
     db.getItem('deleted-exercises'),
-    db.getItem('one-time-log'),
   ]);
 
   state.exercises = exercises || [];
@@ -179,7 +187,6 @@ async function loadAll() {
   state.profile = profile || { username: '', weight: null, height: null, weightLog: [], weighInDay: 6 };
   state.streakOverrides = migrateOverrides(streakOverrides || {});
   state.deletedExercises = deletedExercises || {};
-  state.oneTimeLog = Array.isArray(oneTimeLog) ? oneTimeLog : [];
 
   // One-time: start Top set fresh from today for every existing exercise, and
   // drop old manual corrections. Old and stray sets before today stop counting
@@ -269,15 +276,6 @@ async function persistProfile() {
     return false;
   }
 }
-async function persistOneTime() {
-  try {
-    await db.setItem('one-time-log', state.oneTimeLog);
-    markDirty();
-    return true;
-  } catch (e) {
-    return false;
-  }
-}
 async function persistStreakOverrides() {
   try {
     await db.setItem('streak-overrides', state.streakOverrides);
@@ -302,7 +300,6 @@ function buildSyncSnapshot() {
     timersLog: state.timersLog,
     profile: state.profile,
     streakOverrides: state.streakOverrides,
-    oneTimeLog: state.oneTimeLog,
   };
 }
 
@@ -316,7 +313,6 @@ async function applyMergedSnapshot(merged) {
   state.timersLog = merged.timersLog || {};
   state.profile = merged.profile || { username: '', weight: null, height: null, weightLog: [], weighInDay: 6 };
   state.streakOverrides = merged.streakOverrides || {};
-  state.oneTimeLog = Array.isArray(merged.oneTimeLog) ? merged.oneTimeLog : [];
   state.meta.updatedAt = merged.updatedAt || Date.now();
   await Promise.all([
     db.setItem('exercises', state.exercises),
@@ -325,7 +321,6 @@ async function applyMergedSnapshot(merged) {
     db.setItem('timers-log', state.timersLog),
     db.setItem('profile', state.profile),
     db.setItem('streak-overrides', state.streakOverrides),
-    db.setItem('one-time-log', state.oneTimeLog),
     db.setItem('app-meta', state.meta),
   ]);
   applyingRemote = false;
@@ -867,6 +862,9 @@ async function addExercise(data) {
     id: uid('ex'),
     name: data.name.trim(),
     category: data.category || null,
+    // Set only for a one-off. Its presence is the whole feature: isScheduledOn
+    // reads it, and every view follows from that.
+    oneTimeDate: data.oneTimeDate || null,
     unit: (data.unit || 'reps').trim(),
     active: true,
     archived: false,
@@ -1449,7 +1447,7 @@ function renderTopbar() {
   if (!el) return;
   if (state.view === 'today') {
     const perEx = allStats(
-      state.exercises.filter((e) => e.active && !e.archived),
+      state.exercises.filter((e) => e.active && !e.archived && !e.oneTimeDate),
       state.setsLog, state.timersLog, null, state.streakOverrides,
     );
     const runs = Object.values(perEx);
@@ -1702,12 +1700,10 @@ function viewToday() {
     html += `<div class="section-label">Done</div>` + done.map(doneRow).join('');
   }
 
-  const pendingOneTime = (state.oneTimeLog || []).filter((e) => !e.done);
-
   // Nothing due today and nothing logged: a quiet rest day rather than a blank
   // screen. Exercises not scheduled for today are hidden — they belong to their
   // own days, not this one.
-  if (scheduled.length === 0 && done.length === 0 && !pendingOneTime.length) {
+  if (scheduled.length === 0 && done.length === 0) {
     html += `<div class="all-clear"><b>Nothing scheduled today</b><span>Enjoy the rest — your streak holds.</span></div>`;
   }
 
@@ -1718,24 +1714,6 @@ function viewToday() {
     html += `<p class="break-nudge">Not training one today? Open it and take a break — the streak holds.</p>`;
   }
 
-  // One-time workouts: no target, so they accumulate a running total and finish
-  // on a tap rather than by hitting a number. They sit until completed.
-  if (pendingOneTime.length) {
-    html += `<div class="section-label">One time</div>`;
-    html += pendingOneTime.map((e) => `<div class="onetime-today">
-      <div class="onetime-today-head">
-        <span class="onetime-today-name">${escapeHtml(e.name)}</span>
-        <span class="onetime-today-total">${e.total || 0} ${escapeHtml(e.unit)}</span>
-      </div>
-      <div class="onetime-today-actions">
-        <input id="ot-add-${e.id}" class="onetime-add-input" type="number" min="1" step="1" inputmode="numeric" placeholder="+ ${escapeHtml(e.unit)}">
-        <button class="mini-btn" data-action="onetime-add" data-id="${e.id}" aria-label="Add">${ICONS.plus}</button>
-        <button class="onetime-done-btn" data-action="onetime-complete" data-id="${e.id}">Complete</button>
-      </div>
-    </div>`).join('');
-    html += tipHtml('onetime-today', 'A one-time workout has no target — add as you go, then Complete when you’re done.');
-  }
-
   html += weighInCardHtml();
 
   return html;
@@ -1743,7 +1721,7 @@ function viewToday() {
 
 /* ============================= VIEW: PLAN ============================= */
 function viewPlan() {
-  const active = state.exercises.filter((e) => e.active).sort((a, b) => a.order - b.order);
+  const active = state.exercises.filter((e) => e.active && isCurrent(e)).sort((a, b) => a.order - b.order);
   const archived = state.exercises.filter((e) => e.archived);
   let html = '';
   if (active.length === 0) {
@@ -1835,38 +1813,11 @@ function comboLineHtml(groupExercises) {
   return `<div class="combo-line">Combo · total ${formatTotalDuration(c.total)} · avg ${formatDuration(c.avg)} · best ${formatDuration(c.best)}</div>`;
 }
 
-/**
- * The "One time" group: finished one-time workouts, name and total only —
- * none of the exercise metrics, deliberately spartan. Its own collapsible group
- * so it never mixes with the scheduled plan.
- */
-function oneTimeGroupHtml() {
-  // Progress shows the finished ones — the pending ones live on Today.
-  const entries = (state.oneTimeLog || []).filter((e) => e.done)
-    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
-  if (!entries.length) return '';
-  const open = groupOpen('progress', 'one-time', 99);
-  const header = `<button class="group-head" data-action="toggle-group" data-view="progress" data-key="one-time" data-open="${open}" aria-expanded="${open}">
-      <span class="group-head-label">One time</span>
-      <span class="group-head-meta">${open ? '' : `${entries.length} done`}</span>
-      <span class="group-chev ${open ? 'open' : ''}">${ICONS.chevron}</span>
-    </button>`;
-  if (!open) return header;
-  const rows = entries.map((e) => `<div class="onetime-row">
-      <span class="onetime-name">${escapeHtml(e.name)}</span>
-      <span class="onetime-min">${e.total || 0} ${escapeHtml(e.unit)}</span>
-      <span class="onetime-date">${escapeHtml(formatDisplayDate(e.date, { month: 'short', day: 'numeric' }))}</span>
-      <button class="mini-btn danger" data-action="delete-one-time" data-id="${escapeHtml(e.id)}" aria-label="Delete">${ICONS.trash}</button>
-    </div>`).join('');
-  return header + `<div class="onetime-list">${rows}</div>`;
-}
-
 function viewProgress() {
   const habit = weighInBlockHtml();
-  const activeEx = state.exercises.filter((e) => e.active && !e.archived).sort((a, b) => a.order - b.order);
-  const oneTime = oneTimeGroupHtml();
-  // The habit and one-time log are not exercises, so an empty plan must not hide them.
-  if (!activeEx.length) return (habit + oneTime) || `<p class="rail-empty">Add an exercise to start a streak.</p>`;
+  const activeEx = state.exercises.filter((e) => e.active && !e.archived && isCurrent(e)).sort((a, b) => a.order - b.order);
+  // The habit is not an exercise, so an empty plan must not hide it.
+  if (!activeEx.length) return habit || `<p class="rail-empty">Add an exercise to start a streak.</p>`;
   const stats = allStats(activeEx, state.setsLog, state.timersLog, null, state.streakOverrides);
   // Grouped by shared days, same as Plan, so Progress is segregated per combo
   // and a card moves group the moment its schedule changes.
@@ -1883,8 +1834,7 @@ function viewProgress() {
     html += comboLineHtml(g.exercises);
     html += g.exercises.map((ex) => exerciseCard(ex, stats[ex.id], { expandable: true })).join('');
   });
-  html += oneTime;
-  html += tipHtml('progress-open', 'Tap a group to open it. One time holds finished one-off workouts.');
+  html += tipHtml('progress-open', 'Tap a group to open it.');
   return html;
 }
 
@@ -2273,7 +2223,6 @@ function captureExerciseDraft() {
   const d = state.modal.draft || {};
   const set = (k, v) => { if (v !== undefined) d[k] = v; };
   set('name', val('f-name'));
-  set('name', val('f-ot-name'));   // one-time shares the name draft
   set('unit', val('f-unit'));
   set('target', val('f-target'));
   const wv = val('f-weight-val');
@@ -2321,41 +2270,12 @@ function modalExerciseForm(exId) {
         </div>
       </div>`;
 
-  if (isOneTime) {
-    if (state.modal && state.modal.otUnit === undefined) state.modal.otUnit = draft.unit || 'reps';
-    const otUnit = state.modal ? state.modal.otUnit : 'reps';
-    return `<div class="modal-backdrop" data-action="backdrop">
-    <div class="modal-sheet" data-stop>
-      <div class="sheet-handle"></div>
-      <div class="sheet-head">
-        <h2>One-time workout</h2>
-        <button class="sheet-close" data-action="close-modal">${ICONS.close}</button>
-      </div>
-      ${typeToggle}
-      <div class="field">
-        <label>Name</label>
-        <input id="f-ot-name" type="text" placeholder="e.g. Beach run" value="${escapeHtml(draft.name || '')}" autocomplete="off">
-      </div>
-      <div class="field">
-        <label>Count in</label>
-        <div class="sched-modes">
-          ${[['reps', 'Reps'], ['minutes', 'Minutes'], ['rounds', 'Rounds']].map(([u, lbl]) =>
-            `<button type="button" class="sched-mode ${otUnit === u ? 'on' : ''}" data-action="ot-unit" data-unit="${u}">${lbl}</button>`).join('')}
-        </div>
-        <div class="hint">A workout you just do, not scheduled. It appears on Today — log into it, then Complete it. No target. Find finished ones in Progress under One time.</div>
-      </div>
-      <div class="form-actions">
-        <button class="primary-btn" data-action="save-one-time">Add to Today</button>
-      </div>
-    </div>
-  </div>`;
-  }
 
   return `<div class="modal-backdrop" data-action="backdrop">
     <div class="modal-sheet" data-stop>
       <div class="sheet-handle"></div>
       <div class="sheet-head">
-        <h2>${editing ? 'Edit exercise' : 'Add exercise'}</h2>
+        <h2>${editing ? 'Edit exercise' : (isOneTime ? 'One-off workout' : 'Add exercise')}</h2>
         <button class="sheet-close" data-action="close-modal">${ICONS.close}</button>
       </div>
       ${typeToggle}
@@ -2394,15 +2314,16 @@ function modalExerciseForm(exId) {
         <div class="hint">A label for this exercise. It never changes your reps, targets or streak.</div>
       </div>
       <div class="field">
-        <label>Schedule</label>
-        <div class="sched-modes">
+        <label>${isOneTime ? 'When' : 'Schedule'}</label>
+        ${isOneTime ? `<div class="onetime-when">Today only</div>
+        <div class="hint">It sits on Today like any other exercise — same clock, same keypad, same target. Tomorrow it's gone, and it never counts against a streak.</div>` : `<div class="sched-modes">
           <button type="button" class="sched-mode ${schedIsDaily ? 'on' : ''}" data-action="sched-daily">Every day</button>
           <button type="button" class="sched-mode ${schedIsDaily ? '' : 'on'}" data-action="sched-custom">Chosen days</button>
         </div>
         <div class="sched-days ${schedIsDaily ? 'disabled' : ''}">
           ${['S','M','T','W','T','F','S'].map((d, i) => `<button type="button" class="sched-day ${(!schedIsDaily && schedDays.includes(i)) ? 'on' : ''}" data-action="sched-toggle" data-day="${i}" aria-label="${['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][i]}" aria-pressed="${!schedIsDaily && schedDays.includes(i)}">${d}</button>`).join('')}
         </div>
-        <div class="hint">Days you don't train aren't counted as missed, so a rest day never breaks a streak.</div>
+        <div class="hint">Days you don't train aren't counted as missed, so a rest day never breaks a streak.</div>`}
       </div>
       <div class="field">
         <label>Daily target (optional)</label>
@@ -2774,6 +2695,9 @@ document.addEventListener('click', async (e) => {
       const category = (state.modal && state.modal.cat) || null;
       const id = btn.dataset.id;
       const schedule = state.modal && state.modal.sched ? state.modal.sched : 'daily';
+      // A one-off is an ordinary exercise pinned to a single date. Nothing else
+      // about it is special, which is why it needs no code of its own.
+      const oneTime = !id && state.modal && state.modal.ptype === 'onetime';
       const equipment = state.modal && state.modal.equip === 'dumbbell' ? 'dumbbell' : 'bodyweight';
       const weightUnit = state.modal && state.modal.wunit === 'lb' ? 'lb' : 'kg';
       const wRaw = document.getElementById('f-weight-val');
@@ -2781,7 +2705,8 @@ document.addEventListener('click', async (e) => {
       const weight = equipment === 'dumbbell' && wParsed > 0 ? Math.round(wParsed * 10) / 10 : null;
       const equip = { equipment, weight, weightUnit };
       if (id) await updateExercise(id, { name, unit, target, category, schedule, ...equip });
-      else await addExercise({ name, unit, target, category, schedule, ...equip });
+      else await addExercise({ name, unit, target, category, schedule, ...equip,
+        oneTimeDate: oneTime ? todayISO() : null });
       closeModal(); rerender();
       break;
     }
@@ -2812,39 +2737,31 @@ document.addEventListener('click', async (e) => {
       captureExerciseDraft();
       if (state.modal) { state.modal.ptype = btn.dataset.type; renderModal(); }
       break;
-    case 'ot-unit':
+    case 'archive': await setArchived(btn.dataset.id, true); rerender(); break;
+    case 'restore': await setArchived(btn.dataset.id, false); rerender(); break;
+    case 'reorder': await reorder(btn.dataset.id, parseInt(btn.dataset.dir, 10)); rerender(); break;
+    case 'toggle-archived': state.showArchived = !state.showArchived; renderView(); break;
+    case 'toggle-group': {
+      // Flip whatever is actually on screen — the rendered state carries the
+      // default (a lone group starts open), so the first tap never no-ops.
+      const k = `${btn.dataset.view}:${btn.dataset.key}`;
+      const opening = btn.dataset.open !== 'true';
+      // One step at a time in the guide. Left free to stack, twelve open
+      // sections rebuild the exact wall of text this screen exists to avoid,
+      // and you lose your place scrolling back for the next number. Plan and
+      // Progress keep stacking — there you are comparing groups, not reading.
+      if (btn.dataset.view === 'guide' && opening) {
+        GUIDE_SECTIONS.forEach((s) => { state.openGroups[`guide:${s.id}`] = false; });
+      }
+      state.openGroups[k] = opening;
+      renderView();
+      break;
+    }
+
+    case 'open-logger': state.modal = { type: 'logger', exId: btn.dataset.id }; renderModal(); break;
+    case 'plan-type':
       captureExerciseDraft();
-      if (state.modal) { state.modal.otUnit = btn.dataset.unit; renderModal(); }
-      break;
-    case 'save-one-time': {
-      const name = (document.getElementById('f-ot-name').value || '').trim();
-      const unit = (state.modal && state.modal.otUnit) || 'reps';
-      if (!name) { showToast('Name is required.'); return; }
-      state.oneTimeLog = [{ id: uid('ot'), date: todayISO(), name: name.slice(0, 40), unit, total: 0, done: false }, ...state.oneTimeLog];
-      await persistOneTime();
-      closeModal(); rerender();
-      showToast('Added to Today');
-      break;
-    }
-    case 'onetime-add': {
-      const input = document.getElementById(`ot-add-${btn.dataset.id}`);
-      const amt = input ? Math.round(parseFloat(input.value)) : NaN;
-      if (!(amt > 0)) { showToast('Enter an amount'); break; }
-      state.oneTimeLog = state.oneTimeLog.map((e) => e.id === btn.dataset.id ? { ...e, total: (e.total || 0) + amt } : e);
-      await persistOneTime();
-      renderView();
-      break;
-    }
-    case 'onetime-complete':
-      state.oneTimeLog = state.oneTimeLog.map((e) => e.id === btn.dataset.id ? { ...e, done: true, date: todayISO() } : e);
-      await persistOneTime();
-      renderView();
-      showToast('One-time workout complete');
-      break;
-    case 'delete-one-time':
-      state.oneTimeLog = state.oneTimeLog.filter((e) => e.id !== btn.dataset.id);
-      await persistOneTime();
-      renderView();
+      if (state.modal) { state.modal.ptype = btn.dataset.type; renderModal(); }
       break;
     case 'equip-mode':
       captureExerciseDraft();

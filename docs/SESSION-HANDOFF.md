@@ -18,13 +18,13 @@ deploys from `main` via Actions). **The app URL has never changed and should not
 - `src/sync/googleSync.js` — self-contained Google auth + Drive (no test coverage)
 - `worker/` — the Cloudflare token-broker (deployed separately, see below)
 
-**287 tests, all passing** (`npm test`). They cover the pure domain layer and the
+**260 tests, all passing** (`npm test`). They cover the pure domain layer and the
 Worker's pure helpers only — **not `main.js`, not `googleSync.js`**.
 
 ## State right now
 
-- `main` = **`34d2d3a`**, pushed, deployed, working tree clean, live bundle
-  byte-verified against a fresh local build.
+- `main` = **`f1e1db8`** deployed; category + one-time work committed on top and
+  deployed the same way. Byte-verify every deploy against a fresh local build.
 - Everything the user asked for is shipped. **Nothing is outstanding.**
 - The one thing unconfirmed: whether broker sync genuinely survives past an hour on
   the user's phone. Only they can verify (needs their Google account).
@@ -87,6 +87,12 @@ External vs Internal were all red herrings. The consent screen's **Data Access**
 was empty — `drive.appdata` was never registered. It is a **non-sensitive** scope, so
 there is no verification requirement and no "unverified app" warning.
 
+**One-time workouts are ordinary exercises.** The old parallel `oneTimeLog` — its
+own array, its own widget, no timer or target — was deleted on 2026-08-04. The
+sync key went with it: `mergeOneTimeLogs` was a union by id, so clearing entries
+locally would have let the next Drive sync hand them straight back. Dropping the
+key from `SNAPSHOT_DATA_KEYS` is what actually bins them.
+
 **EMOM is gone.** Removed on 2026-08-04 as faulty, along with everything only it
 used: the count-in, the round band, the one-EMOM-at-a-time rule, and the whole cue
 sound system (~400 lines). The normal workout clock is untouched. Old exercises keep
@@ -99,7 +105,7 @@ generated WAV tones in code and primed them muted inside the first tap.
 
 **Never rebuild a stored object from the fields one form edits.** `saveProfile` did
 `{username, weight, height}` and destroyed the avatar; sync then propagated the
-deletion. Same class of bug: arrays on the profile (`weightLog`, `oneTimeLog`) must
+deletion. Same class of bug: arrays on the profile (`weightLog`) must
 merge as a **union**, never be replaced by a spread.
 
 **One entry per day, not per change.** `recordWeight` used to skip an unchanged weight,
@@ -110,11 +116,13 @@ asking.
 
 | Area | Behaviour |
 |---|---|
-| Today | Only exercises scheduled for today (or already logged). One-time workouts. Daily weigh-in card → "✓ Weighed in today · N kg" once done. |
-| Plan | Grouped by shared schedule, collapsed by default, tap to open. Add → Scheduled or One-time. Equipment: bodyweight / dumbbell + kg/lb. |
-| Progress | Same schedule groups + combo times (total/avg/best per group). Weekly-average weight chart. BMI. "One time" group. Per-exercise: top set, best day, lifetime, best/avg/total time, weight progression. |
+| Today | Only exercises scheduled for today (or already logged), one-offs included. Daily weigh-in card → "✓ Weighed in today · N kg" once done. |
+| Plan | Grouped by shared schedule, collapsed by default, tap to open. Add → Scheduled or One-time. Category picks the icon. Equipment: bodyweight / dumbbell + kg/lb. |
+| Progress | Same schedule groups + combo times (total/avg/best per group). Weekly-average weight chart. BMI. One-offs get their own group, sorted last. Per-exercise: top set, best day, lifetime, best/avg/total time, weight progression. |
 | Health habit | Daily weigh-in, weekly-average line chart. Never touches any exercise streak. |
 | Guide | Fourth nav tab. Every section collapsed on arrival; open one to read it. Content is data in `src/guide.js` — one table, one source of truth. Adding a feature means adding a row there, not re-writing an explanation somewhere else. |
+| Categories | Eight, in `src/categories.js`. The exercise stores the category, never the picture, so artwork can be redrawn without touching saved data. Icons cut from `icon-source.png` by `tools/slice-icons.py`. |
+| One-time | A real exercise carrying `oneTimeDate` — same clock, target and keypad as any other. `isScheduledOn` returns true only on that date, so every view and the streak maths follow for free. Hidden after its day, never deleted. |
 | Sync | Per-Google-account namespaced data; Drive appdata backup; token-broker keeps it alive. Failures queue quietly — no red alarms. |
 
 ## How this user works

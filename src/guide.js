@@ -104,8 +104,9 @@ export const GUIDE_SECTIONS = [
     title: 'Log a one-off',
     lead: 'Plan → Add → One-time. For a hike, a swim, a game.',
     notes: [
-      'No schedule and no target. Add as you go, then Complete.',
-      'Finished ones live in Progress, under One time.',
+      'It works exactly like any other exercise — same clock, same keypad, same target.',
+      'It only appears today. Tomorrow it’s gone.',
+      'It never counts against a streak, and never breaks one.',
     ],
   },
   {

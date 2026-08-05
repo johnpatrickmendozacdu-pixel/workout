@@ -320,9 +320,10 @@
   }
   .field input:focus, .field select:focus{border-color:var(--accent);}
   /* ---------- category picker ----------
-     Four across fits the eight in two rows at 375px without scrolling, so the
-     whole choice is visible at once rather than hidden behind a swipe. */
-  .cat-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:7px;}
+     Three across, because nine categories divide into a clean 3x3 — at four wide
+     the ninth sat alone on its own row looking like a mistake. Three also gives
+     the longer labels the width they need. */
+  .cat-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:7px;}
   .cat-chip{
     background:var(--bg-card); border:1px solid var(--border-strong);
     padding:9px 3px 7px; min-height:44px;

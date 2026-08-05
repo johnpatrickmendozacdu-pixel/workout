@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Cuts the eight category icons out of icon-source.png.
+Cuts the category icons out of their source artwork.
 
 Kept in the repo because the icons are derived art, not authored art: if the
 source image is ever redrawn, re-running this reproduces the set exactly rather
@@ -23,6 +23,13 @@ SIZE = 128
 
 NAMES = [('chest', 0, 0), ('back', 1, 0), ('arms', 2, 0), ('legs', 3, 0),
          ('abs', 0, 1), ('dip-bar', 1, 1), ('pull-up-bar', 2, 1), ('cardio', 3, 1)]
+
+# Categories added later arrive as their own single-tile image rather than a new
+# grid. Same pipeline, different crop — (name, file, box padded around the art so
+# the green accent marks survive; the alpha trim finds the real edges).
+SINGLES = [
+    ('skateboard', 'icon-source-skateboard.png', (520, 190, 965, 745)),
+]
 
 # These two enclose card background inside a closed shape that a border flood can
 # never reach. Their outlines are green rather than black, so a blanket dark-key
@@ -105,6 +112,24 @@ def emphasise(img, lift_body=False):
     return img
 
 
+def write_icon(cell, name, lift_body=False):
+    """Shared tail: emphasise, trim to the art, square it so every icon shares one
+    optical size, downscale, quantise. Both the grid and single tiles go through
+    this, so a late addition cannot drift from the original eight."""
+    cell = emphasise(cell, lift_body=lift_body)
+    bb = cell.getbbox()
+    if bb:
+        cell = cell.crop(bb)
+    side = max(cell.size)
+    canvas = Image.new('RGBA', (side, side), (0, 0, 0, 0))
+    canvas.paste(cell, ((side - cell.width)//2, (side - cell.height)//2))
+    canvas = canvas.resize((SIZE, SIZE), Image.LANCZOS)
+    canvas = canvas.quantize(colors=128, method=Image.FASTOCTREE).convert('RGBA')
+    path = f'{OUT_DIR}/{name}.png'
+    canvas.save(path, optimize=True)
+    return os.path.getsize(path)
+
+
 def main():
     src = Image.open(SRC_PATH).convert('RGBA')
     os.makedirs(OUT_DIR, exist_ok=True)
@@ -115,20 +140,19 @@ def main():
         cell = key_out(cell, 30)
         if name in ENCLOSED:
             cell = dark_key(cell, 34)
-        cell = emphasise(cell, lift_body=name in LIFT_BODY)
-        bb = cell.getbbox()
-        if bb:
-            cell = cell.crop(bb)
-        side = max(cell.size)
-        canvas = Image.new('RGBA', (side, side), (0, 0, 0, 0))
-        canvas.paste(cell, ((side - cell.width)//2, (side - cell.height)//2))
-        canvas = canvas.resize((SIZE, SIZE), Image.LANCZOS)
-        canvas = canvas.quantize(colors=128, method=Image.FASTOCTREE).convert('RGBA')
-        path = f'{OUT_DIR}/{name}.png'
-        canvas.save(path, optimize=True)
-        size = os.path.getsize(path)
-        total += size
+        total += write_icon(cell, name, lift_body=name in LIFT_BODY)
+        size = os.path.getsize(f'{OUT_DIR}/{name}.png')
         print(f'{name:14} {size/1024:5.1f} KB')
+
+    for name, path, box in SINGLES:
+        if not os.path.exists(path):
+            print(f'{name:14} SKIPPED (no {path})')
+            continue
+        cell = Image.open(path).convert('RGBA').crop(box)
+        cell = key_out(cell, 30)
+        total += write_icon(cell, name, lift_body=name in LIFT_BODY)
+        print(f'{name:14} {os.path.getsize(f"{OUT_DIR}/{name}.png")/1024:5.1f} KB')
+
     print(f'{"total":14} {total/1024:5.1f} KB')
 
 

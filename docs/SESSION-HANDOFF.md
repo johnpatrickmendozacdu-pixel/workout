@@ -34,13 +34,9 @@ Worker's pure helpers only — **not `main.js`, not `googleSync.js`**.
 
 ## State right now
 
-- `main` = **`caae02b`**, live on both hosts. Byte-verify every deploy against a
-  fresh local build — `__BUILD_ID__` is the commit SHA, so build the *pushed*
-  commit or the hashes will never match.
-- **Mid-migration.** Vercel is verified end to end except the Google sign-in
-  itself, which needs the user's account. Everyone must sign in on the old
-  address before moving, or their local data is stranded there (recoverable by
-  export/import — the old link keeps working).
+- `main` is live on Vercel. Byte-verify every deploy against a fresh local build —
+  `__BUILD_ID__` is the commit SHA, so build the *pushed* commit or the hashes
+  will never match.
 - Migration finished 2026-08-05 and verified: the old address serves the
   redirect, the old app's assets 404, Vercel is healthy, and a browser following
   the old link lands on the new app.
@@ -55,8 +51,8 @@ Worker's pure helpers only — **not `main.js`, not `googleSync.js`**.
 `sets-workout.vercel.app` reads better than `<long-username>.github.io/workout`.
 Everything else about the two is identical for a static PWA. The cost is the
 per-origin one: IndexedDB does not follow, so everyone must sign in on the new
-address to pull their data back from Drive. Pages runs in parallel so there is no
-flag day. Supabase was evaluated and rejected (its free tier pauses after 7 days
+address to pull their data back from Drive — confirmed working for Johnny.
+Supabase was evaluated and rejected (its free tier pauses after 7 days
 idle, breaking "100% functional"; full data migration is the highest risk to "no lost
 data"). The user's use case — family and friends, each on their own phone, each Gmail
 with its own data — already works.

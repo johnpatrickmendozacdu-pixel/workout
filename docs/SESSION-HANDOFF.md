@@ -41,9 +41,13 @@ Worker's pure helpers only — **not `main.js`, not `googleSync.js`**.
   itself, which needs the user's account. Everyone must sign in on the old
   address before moving, or their local data is stranded there (recoverable by
   export/import — the old link keeps working).
-- One bit of cleanup left, and it is the user's: a second unused Google client
-  secret the Console warns about. Check which one the Worker holds before
-  deleting the other.
+- Migration finished 2026-08-05 and verified: the old address serves the
+  redirect, the old app's assets 404, Vercel is healthy, and a browser following
+  the old link lands on the new app.
+- Optional cleanup, all the user's: drop the Pages origin from Cloudflare's
+  `ALLOWED_ORIGIN` and from Google Cloud, and delete the second unused Google
+  client secret the Console warns about — check which one the Worker holds first.
+  Leaving all three costs nothing.
 
 ## Architecture decisions that are settled — do not re-litigate
 

@@ -23,4 +23,21 @@ permissions:
   pages: write
   id-token: write
 
-concurr
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  publish-redirect:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: pages-redirect
+      - id: deployment
+        uses: actions/deploy-pages@v4

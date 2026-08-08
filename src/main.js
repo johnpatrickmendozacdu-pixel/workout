@@ -1063,6 +1063,7 @@ const ICONS = {
   archive: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M4 7h16M5 7v11a1 1 0 001 1h12a1 1 0 001-1V7M9 11h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>`,
   restore: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M4 8a8 8 0 111.6 6.4M4 4v4h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
   check: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="var(--success)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  bulb: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M9.5 18h5M10.2 21h3.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2h5c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>`,
   help: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="M9.6 9.2a2.5 2.5 0 114.2 1.9c-.9.7-1.3 1.1-1.3 2.1" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><circle cx="12" cy="17" r="1" fill="currentColor"/></svg>`,
   gear: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 15a3 3 0 100-6 3 3 0 000 6z" stroke="currentColor" stroke-width="1.7"/><path d="M19.4 13.5a1.7 1.7 0 000-3l-1-.2a6.6 6.6 0 00-.7-1.6l.6-.9a1.7 1.7 0 00-2.4-2.4l-.9.6a6.6 6.6 0 00-1.6-.7l-.2-1a1.7 1.7 0 00-3 0l-.2 1a6.6 6.6 0 00-1.6.7l-.9-.6a1.7 1.7 0 00-2.4 2.4l.6.9a6.6 6.6 0 00-.7 1.6l-1 .2a1.7 1.7 0 000 3l1 .2a6.6 6.6 0 00.7 1.6l-.6.9a1.7 1.7 0 002.4 2.4l.9-.6a6.6 6.6 0 001.6.7l.2 1a1.7 1.7 0 003 0l.2-1a6.6 6.6 0 001.6-.7l.9.6a1.7 1.7 0 002.4-2.4l-.6-.9a6.6 6.6 0 00.7-1.6l1-.2z" stroke="currentColor" stroke-width="1.3"/></svg>`,
   play: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M7 5.5v13l11-6.5-11-6.5z" fill="currentColor"/></svg>`,
@@ -1348,7 +1349,7 @@ function exerciseHistory(ex, s) {
     const open = !!state.statHelp[`${ex.id}:${key}`];
     return `<div class="stat-group">
       <button class="stat-help-btn ${open ? 'on' : ''}" data-action="toggle-stat-help"
-        data-key="${ex.id}:${key}" aria-expanded="${open}" aria-label="What these numbers mean">?</button>
+        data-key="${ex.id}:${key}" aria-expanded="${open}" aria-label="What these numbers mean">${ICONS.bulb}</button>
       <dl class="ex-numbers">${filled.join('')}</dl>
       ${open ? `<div class="stat-help">${help}</div>` : ''}
     </div>`;
@@ -1437,6 +1438,7 @@ const NAV_ITEMS = [
   { view: 'today', label: 'Today', icon: 'today' },
   { view: 'plan', label: 'Plan', icon: 'plan' },
   { view: 'progress', label: 'Progress', icon: 'progress' },
+  { view: 'guide', label: 'Guide', icon: 'help' },
 ];
 
 function renderNav() {
@@ -1568,6 +1570,17 @@ function renderTopbar() {
           ${avatarChipHtml()}
         </div>
       </div>`;
+  } else if (state.view === 'guide') {
+    // No "?" here: this screen is what that button is a shortcut to, and a guide
+    // to the guide is the kind of thing that makes an app feel padded.
+    el.innerHTML = `
+      <div class="topbar-row">
+        <div class="topbar-left">${LOGO_MARK}<div class="screen-title">Guide</div></div>
+        <div class="topbar-right">
+          ${versionChipHtml()}
+          ${avatarChipHtml()}
+        </div>
+      </div>`;
   } else {
     el.innerHTML = `
       <div class="topbar-row">
@@ -1587,6 +1600,7 @@ function renderView() {
   if (!el) return;
   if (state.view === 'today') el.innerHTML = viewToday();
   else if (state.view === 'plan') el.innerHTML = viewPlan();
+  else if (state.view === 'guide') el.innerHTML = guideBodyHtml();
   else el.innerHTML = viewProgress();
 }
 
@@ -1627,18 +1641,55 @@ function guideBodyHtml() {
   return `<p class="guide-intro">${escapeHtml(GUIDE_INTRO)}</p>${sections}`;
 }
 
-/** The guide, as a sheet. It sits behind the "?" rather than owning a nav slot:
- *  it is read a handful of times, and a permanent tab for that crowded the bar
- *  the other three screens live in. */
-function modalGuideSheet() {
+/**
+ * The guide covers the screen you are standing on and nothing else — you never
+ * read about Plan while looking at Progress. Entries that don't apply to your
+ * data are dropped, so it shrinks as well as grows with the app.
+ */
+function modalGuide() {
+  const has = state.exercises.filter((e) => e.active && !e.archived);
+  const anyTarget = has.some((e) => getEffectiveTarget(e, todayISO()));
+  const anyHistory = Object.keys(state.setsLog).length > 0;
+
+  const byView = {
+    today: [
+      has.length && ['Log reps', 'Tap the exercise, then a number.'],
+      has.length && ['Take reps off', 'Flip the lever to Subtract.'],
+      has.length && ['The clock', 'Starts on your first rep. Pause any time.'],
+      anyTarget && ['Hit the target', 'Take the win, or Keep going.'],
+      has.length && ['End early', 'Give up keeps your reps and stops the clock.'],
+      anyTarget && ['Once it is done', 'Hitting the target locks the card. Train again to reopen it.'],
+      anyTarget && ['Rest a day', 'Open the exercise, Take a break. Streak holds.'],
+      !has.length && ['Start', 'Add an exercise.'],
+      ['Daily weigh-in', 'A health habit, not an exercise. It never touches a streak, and it disappears once today is logged.'],
+    ],
+    plan: [
+      ['Edit', 'Tap the exercise.'],
+      ['Schedule', 'Every day, or pick weekdays. A day off is never a miss.'],
+      ['One-time', 'Add → One-time makes an unscheduled workout: name and a unit, no target. Log into it on Today, then Complete it.'],
+      has.length && ['Retire', 'Archive keeps history. Delete removes it.'],
+    ],
+    progress: [
+      ['The strip', 'Filled = hit, 🌙 = rest, hollow = missed, faint = day off.'],
+      ['Open a card', 'Its numbers, best day and recent days.'],
+      anyHistory && ['Fix a number', 'Tap a total or target inside a card.'],
+      ['Top set vs Max', 'Best single set, versus biggest day.'],
+      (state.profile && (state.profile.weightLog || []).length) && ['Weight tracking', 'Log daily. The chart plots each week’s average weight, so you see the trend, not the daily noise.'],
+    ],
+  };
+
+  const title = { today: 'Today', plan: 'Plan', progress: 'Progress' }[state.view] || 'Today';
+  const items = (byView[state.view] || byView.today).filter(Boolean);
+
   return `<div class="modal-backdrop" data-action="backdrop">
     <div class="modal-sheet" data-stop>
       <div class="sheet-handle"></div>
       <div class="sheet-head">
-        <h2>Guide</h2>
+        <h2>${title}</h2>
         <button class="sheet-close" data-action="close-modal">${ICONS.close}</button>
       </div>
-      ${guideBodyHtml()}
+      <dl class="guide-list">${items.map(([what, how]) => `<div><dt>${escapeHtml(what)}</dt><dd>${how}</dd></div>`).join('')}</dl>
+      <div class="hint">Switch screens for that screen's guide.</div>
     </div>
   </div>`;
 }
@@ -2130,7 +2181,7 @@ function renderModal() {
   else if (m.type === 'confirmDeleteExercise') root.innerHTML = modalConfirmDeleteExercise(m);
   else if (m.type === 'data') root.innerHTML = modalData();
   else if (m.type === 'profile') root.innerHTML = modalProfile();
-  else if (m.type === 'guide') root.innerHTML = modalGuideSheet();
+  else if (m.type === 'screenGuide') root.innerHTML = modalGuide();
   else if (m.type === 'importChoice') root.innerHTML = modalImportChoice();
   const key = `${m.type}:${m.exId || ''}`;
   if (key !== lastModalKey) {
@@ -2762,7 +2813,7 @@ document.addEventListener('click', async (e) => {
       renderView();
       break;
     case 'open-guide':
-      state.modal = { type: 'guide' };
+      state.modal = { type: 'screenGuide' };
       renderModal();
       break;
     case 'toggle-group': {
@@ -2778,7 +2829,7 @@ document.addEventListener('click', async (e) => {
         GUIDE_SECTIONS.forEach((s) => { state.openGroups[`guide:${s.id}`] = false; });
       }
       state.openGroups[k] = opening;
-      if (btn.dataset.view === 'guide') renderModal(); else renderView();
+      renderView();
       break;
     }
 
@@ -2796,7 +2847,7 @@ document.addEventListener('click', async (e) => {
       renderView();
       break;
     case 'open-guide':
-      state.modal = { type: 'guide' };
+      state.modal = { type: 'screenGuide' };
       renderModal();
       break;
     case 'toggle-group': {
@@ -2812,7 +2863,7 @@ document.addEventListener('click', async (e) => {
         GUIDE_SECTIONS.forEach((s) => { state.openGroups[`guide:${s.id}`] = false; });
       }
       state.openGroups[k] = opening;
-      if (btn.dataset.view === 'guide') renderModal(); else renderView();
+      renderView();
       break;
     }
 

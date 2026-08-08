@@ -972,11 +972,12 @@
   /* The "?" sits in the corner the numbers leave empty, so explaining a group
      costs no row of its own and nothing moves when it opens. */
   .stat-group{position:relative;}
+  /* A bulb, not a question mark: the "?" in the topbar opens the app's guide, and
+     two identical marks doing different jobs on one screen is the confusion. */
   .stat-help-btn{
     position:absolute; top:-8px; right:-6px; width:32px; height:32px;
     display:flex; align-items:center; justify-content:center;
     background:none; border:0; color:var(--text-faint);
-    font-family:var(--font-mono); font-size:13px; font-weight:700; line-height:1;
   }
   .stat-help-btn.on{color:var(--accent);}
   .stat-help{

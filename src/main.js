@@ -58,7 +58,7 @@ import {
 import { GUIDE_SECTIONS, GUIDE_INTRO } from './guide.js';
 import { CATEGORIES, categoryOf, categoryLabel, categoryIconUrl } from './categories.js';
 import * as gsync from './sync/googleSync.js';
-import { allStats, exerciseStats, recentDayStates, streakTier, dayHistory, trajectorySeries, formatDuration, formatTotalDuration, formatCount, formatClock, groupBySchedule, comboTimes } from './domain/stats.js';
+import { allStats, exerciseStats, recentDayStates, workoutDates, streakTier, dayHistory, trajectorySeries, formatDuration, formatTotalDuration, formatCount, formatClock, groupBySchedule, comboTimes } from './domain/stats.js';
 
 // Every number is on screen — no hunting, no typing. One tap applies it in
 // whichever direction the lever is set to.
@@ -1229,6 +1229,11 @@ function trajectoryChartHtml(ex) {
   // chart is actually asked, and the one the dots alone never answered.
   const delta = last.total - first.total;
   const deltaText = delta > 0 ? `+${formatCount(delta)}` : delta < 0 ? `\u2212${formatCount(-delta)}` : '';
+  // "Since you started" only when the first plotted day really is the first day
+  // ever logged. This is a 30-day window, so for anyone with a longer history it
+  // would otherwise claim a beginning that is just the left edge of the chart.
+  const firstEver = workoutDates(ex.id, state.setsLog)[0];
+  const deltaNote = `${escapeHtml(ex.unit)} ${firstEver === first.date ? 'since you started' : `in ${span} days`}`;
 
   const marks = points.map((p) => `<circle class="traj-dot ${p.hit ? 'hit' : 'short'}" cx="${x(p.dayIndex).toFixed(1)}" cy="${y(p.total).toFixed(1)}" r="4"/>`).join('');
 
@@ -1240,7 +1245,7 @@ function trajectoryChartHtml(ex) {
       ${label(last, 'end')}
       ${labelBest ? label(best, 'middle') : ''}
       ${labelFirst ? label(first, 'start') : ''}
-      ${deltaText ? `<text class="traj-delta ${delta > 0 ? 'up' : 'down'}" x="${padL}" y="10">${deltaText}</text>` : ''}
+      ${deltaText ? `<text class="traj-delta ${delta > 0 ? 'up' : 'down'}" x="${padL}" y="10">${deltaText}<tspan class="traj-delta-note" dx="4">${deltaNote}</tspan></text>` : ''}
       <text class="traj-axis" x="${padL}" y="${H - 4}" text-anchor="start">${escapeHtml(formatDisplayDate(points[0].date, { month: 'short', day: 'numeric' }))}</text>
       <text class="traj-axis" x="${W - padR}" y="${H - 4}" text-anchor="end">${escapeHtml(formatDisplayDate(last.date, { month: 'short', day: 'numeric' }))}</text>
     </svg>

@@ -1301,6 +1301,9 @@
   .traj-delta{font-family:var(--font-mono); font-size:11px; font-weight:700; letter-spacing:0.02em;}
   .traj-delta.up{fill:var(--accent);}
   .traj-delta.down{fill:var(--silver);}
+  /* The qualifier steps back so the number still carries — it explains the
+     figure, it is not competing with it. */
+  .traj-delta-note{fill:var(--text-faint); font-size:9px; font-weight:400; letter-spacing:0.04em;}
   .traj-empty{
     margin:14px 0 4px; padding:12px; border:2px dashed #2A312D;
     color:var(--text-faint); font-size:12.5px; text-align:center;

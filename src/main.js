@@ -1437,7 +1437,6 @@ const NAV_ITEMS = [
   { view: 'today', label: 'Today', icon: 'today' },
   { view: 'plan', label: 'Plan', icon: 'plan' },
   { view: 'progress', label: 'Progress', icon: 'progress' },
-  { view: 'guide', label: 'Guide', icon: 'help' },
 ];
 
 function renderNav() {
@@ -1505,6 +1504,10 @@ function railButtonsHtml() {
   return `<button class="rail-btn" data-action="toggle-panel" data-panel="stats" aria-label="Performance">${ICONS.progress}</button>`;
 }
 
+function helpChipHtml() {
+  return `<button class="help-chip" data-action="open-guide" aria-label="Guide">${ICONS.help}</button>`;
+}
+
 function versionChipHtml() {
   const { local, status } = state.version;
   const label = { latest: 'Up to date', stale: 'Update ready — tap to reload', unknown: 'Version unknown (offline?)' }[status];
@@ -1549,6 +1552,7 @@ function renderTopbar() {
         </div>
         <div class="topbar-right">
           <div class="streak-pill" title="Longest run currently going">${ICONS.flame}${streak}</div>
+          ${helpChipHtml()}
           ${versionChipHtml()}
           ${avatarChipHtml()}
         </div>
@@ -1559,17 +1563,7 @@ function renderTopbar() {
         <div class="topbar-left">${LOGO_MARK}<div class="screen-title">Plan</div></div>
         <div class="topbar-right">
           <button class="add-btn" data-action="open-add-exercise">${ICONS.plus} Add</button>
-          ${versionChipHtml()}
-          ${avatarChipHtml()}
-        </div>
-      </div>`;
-  } else if (state.view === 'guide') {
-    // No ? chip here: this screen is what the chip is a shortcut to, and a
-    // guide to the guide is the kind of thing that makes an app feel padded.
-    el.innerHTML = `
-      <div class="topbar-row">
-        <div class="topbar-left">${LOGO_MARK}<div class="screen-title">Guide</div></div>
-        <div class="topbar-right">
+          ${helpChipHtml()}
           ${versionChipHtml()}
           ${avatarChipHtml()}
         </div>
@@ -1580,6 +1574,7 @@ function renderTopbar() {
         <div class="topbar-left">${LOGO_MARK}<div class="screen-title">Progress</div></div>
         <div class="topbar-right">
           <button class="icon-btn" data-action="open-data">${ICONS.gear}</button>
+          ${helpChipHtml()}
           ${versionChipHtml()}
           ${avatarChipHtml()}
         </div>
@@ -1592,12 +1587,11 @@ function renderView() {
   if (!el) return;
   if (state.view === 'today') el.innerHTML = viewToday();
   else if (state.view === 'plan') el.innerHTML = viewPlan();
-  else if (state.view === 'guide') el.innerHTML = viewGuide();
   else el.innerHTML = viewProgress();
 }
 
-/* ============================= VIEW: GUIDE =============================
- * Every section closed on arrival, so the screen opens as a short list of
+/* ============================= THE GUIDE =============================
+ * Every section closed on arrival, so the sheet opens as a short list of
  * questions rather than a wall of answers — the same collapsed-until-asked
  * pattern the Plan and Progress groups already use, and the reason this can
  * be complete without being cluttered.
@@ -1609,7 +1603,7 @@ function renderView() {
  * It reads GUIDE_SECTIONS and nothing else. No app state, no derived numbers,
  * so it cannot go stale against your data and there is nothing here to break.
  */
-function viewGuide() {
+function guideBodyHtml() {
   let lastPhase = null;
   const sections = GUIDE_SECTIONS.map((sec, i) => {
     const open = groupOpen('guide', sec.id, GUIDE_SECTIONS.length);
@@ -1631,6 +1625,22 @@ function viewGuide() {
       </div>`;
   }).join('');
   return `<p class="guide-intro">${escapeHtml(GUIDE_INTRO)}</p>${sections}`;
+}
+
+/** The guide, as a sheet. It sits behind the "?" rather than owning a nav slot:
+ *  it is read a handful of times, and a permanent tab for that crowded the bar
+ *  the other three screens live in. */
+function modalGuideSheet() {
+  return `<div class="modal-backdrop" data-action="backdrop">
+    <div class="modal-sheet" data-stop>
+      <div class="sheet-handle"></div>
+      <div class="sheet-head">
+        <h2>Guide</h2>
+        <button class="sheet-close" data-action="close-modal">${ICONS.close}</button>
+      </div>
+      ${guideBodyHtml()}
+    </div>
+  </div>`;
 }
 
 /* ============================= VIEW: TODAY ============================= */
@@ -2120,6 +2130,7 @@ function renderModal() {
   else if (m.type === 'confirmDeleteExercise') root.innerHTML = modalConfirmDeleteExercise(m);
   else if (m.type === 'data') root.innerHTML = modalData();
   else if (m.type === 'profile') root.innerHTML = modalProfile();
+  else if (m.type === 'guide') root.innerHTML = modalGuideSheet();
   else if (m.type === 'importChoice') root.innerHTML = modalImportChoice();
   const key = `${m.type}:${m.exId || ''}`;
   if (key !== lastModalKey) {
@@ -2750,6 +2761,10 @@ document.addEventListener('click', async (e) => {
       state.statHelp[btn.dataset.key] = !state.statHelp[btn.dataset.key];
       renderView();
       break;
+    case 'open-guide':
+      state.modal = { type: 'guide' };
+      renderModal();
+      break;
     case 'toggle-group': {
       // Flip whatever is actually on screen — the rendered state carries the
       // default (a lone group starts open), so the first tap never no-ops.
@@ -2763,7 +2778,7 @@ document.addEventListener('click', async (e) => {
         GUIDE_SECTIONS.forEach((s) => { state.openGroups[`guide:${s.id}`] = false; });
       }
       state.openGroups[k] = opening;
-      renderView();
+      if (btn.dataset.view === 'guide') renderModal(); else renderView();
       break;
     }
 
@@ -2780,6 +2795,10 @@ document.addEventListener('click', async (e) => {
       state.statHelp[btn.dataset.key] = !state.statHelp[btn.dataset.key];
       renderView();
       break;
+    case 'open-guide':
+      state.modal = { type: 'guide' };
+      renderModal();
+      break;
     case 'toggle-group': {
       // Flip whatever is actually on screen — the rendered state carries the
       // default (a lone group starts open), so the first tap never no-ops.
@@ -2793,7 +2812,7 @@ document.addEventListener('click', async (e) => {
         GUIDE_SECTIONS.forEach((s) => { state.openGroups[`guide:${s.id}`] = false; });
       }
       state.openGroups[k] = opening;
-      renderView();
+      if (btn.dataset.view === 'guide') renderModal(); else renderView();
       break;
     }
 

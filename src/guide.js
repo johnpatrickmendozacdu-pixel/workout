@@ -1,7 +1,7 @@
 /**
  * The whole guide, as data.
  *
- * One table, one source of truth. The Guide screen is the only thing that
+ * One table, one source of truth. The guide sheet is the only thing that
  * renders it, and a new feature means a new row here rather than a new
  * explanation written somewhere else that quietly stops being true. Anything
  * needing a re-record or a re-screenshot when the UI changes does not belong

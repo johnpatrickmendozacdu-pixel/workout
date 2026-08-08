@@ -687,15 +687,27 @@
      Both are now real controls at the 44px minimum, so a quick correction
      takes one confident thumb press. */
   .day-detail div{gap:6px; padding:5px 0;}
+  /* Numbers, not buttons. Seven rows of two bordered boxes was fourteen framed
+     objects competing with the chart above them — and the frame said "editable"
+     fourteen times over, which the dashed underline says once, quietly. Same
+     affordance the Top set figure already uses. The hit area is an overlay, so
+     the row keeps its height. */
   .day-num{
-    min-width:52px; min-height:44px; padding:0 10px; border-radius:var(--radius-sm);
-    background:var(--bg); border:1px solid var(--border-strong); color:var(--text);
-    font-family:var(--font-num); font-size:13px; font-weight:700; letter-spacing:-0.02em;
-    display:inline-flex; align-items:center; justify-content:center;
-    transition:background .15s ease, border-color .15s ease, transform .09s ease;
+    background:none; border:0; padding:0; color:var(--text); position:relative;
+    font-family:var(--font-num); font-size:14px; font-weight:700; letter-spacing:-0.02em;
+    text-decoration:underline dashed var(--border-strong);
+    text-underline-offset:4px; text-decoration-thickness:1px;
+    transition:color .15s ease;
   }
-  .day-num:active{transform:scale(0.94); background:var(--bg-card-hover);}
-  .day-num.target{color:var(--text-dim); border-style:dashed;}
+  .day-num::after{
+    content:''; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+    width:44px; height:44px;
+  }
+  .day-num:active{color:var(--text-dim);}
+  .day-num.target{color:var(--text-faint); font-size:13px;}
+  /* Colour carries the outcome now, so no box has to. */
+  .exday.hit .day-num.total{color:var(--accent);}
+  .exday.miss .day-num.total{color:var(--text);}
   .day-num.readonly{background:transparent; border-color:transparent; min-width:0; padding:0;}
   .day-sep{color:var(--text-faint); font-size:13px; padding:0 1px;}
   .day-detail{padding:0 13px 12px 30px;}
@@ -1108,7 +1120,7 @@
   .streak-flame svg path{fill:var(--accent) !important;}
 
   /* controls: outline by default, neon only when live */
-  .secondary-btn, .rep-key, .sched-day, .sched-mode, .rest-toggle, .day-num,
+  .secondary-btn, .rep-key, .sched-day, .sched-mode, .rest-toggle,
   .icon-btn, .help-chip, .version-chip, .avatar-chip, .streak-pill, .mini-btn,
   .exday-more, .logger-rest{
     background:var(--surface); border:2px solid var(--ink); color:var(--text);
@@ -1134,8 +1146,7 @@
   .version-chip.latest{color:var(--accent);}
 
   /* rows and history */
-  .exday{border-top:2px solid #2A312D;}
-  .day-num{box-shadow:2px 2px 0 var(--green-deep);}
+  .exday{border-top:1px solid var(--border);}
   .day-num.target{border-style:dashed; color:var(--text-dim);}
   .ex-history{border-top:2px solid var(--ink);}
   .exday-more{color:var(--accent); border:none; border-top:2px solid var(--ink); background:none;}

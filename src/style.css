@@ -1292,6 +1292,15 @@
     fill:var(--text); font-family:var(--font-mono); font-size:11px; font-weight:700;
   }
   .traj-axis{fill:var(--text-faint); font-family:var(--font-mono); font-size:9px; letter-spacing:0.06em;}
+  /* The whole point of the chart in one number, so it takes the accent when the
+     line has climbed. A drop takes silver rather than red — fewer reps on a busy
+     week is information, not a failure.
+     ponytail: parked top-left, which only collides with the first label when the
+     first day is both the earliest and the highest point. Position it against the
+     first point if that ever shows up in real data. */
+  .traj-delta{font-family:var(--font-mono); font-size:11px; font-weight:700; letter-spacing:0.02em;}
+  .traj-delta.up{fill:var(--accent);}
+  .traj-delta.down{fill:var(--silver);}
   .traj-empty{
     margin:14px 0 4px; padding:12px; border:2px dashed #2A312D;
     color:var(--text-faint); font-size:12.5px; text-align:center;

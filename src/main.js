@@ -1213,21 +1213,34 @@ function trajectoryChartHtml(ex) {
   });
 
   const best = points.reduce((m, p) => (p.total > m.total ? p : m), points[0]);
+  const first = points[0];
   const last = points[points.length - 1];
   const label = (p, anchor) => `<text class="traj-label" x="${x(p.dayIndex).toFixed(1)}" y="${(y(p.total) - 8).toFixed(1)}" text-anchor="${anchor}">${p.total}</text>`;
   // Two labels that land on top of each other are worse than one. The latest
   // value always wins; the best is only named when it is far enough away to read.
   const labelBest = best !== last && Math.abs(x(best.dayIndex) - x(last.dayIndex)) > 34;
+  // The starting point, added on top: skipped when it would sit under either
+  // label already on the chart, since a clash costs more than the number gives.
+  const labelFirst = first !== last && first !== best
+    && Math.abs(x(first.dayIndex) - x(last.dayIndex)) > 34
+    && (!labelBest || Math.abs(x(first.dayIndex) - x(best.dayIndex)) > 34);
+
+  // Where you started, where you are, and the gap between — the question a line
+  // chart is actually asked, and the one the dots alone never answered.
+  const delta = last.total - first.total;
+  const deltaText = delta > 0 ? `+${formatCount(delta)}` : delta < 0 ? `\u2212${formatCount(-delta)}` : '';
 
   const marks = points.map((p) => `<circle class="traj-dot ${p.hit ? 'hit' : 'short'}" cx="${x(p.dayIndex).toFixed(1)}" cy="${y(p.total).toFixed(1)}" r="4"/>`).join('');
 
   return `<div class="traj">
-    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Daily totals over the last 30 days for ${escapeHtml(ex.name)}, from ${points[0].total} on ${escapeHtml(points[0].date)} to ${last.total} on ${escapeHtml(last.date)}, best ${best.total}">
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Daily totals over the last 30 days for ${escapeHtml(ex.name)}: ${first.total} on ${escapeHtml(first.date)} rising to ${last.total} on ${escapeHtml(last.date)}, a change of ${delta}, best ${best.total}">
       ${hasTargetLine ? `<path class="traj-target" d="${targetPath.trim()}"/>` : ''}
       <polyline class="traj-line" points="${line}"/>
       ${marks}
       ${label(last, 'end')}
       ${labelBest ? label(best, 'middle') : ''}
+      ${labelFirst ? label(first, 'start') : ''}
+      ${deltaText ? `<text class="traj-delta ${delta > 0 ? 'up' : 'down'}" x="${padL}" y="10">${deltaText}</text>` : ''}
       <text class="traj-axis" x="${padL}" y="${H - 4}" text-anchor="start">${escapeHtml(formatDisplayDate(points[0].date, { month: 'short', day: 'numeric' }))}</text>
       <text class="traj-axis" x="${W - padR}" y="${H - 4}" text-anchor="end">${escapeHtml(formatDisplayDate(last.date, { month: 'short', day: 'numeric' }))}</text>
     </svg>

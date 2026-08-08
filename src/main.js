@@ -1190,7 +1190,15 @@ function trajectoryChartHtml(ex) {
   // labelled with the full list of exact totals directly below.
   const lo = Math.max(0, minY - (maxY - minY) * 0.25 - 1);
   const hi = maxY + (maxY - minY) * 0.1 + 1;
-  const x = (i) => padL + (i / (span - 1)) * (W - padL - padR);
+  // Scale to the data, not to the window. Plotting a 12-day history against a
+  // fixed 30-day axis pinned every dot to the right third and left two thirds of
+  // the chart empty — the shape of the climb was squeezed into a corner for no
+  // reason. Spacing stays proportional to real dates, so a gap is still a gap.
+  const firstIdx = points[0].dayIndex;
+  const lastIdx = points[points.length - 1].dayIndex;
+  const idxSpan = Math.max(1, lastIdx - firstIdx);
+  const daysShown = lastIdx - firstIdx + 1;
+  const x = (i) => padL + ((i - firstIdx) / idxSpan) * (W - padL - padR);
   const y = (v) => padT + (1 - (v - lo) / (hi - lo)) * (H - padT - padB);
 
   const line = points.map((p) => `${x(p.dayIndex).toFixed(1)},${y(p.total).toFixed(1)}`).join(' ');
@@ -1233,7 +1241,7 @@ function trajectoryChartHtml(ex) {
   // ever logged. This is a 30-day window, so for anyone with a longer history it
   // would otherwise claim a beginning that is just the left edge of the chart.
   const firstEver = workoutDates(ex.id, state.setsLog)[0];
-  const deltaNote = `${escapeHtml(ex.unit)} ${firstEver === first.date ? 'since you first started' : `in ${span} days`}`;
+  const deltaNote = `${escapeHtml(ex.unit)} ${firstEver === first.date ? 'since you first started' : `in ${daysShown} days`}`;
 
   const marks = points.map((p) => `<circle class="traj-dot ${p.hit ? 'hit' : 'short'}" cx="${x(p.dayIndex).toFixed(1)}" cy="${y(p.total).toFixed(1)}" r="4"/>`).join('');
 
@@ -1248,7 +1256,7 @@ function trajectoryChartHtml(ex) {
       ${deltaText ? `<text class="traj-delta ${delta > 0 ? 'up' : 'down'}" x="${padL}" y="10">${deltaText}<tspan class="traj-delta-note" dx="4">${deltaNote}</tspan></text>` : ''}
       <text class="traj-axis" x="${padL}" y="${H - 4}" text-anchor="start">${escapeHtml(formatDisplayDate(points[0].date, { month: 'short', day: 'numeric' }))}</text>
       <text class="traj-axis" x="${W - padR}" y="${H - 4}" text-anchor="end">${escapeHtml(formatDisplayDate(last.date, { month: 'short', day: 'numeric' }))}</text>
-      <text class="traj-axis traj-window" x="${W / 2}" y="${H - 4}" text-anchor="middle">last ${span} days</text>
+      <text class="traj-axis traj-window" x="${W / 2}" y="${H - 4}" text-anchor="middle">${daysShown} days</text>
     </svg>
     <div class="traj-key">
       <span class="traj-key-item"><i class="traj-swatch hit"></i>Target met</span>
@@ -1321,20 +1329,34 @@ function exerciseHistory(ex, s) {
   const firstDate = workoutDates(ex.id, state.setsLog)[0];
   const firstTotal = firstDate ? calcTotal(getSetsFor(ex.id, firstDate)) : null;
 
-  const numbers = `<dl class="ex-numbers">
-    ${num('Top set', s.topSet != null ? `<button class="mini-num" data-action="edit-top-set" data-id="${ex.id}">${s.topSet}</button>` : '—')}
-    ${num('First day', firstTotal != null
-      ? `${firstTotal} <i>${escapeHtml(formatDisplayDate(firstDate, { month: 'short', day: 'numeric' }))}</i>`
-      : '—')}
-    ${num('Best day', s.maxReps != null
-      ? `${s.maxReps}${s.maxRepsDate ? ` <i>${escapeHtml(formatDisplayDate(s.maxRepsDate, { month: 'short', day: 'numeric' }))}</i>` : ''}`
-      : '—')}
-    ${num('Lifetime', `${formatCount(s.totalReps)}${s.since ? ` <i>since ${escapeHtml(s.since)}</i>` : ''}`)}
-    ${num('Best time', formatDuration(s.bestTime))}
-    ${num('Average', formatDuration(s.avgTime))}
-    ${num('Total time', formatTotalDuration(s.totalTime))}
-    ${weightTile(ex)}
-  </dl>`;
+  /**
+   * Seven numbers in one undifferentiated grid read as a spec sheet. They are
+   * really two questions — how much, and how long — so they are shown as two
+   * groups, and a stat with nothing in it is not shown at all. Someone who never
+   * starts the clock loses the entire second group rather than reading three
+   * dashes.
+   */
+  const group = (tiles) => {
+    const filled = tiles.filter(Boolean);
+    return filled.length ? `<dl class="ex-numbers">${filled.join('')}</dl>` : '';
+  };
+  const has = (v) => v != null && v !== '' && v !== '—';
+
+  const repsTiles = [
+    has(s.topSet) && num('Top set', `<button class="mini-num" data-action="edit-top-set" data-id="${ex.id}">${s.topSet}</button>`),
+    firstTotal != null && num('First day', `${firstTotal} <i>${escapeHtml(formatDisplayDate(firstDate, { month: 'short', day: 'numeric' }))}</i>`),
+    has(s.maxReps) && num('Best day', `${s.maxReps}${s.maxRepsDate ? ` <i>${escapeHtml(formatDisplayDate(s.maxRepsDate, { month: 'short', day: 'numeric' }))}</i>` : ''}`),
+    s.totalReps > 0 && num('Lifetime', `${formatCount(s.totalReps)}${s.since ? ` <i>since ${escapeHtml(s.since)}</i>` : ''}`),
+    weightTile(ex) || null,
+  ];
+  const timeTiles = [
+    has(formatDuration(s.bestTime)) && num('Best time', formatDuration(s.bestTime)),
+    has(formatDuration(s.avgTime)) && num('Average', formatDuration(s.avgTime)),
+    has(formatTotalDuration(s.totalTime)) && num('Total time', formatTotalDuration(s.totalTime)),
+  ];
+
+  const numbers = group(repsTiles) + (timeTiles.some(Boolean)
+    ? `<div class="ex-numbers-time">${group(timeTiles)}</div>` : '');
 
   const chart = trajectoryChartHtml(ex);
 

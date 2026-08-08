@@ -953,7 +953,13 @@
 
   /* the exercise's own record, folded inside its own card */
   .ex-history{margin-top:18px; padding-top:16px; border-top:1px solid var(--border);}
-  .ex-numbers{margin:0 0 16px; display:grid; grid-template-columns:1fr 1fr; gap:12px 14px;}
+  .ex-numbers{margin:0 0 16px; display:grid; grid-template-columns:1fr 1fr; gap:14px;}
+  /* The time figures are a second question, so they get their own group behind a
+     hairline rather than continuing the same list. Quieter, because how long is
+     rarely what you opened the card to find out. */
+  .ex-numbers-time{border-top:1px solid var(--border); padding-top:14px; margin-top:2px;}
+  .ex-numbers-time .ex-numbers{margin-bottom:14px;}
+  .ex-numbers-time dd{font-size:14px; color:var(--text-dim);}
   .ex-numbers dt{font-family:var(--font-mono); font-size:10px; text-transform:uppercase;
     letter-spacing:0.12em; color:var(--text-faint);}
   .ex-numbers dd{margin:3px 0 0; font-family:var(--font-num); font-size:15px; font-weight:700;
@@ -1055,7 +1061,10 @@
 
   /* type */
   .date-heading, .screen-title, .ex-name, .ex-numbers dd, .guide-list dt,
-  .section-label, .set-list-head, .ex-numbers dt{color:var(--text);}
+  .section-label, .set-list-head{color:var(--text);}
+  /* Labels sit a step below their numbers. At equal contrast seven captions
+     compete with seven figures and the block reads as a spec sheet. */
+  .ex-numbers dt{color:var(--text-dim);}
   .app-title{color:var(--accent);}
   .streak-best, .exday-when, .guide-list dd{color:var(--text-dim);}
 

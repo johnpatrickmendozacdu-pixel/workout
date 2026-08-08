@@ -1495,14 +1495,14 @@ async function buildShareImage(ex, s) {
 
   // The streak is the headline: it is the number people actually want to show.
   g.fillStyle = ACCENT; g.font = num;
-  g.fillText(String(s.currentStreak), pad, 400);
+  g.fillText(String(s.currentStreak), pad, 342);
   const streakW = g.measureText(String(s.currentStreak)).width;
   g.fillStyle = DIM; g.font = "600 34px Manrope, system-ui, sans-serif";
-  g.fillText('day streak', pad + streakW + 22, 400);
+  g.fillText('day streak', pad + streakW + 22, 342);
 
   // Trajectory, same data as the card's chart.
   const { points, maxY, minY } = trajectorySeries(ex, state.setsLog, 30);
-  const cTop = 520, cH = 250, cL = pad, cW = S - pad * 2;
+  const cTop = 430, cH = 200, cL = pad, cW = S - pad * 2;
   if (points.length >= 2) {
     const lo = Math.max(0, minY - (maxY - minY) * 0.25 - 1);
     const hi = maxY + (maxY - minY) * 0.1 + 1;
@@ -1517,41 +1517,75 @@ async function buildShareImage(ex, s) {
     points.forEach((p) => {
       g.fillStyle = p.hit ? ACCENT : '#0A0C0B';
       g.strokeStyle = p.hit ? ACCENT : '#4A534D'; g.lineWidth = 4;
-      g.beginPath(); g.arc(px(p.dayIndex), py(p.total), 9, 0, Math.PI * 2); g.fill(); g.stroke();
+      g.beginPath(); g.arc(px(p.dayIndex), py(p.total), 8, 0, Math.PI * 2); g.fill(); g.stroke();
     });
 
     const first = points[0], last = points[points.length - 1];
-    g.font = "700 30px 'Martian Mono', ui-monospace, monospace";
+    g.font = "700 28px 'Martian Mono', ui-monospace, monospace";
     g.fillStyle = TEXT; g.textAlign = 'left';
-    g.fillText(String(first.total), px(first.dayIndex), py(first.total) - 26);
+    g.fillText(String(first.total), px(first.dayIndex), py(first.total) - 24);
     g.textAlign = 'right';
-    g.fillText(String(last.total), px(last.dayIndex), py(last.total) - 26);
+    g.fillText(String(last.total), px(last.dayIndex), py(last.total) - 24);
     g.textAlign = 'left';
 
     const delta = last.total - first.total;
     if (delta !== 0) {
       g.fillStyle = delta > 0 ? ACCENT : '#D8DEDA';
       g.font = "700 30px 'Martian Mono', ui-monospace, monospace";
-      g.fillText(`${delta > 0 ? '+' : '\u2212'}${formatCount(Math.abs(delta))} ${ex.unit}`, cL, cTop - 44);
+      // Same sentence the card shows, decided the same way: the window only
+      // reaches back 30 days, so it claims a beginning only when the first dot
+      // really is the first session ever logged.
+      const everFirst = workoutDates(ex.id, state.setsLog)[0];
+      const days = last.dayIndex - first.dayIndex + 1;
+      const note = everFirst === first.date ? 'since you first started' : `in ${days} days`;
+      g.fillText(`${delta > 0 ? '+' : '\u2212'}${formatCount(Math.abs(delta))} ${ex.unit} ${note}`, cL, 400);
     }
   }
 
-  // Three supporting figures, evenly spread.
-  const tiles = [
-    ['BEST DAY', s.maxReps != null ? formatCount(s.maxReps) : '—'],
-    ['LIFETIME', formatCount(s.totalReps)],
-    ['STREAK BEST', formatCount(s.bestStreak)],
-  ];
-  const ty = 840;
+  /**
+   * Every figure the card carries, in the two groups the card already uses —
+   * how much, then how long. Empty ones are dropped rather than printed as a
+   * dash, so an exercise with no clock simply has a shorter card.
+   */
+  const drawRow = (tiles, y) => {
+    const filled = tiles.filter(([, v]) => v != null && v !== '' && v !== '—');
+    if (!filled.length) return false;
+    const colW = (S - pad * 2) / filled.length;
+    filled.forEach(([label, value], i) => {
+      const x = pad + i * colW;
+      g.fillStyle = FAINT; g.font = "600 20px 'JetBrains Mono', ui-monospace, monospace";
+      g.fillText(label, x, y);
+      g.fillStyle = TEXT;
+      // Shrink to fit rather than run into the next column.
+      let size = 46;
+      g.font = `700 ${size}px 'Martian Mono', ui-monospace, monospace`;
+      while (g.measureText(value).width > colW - 16 && size > 26) {
+        size -= 2;
+        g.font = `700 ${size}px 'Martian Mono', ui-monospace, monospace`;
+      }
+      g.fillText(value, x, y + 54);
+    });
+    return true;
+  };
+
+  const firstDate = workoutDates(ex.id, state.setsLog)[0];
+  const firstTotal = firstDate ? calcTotal(getSetsFor(ex.id, firstDate)) : null;
+
   g.strokeStyle = '#2A312D'; g.lineWidth = 2;
-  g.beginPath(); g.moveTo(pad, ty - 62); g.lineTo(S - pad, ty - 62); g.stroke();
-  tiles.forEach(([label, value], i) => {
-    const x = pad + i * ((S - pad * 2) / 3);
-    g.fillStyle = FAINT; g.font = "600 22px 'JetBrains Mono', ui-monospace, monospace";
-    g.fillText(label, x, ty);
-    g.fillStyle = TEXT; g.font = "700 52px 'Martian Mono', ui-monospace, monospace";
-    g.fillText(value, x, ty + 58);
-  });
+  g.beginPath(); g.moveTo(pad, 700); g.lineTo(S - pad, 700); g.stroke();
+
+  drawRow([
+    ['TOP SET', s.topSet != null ? formatCount(s.topSet) : null],
+    ['FIRST DAY', firstTotal != null ? formatCount(firstTotal) : null],
+    ['BEST DAY', s.maxReps != null ? formatCount(s.maxReps) : null],
+    ['LIFETIME', s.totalReps > 0 ? formatCount(s.totalReps) : null],
+  ], 748);
+
+  drawRow([
+    ['BEST TIME', formatDuration(s.bestTime)],
+    ['AVERAGE TIME', formatDuration(s.avgTime)],
+    ['TOTAL TIME', formatTotalDuration(s.totalTime)],
+  ], 874);
 
   // Watermark. Says where it came from without shouting over the numbers.
   g.fillStyle = ACCENT; g.font = "800 34px Manrope, system-ui, sans-serif";

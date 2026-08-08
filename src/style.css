@@ -1067,6 +1067,16 @@
   .strip.unbroken .dot.hit:first-child{border-radius:999px 3px 3px 999px;}
   .strip.unbroken .dot.hit:last-child{border-radius:3px 999px 999px 3px;}
 
+  /* Full width and quiet: it is an occasional action, not a thing to press
+     during a workout, so it sits at the end of the card rather than the top. */
+  .share-btn{
+    display:flex; align-items:center; justify-content:center; gap:8px;
+    width:100%; min-height:44px; margin-top:10px;
+    background:none; border:1px solid var(--border-strong); color:var(--text-dim);
+    font-family:var(--font-mono); font-size:12px; letter-spacing:0.06em; text-transform:uppercase;
+  }
+  .share-btn:active{color:var(--accent); border-color:var(--accent);}
+
   .exday-more{
     width:100%; min-height:44px; margin-top:4px; background:none; border:none;
     border-top:1px solid var(--border); color:var(--text-faint);

@@ -1063,6 +1063,8 @@ const ICONS = {
   archive: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M4 7h16M5 7v11a1 1 0 001 1h12a1 1 0 001-1V7M9 11h6" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>`,
   restore: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M4 8a8 8 0 111.6 6.4M4 4v4h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
   check: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="var(--success)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  share: `<svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M12 3v12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M8 7l4-4 4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 13v6.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`,
+  book: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M4 4.8A1.8 1.8 0 0 1 5.8 3H18a1 1 0 0 1 1 1v13.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 17.5h13v2.7a.8.8 0 0 1-.8.8H6a2 2 0 0 1 0-4z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M8.5 7.5h6.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>`,
   bulb: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M9.5 18h5M10.2 21h3.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2h5c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>`,
   help: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="M9.6 9.2a2.5 2.5 0 114.2 1.9c-.9.7-1.3 1.1-1.3 2.1" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><circle cx="12" cy="17" r="1" fill="currentColor"/></svg>`,
   gear: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 15a3 3 0 100-6 3 3 0 000 6z" stroke="currentColor" stroke-width="1.7"/><path d="M19.4 13.5a1.7 1.7 0 000-3l-1-.2a6.6 6.6 0 00-.7-1.6l.6-.9a1.7 1.7 0 00-2.4-2.4l-.9.6a6.6 6.6 0 00-1.6-.7l-.2-1a1.7 1.7 0 00-3 0l-.2 1a6.6 6.6 0 00-1.6.7l-.9-.6a1.7 1.7 0 00-2.4 2.4l.6.9a6.6 6.6 0 00-.7 1.6l-1 .2a1.7 1.7 0 000 3l1 .2a6.6 6.6 0 00.7 1.6l-.6.9a1.7 1.7 0 002.4 2.4l.9-.6a6.6 6.6 0 001.6.7l.2 1a1.7 1.7 0 003 0l.2-1a6.6 6.6 0 001.6-.7l.9.6a1.7 1.7 0 002.4-2.4l-.6-.9a6.6 6.6 0 00.7-1.6l1-.2z" stroke="currentColor" stroke-width="1.3"/></svg>`,
@@ -1425,7 +1427,164 @@ function exerciseHistory(ex, s) {
 
   // Chart above the day list: the list IS the table view the chart needs, so the
   // exact numbers are always a glance below the shape they make.
-  return `<div class="ex-history">${numbers}${chart}<div class="exday-list">${rows}</div>${more}</div>`;
+  const share = `<button class="share-btn" data-action="share-exercise" data-id="${ex.id}">${ICONS.share}Save image</button>`;
+  return `<div class="ex-history">${numbers}${chart}<div class="exday-list">${rows}</div>${more}${share}</div>`;
+}
+
+
+/* ============================= SHARE IMAGE =============================
+ * A square card drawn on a canvas, not a screenshot of the screen.
+ *
+ * html2canvas would have been the quick answer and it is a runtime dependency
+ * this app does not otherwise have. Drawing it costs about the same and buys
+ * control: a screenshot of a phone would carry the nav bar, half a row of the
+ * next exercise, and whatever else happened to be on screen. This carries only
+ * what was chosen.
+ *
+ * Nothing leaves the device. The canvas becomes a blob, the blob goes to the
+ * share sheet or straight to the downloads folder. No upload, no server, no
+ * account — which is also why it stays free.
+ */
+const SHARE_SIZE = 1080;
+
+function shareLoadIcon(ex) {
+  const cat = categoryOf(ex);
+  if (!cat) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);   // a missing icon must not block the share
+    img.src = categoryIconUrl(cat.key);
+  });
+}
+
+async function buildShareImage(ex, s) {
+  const S = SHARE_SIZE;
+  const c = document.createElement('canvas');
+  c.width = S; c.height = S;
+  const g = c.getContext('2d');
+
+  // The app's fonts are loaded by CSS; without waiting, the first share of a
+  // session silently falls back to a system face.
+  if (document.fonts && document.fonts.ready) { try { await document.fonts.ready; } catch (e) { /* draw anyway */ } }
+
+  const INK = '#0A0C0B', TEXT = '#EEF2EF', DIM = '#9AA5A0', FAINT = '#6E7975', ACCENT = '#3EE07F';
+  const body = "700 44px Manrope, system-ui, sans-serif";
+  const mono = "600 26px 'JetBrains Mono', ui-monospace, monospace";
+  const num = "700 132px 'Martian Mono', ui-monospace, monospace";
+
+  g.fillStyle = INK; g.fillRect(0, 0, S, S);
+
+  const pad = 76;
+  const icon = await shareLoadIcon(ex);
+  if (icon) g.drawImage(icon, pad, pad, 104, 104);
+
+  g.fillStyle = TEXT; g.font = body;
+  g.textBaseline = 'alphabetic';
+  const nameX = icon ? pad + 132 : pad;
+  let name = ex.name;
+  while (g.measureText(name).width > S - nameX - pad && name.length > 4) name = name.slice(0, -1);
+  if (name !== ex.name) name += '…';
+  g.fillText(name, nameX, pad + 52);
+
+  const cat = categoryOf(ex);
+  if (cat) {
+    g.fillStyle = FAINT; g.font = "600 24px 'JetBrains Mono', ui-monospace, monospace";
+    g.fillText(cat.label.toUpperCase(), nameX, pad + 92);
+  }
+
+  // The streak is the headline: it is the number people actually want to show.
+  g.fillStyle = ACCENT; g.font = num;
+  g.fillText(String(s.currentStreak), pad, 400);
+  const streakW = g.measureText(String(s.currentStreak)).width;
+  g.fillStyle = DIM; g.font = "600 34px Manrope, system-ui, sans-serif";
+  g.fillText('day streak', pad + streakW + 22, 400);
+
+  // Trajectory, same data as the card's chart.
+  const { points, maxY, minY } = trajectorySeries(ex, state.setsLog, 30);
+  const cTop = 520, cH = 250, cL = pad, cW = S - pad * 2;
+  if (points.length >= 2) {
+    const lo = Math.max(0, minY - (maxY - minY) * 0.25 - 1);
+    const hi = maxY + (maxY - minY) * 0.1 + 1;
+    const i0 = points[0].dayIndex;
+    const span = Math.max(1, points[points.length - 1].dayIndex - i0);
+    const px = (i) => cL + ((i - i0) / span) * cW;
+    const py = (v) => cTop + (1 - (v - lo) / (hi - lo)) * cH;
+
+    g.strokeStyle = '#4A534D'; g.lineWidth = 4; g.beginPath();
+    points.forEach((p, i) => (i ? g.lineTo(px(p.dayIndex), py(p.total)) : g.moveTo(px(p.dayIndex), py(p.total))));
+    g.stroke();
+    points.forEach((p) => {
+      g.fillStyle = p.hit ? ACCENT : '#0A0C0B';
+      g.strokeStyle = p.hit ? ACCENT : '#4A534D'; g.lineWidth = 4;
+      g.beginPath(); g.arc(px(p.dayIndex), py(p.total), 9, 0, Math.PI * 2); g.fill(); g.stroke();
+    });
+
+    const first = points[0], last = points[points.length - 1];
+    g.font = "700 30px 'Martian Mono', ui-monospace, monospace";
+    g.fillStyle = TEXT; g.textAlign = 'left';
+    g.fillText(String(first.total), px(first.dayIndex), py(first.total) - 26);
+    g.textAlign = 'right';
+    g.fillText(String(last.total), px(last.dayIndex), py(last.total) - 26);
+    g.textAlign = 'left';
+
+    const delta = last.total - first.total;
+    if (delta !== 0) {
+      g.fillStyle = delta > 0 ? ACCENT : '#D8DEDA';
+      g.font = "700 30px 'Martian Mono', ui-monospace, monospace";
+      g.fillText(`${delta > 0 ? '+' : '\u2212'}${formatCount(Math.abs(delta))} ${ex.unit}`, cL, cTop - 44);
+    }
+  }
+
+  // Three supporting figures, evenly spread.
+  const tiles = [
+    ['BEST DAY', s.maxReps != null ? formatCount(s.maxReps) : '—'],
+    ['LIFETIME', formatCount(s.totalReps)],
+    ['STREAK BEST', formatCount(s.bestStreak)],
+  ];
+  const ty = 840;
+  g.strokeStyle = '#2A312D'; g.lineWidth = 2;
+  g.beginPath(); g.moveTo(pad, ty - 62); g.lineTo(S - pad, ty - 62); g.stroke();
+  tiles.forEach(([label, value], i) => {
+    const x = pad + i * ((S - pad * 2) / 3);
+    g.fillStyle = FAINT; g.font = "600 22px 'JetBrains Mono', ui-monospace, monospace";
+    g.fillText(label, x, ty);
+    g.fillStyle = TEXT; g.font = "700 52px 'Martian Mono', ui-monospace, monospace";
+    g.fillText(value, x, ty + 58);
+  });
+
+  // Watermark. Says where it came from without shouting over the numbers.
+  g.fillStyle = ACCENT; g.font = "800 34px Manrope, system-ui, sans-serif";
+  g.fillText('Sets', pad, S - pad + 8);
+  g.fillStyle = FAINT; g.font = "500 24px 'JetBrains Mono', ui-monospace, monospace";
+  g.fillText('sets-workout.vercel.app', pad + 82, S - pad + 8);
+
+  return new Promise((resolve) => c.toBlob(resolve, 'image/png'));
+}
+
+async function shareExerciseImage(exId) {
+  const ex = state.exercises.find((e) => e.id === exId);
+  if (!ex) return;
+  const s = exerciseStats(ex, state.setsLog, state.timersLog, null, state.streakOverrides);
+  showToast('Building image…');
+  let blob;
+  try { blob = await buildShareImage(ex, s); } catch (e) { blob = null; }
+  if (!blob) { showToast("Couldn't build the image."); return; }
+
+  const file = new File([blob], `sets-${ex.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.png`, { type: 'image/png' });
+
+  // The share sheet is the better path on a phone: it offers Save Image, and it
+  // is the only route that reaches the photo library at all. Download is the
+  // fallback for desktop and anywhere the sheet refuses files.
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    try { await navigator.share({ files: [file] }); return; } catch (e) { if (e && e.name === 'AbortError') return; }
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = file.name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  showToast('Image saved');
 }
 
 /* ============================= SIDE PANELS ============================= *//* ============================= SIDE PANELS ============================= */
@@ -1438,7 +1597,7 @@ const NAV_ITEMS = [
   { view: 'today', label: 'Today', icon: 'today' },
   { view: 'plan', label: 'Plan', icon: 'plan' },
   { view: 'progress', label: 'Progress', icon: 'progress' },
-  { view: 'guide', label: 'Guide', icon: 'help' },
+  { view: 'guide', label: 'Guide', icon: 'book' },
 ];
 
 function renderNav() {
@@ -2808,6 +2967,9 @@ document.addEventListener('click', async (e) => {
     case 'restore': await setArchived(btn.dataset.id, false); rerender(); break;
     case 'reorder': await reorder(btn.dataset.id, parseInt(btn.dataset.dir, 10)); rerender(); break;
     case 'toggle-archived': state.showArchived = !state.showArchived; renderView(); break;
+    case 'share-exercise':
+      await shareExerciseImage(btn.dataset.id);
+      break;
     case 'toggle-stat-help':
       state.statHelp[btn.dataset.key] = !state.statHelp[btn.dataset.key];
       renderView();
@@ -2842,6 +3004,9 @@ document.addEventListener('click', async (e) => {
     case 'restore': await setArchived(btn.dataset.id, false); rerender(); break;
     case 'reorder': await reorder(btn.dataset.id, parseInt(btn.dataset.dir, 10)); rerender(); break;
     case 'toggle-archived': state.showArchived = !state.showArchived; renderView(); break;
+    case 'share-exercise':
+      await shareExerciseImage(btn.dataset.id);
+      break;
     case 'toggle-stat-help':
       state.statHelp[btn.dataset.key] = !state.statHelp[btn.dataset.key];
       renderView();

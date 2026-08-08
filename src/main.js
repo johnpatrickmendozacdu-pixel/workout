@@ -1233,7 +1233,7 @@ function trajectoryChartHtml(ex) {
   // ever logged. This is a 30-day window, so for anyone with a longer history it
   // would otherwise claim a beginning that is just the left edge of the chart.
   const firstEver = workoutDates(ex.id, state.setsLog)[0];
-  const deltaNote = `${escapeHtml(ex.unit)} ${firstEver === first.date ? 'since you started' : `in ${span} days`}`;
+  const deltaNote = `${escapeHtml(ex.unit)} ${firstEver === first.date ? 'since you first started' : `in ${span} days`}`;
 
   const marks = points.map((p) => `<circle class="traj-dot ${p.hit ? 'hit' : 'short'}" cx="${x(p.dayIndex).toFixed(1)}" cy="${y(p.total).toFixed(1)}" r="4"/>`).join('');
 

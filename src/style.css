@@ -1304,6 +1304,11 @@
   /* The qualifier steps back so the number still carries — it explains the
      figure, it is not competing with it. */
   .traj-delta-note{fill:var(--text-faint); font-size:9px; font-weight:400; letter-spacing:0.04em;}
+  /* Sits between the two dates so the axis reads as one range statement, and the
+     leftmost dot cannot be mistaken for day one. The first day proper has its
+     own tile in the numbers above. Putting this in the key row instead pushed
+     the legend onto a second line. */
+  .traj-window{fill:var(--text-dim);}
   .traj-empty{
     margin:14px 0 4px; padding:12px; border:2px dashed #2A312D;
     color:var(--text-faint); font-size:12.5px; text-align:center;

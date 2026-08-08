@@ -1248,6 +1248,7 @@ function trajectoryChartHtml(ex) {
       ${deltaText ? `<text class="traj-delta ${delta > 0 ? 'up' : 'down'}" x="${padL}" y="10">${deltaText}<tspan class="traj-delta-note" dx="4">${deltaNote}</tspan></text>` : ''}
       <text class="traj-axis" x="${padL}" y="${H - 4}" text-anchor="start">${escapeHtml(formatDisplayDate(points[0].date, { month: 'short', day: 'numeric' }))}</text>
       <text class="traj-axis" x="${W - padR}" y="${H - 4}" text-anchor="end">${escapeHtml(formatDisplayDate(last.date, { month: 'short', day: 'numeric' }))}</text>
+      <text class="traj-axis traj-window" x="${W / 2}" y="${H - 4}" text-anchor="middle">last ${span} days</text>
     </svg>
     <div class="traj-key">
       <span class="traj-key-item"><i class="traj-swatch hit"></i>Target met</span>
@@ -1313,8 +1314,18 @@ function exerciseHistory(ex, s) {
   // twice from two code paths, one of which could not see whether the day was
   // sealed. One tile now, dated, straight from the derived stats.
   const num = (label, value) => `<div><dt>${label}</dt><dd>${value}</dd></div>`;
+
+  // Where you actually began, from the whole log rather than the chart's window.
+  // The chart only reaches back 30 days, so its leftmost dot is the edge of the
+  // view, not the start of the story — this tile is the one that never moves.
+  const firstDate = workoutDates(ex.id, state.setsLog)[0];
+  const firstTotal = firstDate ? calcTotal(getSetsFor(ex.id, firstDate)) : null;
+
   const numbers = `<dl class="ex-numbers">
     ${num('Top set', s.topSet != null ? `<button class="mini-num" data-action="edit-top-set" data-id="${ex.id}">${s.topSet}</button>` : '—')}
+    ${num('First day', firstTotal != null
+      ? `${firstTotal} <i>${escapeHtml(formatDisplayDate(firstDate, { month: 'short', day: 'numeric' }))}</i>`
+      : '—')}
     ${num('Best day', s.maxReps != null
       ? `${s.maxReps}${s.maxRepsDate ? ` <i>${escapeHtml(formatDisplayDate(s.maxRepsDate, { month: 'short', day: 'numeric' }))}</i>` : ''}`
       : '—')}

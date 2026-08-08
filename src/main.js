@@ -1350,7 +1350,7 @@ function exerciseHistory(ex, s) {
       <button class="stat-help-btn ${open ? 'on' : ''}" data-action="toggle-stat-help"
         data-key="${ex.id}:${key}" aria-expanded="${open}" aria-label="What these numbers mean">?</button>
       <dl class="ex-numbers">${filled.join('')}</dl>
-      ${open ? `<p class="stat-help">${help}</p>` : ''}
+      ${open ? `<div class="stat-help">${help}</div>` : ''}
     </div>`;
   };
   const has = (v) => v != null && v !== '' && v !== '—';
@@ -1368,11 +1368,29 @@ function exerciseHistory(ex, s) {
     has(formatTotalDuration(s.totalTime)) && num('Total time', formatTotalDuration(s.totalTime)),
   ];
 
-  // No unit interpolated into these: "every reps since" is what you get when a
-  // plural label is dropped into a singular sentence, and the unit is free text
-  // so there is no safe way to inflect it.
-  const repsHelp = `How much you have done. <b>Top set</b> is your biggest single set, <b>first day</b> where you began, <b>best day</b> your biggest total in one day, and <b>lifetime</b> everything you have logged since.`;
-  const timeHelp = `How long a session takes, from the moment you start to the moment you finish. Sessions you ended early are left out, so these stay comparable.`;
+  // One line per number, in the order they appear above, so the explanation is
+  // read by scanning down rather than by picking sentences apart. A paragraph
+  // made you find the word you wanted inside it; this puts each term where your
+  // eye already is.
+  //
+  // No unit is interpolated: "every reps since" is what you get when a plural
+  // label lands in a singular sentence, and units here are free text, so there
+  // is no safe way to inflect them.
+  const meanings = (rows) => `<dl class="stat-meanings">${rows
+    .map(([term, meaning]) => `<div><dt>${term}</dt><dd>${meaning}</dd></div>`).join('')}</dl>`;
+
+  const repsHelp = meanings([
+    ['Top set', 'your biggest single set'],
+    ['First day', 'where you began'],
+    ['Best day', 'your biggest total in one day'],
+    ['Lifetime', 'everything you have logged'],
+  ]);
+  const timeHelp = meanings([
+    ['Best time', 'your fastest session'],
+    ['Average time', 'how long one usually takes'],
+    ['Total time', 'every session added up'],
+    ['Not counted', 'sessions you ended early'],
+  ]);
 
   const numbers = group(repsTiles, 'reps', repsHelp)
     + (timeTiles.some(Boolean) ? `<div class="ex-numbers-time">${group(timeTiles, 'time', timeHelp)}</div>` : '');
@@ -1483,10 +1501,6 @@ function tipHtml(key, text) {
   return `<p class="tip" data-tip="${key}">${escapeHtml(text)}</p>`;
 }
 
-function helpChipHtml() {
-  return `<button class="help-chip" data-action="open-guide" aria-label="How this works">${ICONS.help}</button>`;
-}
-
 function railButtonsHtml() {
   return `<button class="rail-btn" data-action="toggle-panel" data-panel="stats" aria-label="Performance">${ICONS.progress}</button>`;
 }
@@ -1535,7 +1549,6 @@ function renderTopbar() {
         </div>
         <div class="topbar-right">
           <div class="streak-pill" title="Longest run currently going">${ICONS.flame}${streak}</div>
-          ${helpChipHtml()}
           ${versionChipHtml()}
           ${avatarChipHtml()}
         </div>
@@ -1546,7 +1559,6 @@ function renderTopbar() {
         <div class="topbar-left">${LOGO_MARK}<div class="screen-title">Plan</div></div>
         <div class="topbar-right">
           <button class="add-btn" data-action="open-add-exercise">${ICONS.plus} Add</button>
-          ${helpChipHtml()}
           ${versionChipHtml()}
           ${avatarChipHtml()}
         </div>
@@ -1568,7 +1580,6 @@ function renderTopbar() {
         <div class="topbar-left">${LOGO_MARK}<div class="screen-title">Progress</div></div>
         <div class="topbar-right">
           <button class="icon-btn" data-action="open-data">${ICONS.gear}</button>
-          ${helpChipHtml()}
           ${versionChipHtml()}
           ${avatarChipHtml()}
         </div>
@@ -2065,59 +2076,6 @@ function setBodyScrollLock(locked) {
   }
 }
 
-/**
- * The guide covers the screen you are standing on and nothing else — you never
- * read about Plan while looking at Progress. Entries that don't apply to your
- * data are dropped, so it shrinks as well as grows with the app.
- */
-function modalGuide() {
-  const has = state.exercises.filter((e) => e.active && !e.archived);
-  const anyTarget = has.some((e) => getEffectiveTarget(e, todayISO()));
-  const anyHistory = Object.keys(state.setsLog).length > 0;
-
-  const byView = {
-    today: [
-      has.length && ['Log reps', 'Tap the exercise, then a number.'],
-      has.length && ['Take reps off', 'Flip the lever to Subtract.'],
-      has.length && ['The clock', 'Starts on your first rep. Pause any time.'],
-      anyTarget && ['Hit the target', 'Take the win, or Keep going.'],
-      has.length && ['End early', 'Give up keeps your reps and stops the clock.'],
-      anyTarget && ['Once it is done', 'Hitting the target locks the card. Train again to reopen it.'],
-      anyTarget && ['Rest a day', 'Open the exercise, Take a break. Streak holds.'],
-      !has.length && ['Start', 'Add an exercise.'],
-      ['Daily weigh-in', 'A health habit, not an exercise. It never touches a streak, and it disappears once today is logged.'],
-    ],
-    plan: [
-      ['Edit', 'Tap the exercise.'],
-      ['Schedule', 'Every day, or pick weekdays. A day off is never a miss.'],
-      ['One-time', 'Add → One-time makes an unscheduled workout: name and a unit, no target. Log into it on Today, then Complete it.'],
-      has.length && ['Retire', 'Archive keeps history. Delete removes it.'],
-    ],
-    progress: [
-      ['The strip', 'Filled = hit, 🌙 = rest, hollow = missed, faint = day off.'],
-      ['Open a card', 'Its numbers, best day and recent days.'],
-      anyHistory && ['Fix a number', 'Tap a total or target inside a card.'],
-      ['Top set vs Max', 'Best single set, versus biggest day.'],
-      (state.profile && (state.profile.weightLog || []).length) && ['Weight tracking', 'Log daily. The chart plots each week’s average weight, so you see the trend, not the daily noise.'],
-    ],
-  };
-
-  const title = { today: 'Today', plan: 'Plan', progress: 'Progress' }[state.view] || 'Today';
-  const items = (byView[state.view] || byView.today).filter(Boolean);
-
-  return `<div class="modal-backdrop" data-action="backdrop">
-    <div class="modal-sheet" data-stop>
-      <div class="sheet-handle"></div>
-      <div class="sheet-head">
-        <h2>${title}</h2>
-        <button class="sheet-close" data-action="close-modal">${ICONS.close}</button>
-      </div>
-      <dl class="guide-list">${items.map(([what, how]) => `<div><dt>${escapeHtml(what)}</dt><dd>${how}</dd></div>`).join('')}</dl>
-      <div class="hint">Switch screens for that screen's guide.</div>
-    </div>
-  </div>`;
-}
-
 /** Streaks belong to an exercise, so a break has to name one. Same card as
  *  Progress, with a rest toggle — one object, two states. */
 function modalConfirmBreak() {
@@ -2155,7 +2113,6 @@ function renderModal() {
   if (m.type === 'complete') root.innerHTML = modalComplete();
   else if (m.type === 'giveup') root.innerHTML = modalGiveUp();
   else if (m.type === 'confirmBreak') root.innerHTML = modalConfirmBreak();
-  else if (m.type === 'guide') root.innerHTML = modalGuide();
   else if (m.type === 'weighin') root.innerHTML = modalWeighIn();
   else if (m.type === 'logger') root.innerHTML = modalLogger(m.exId);
   else if (m.type === 'exerciseForm') root.innerHTML = modalExerciseForm(m.exId);
@@ -2937,10 +2894,6 @@ document.addEventListener('click', async (e) => {
       showToast('Weight logged');
       break;
     }
-    case 'open-guide':
-      state.modal = { type: 'guide' };
-      renderModal();
-      break;
     case 'edit-top-set':
       state.editingTopSet = btn.dataset.id;
       renderPanels();

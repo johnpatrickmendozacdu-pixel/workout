@@ -968,10 +968,17 @@
   }
   .stat-help-btn.on{color:var(--accent);}
   .stat-help{
-    margin:2px 0 14px; font-size:12.5px; line-height:1.5; color:var(--text-dim);
-    border-left:2px solid var(--border-strong); padding-left:10px;
+    margin:2px 0 14px; border-left:2px solid var(--border-strong); padding-left:10px;
   }
-  .stat-help b{color:var(--text); font-weight:700;}
+  /* Term left, meaning right, one per line and in the same order as the numbers
+     above — so it is read by scanning down, not by parsing a paragraph. */
+  .stat-meanings{margin:0; display:flex; flex-direction:column; gap:5px;}
+  .stat-meanings > div{display:flex; gap:8px; align-items:baseline;}
+  .stat-meanings dt{
+    flex:0 0 88px; font-family:var(--font-mono); font-size:10px;
+    letter-spacing:0.08em; text-transform:uppercase; color:var(--text-dim);
+  }
+  .stat-meanings dd{margin:0; font-size:12.5px; line-height:1.4; color:var(--text-faint);}
 
   .ex-numbers-time{border-top:1px solid var(--border); padding-top:14px; margin-top:2px;}
   .ex-numbers-time .ex-numbers{margin-bottom:14px;}

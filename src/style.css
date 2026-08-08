@@ -957,6 +957,22 @@
   /* The time figures are a second question, so they get their own group behind a
      hairline rather than continuing the same list. Quieter, because how long is
      rarely what you opened the card to find out. */
+  /* The "?" sits in the corner the numbers leave empty, so explaining a group
+     costs no row of its own and nothing moves when it opens. */
+  .stat-group{position:relative;}
+  .stat-help-btn{
+    position:absolute; top:-8px; right:-6px; width:32px; height:32px;
+    display:flex; align-items:center; justify-content:center;
+    background:none; border:0; color:var(--text-faint);
+    font-family:var(--font-mono); font-size:13px; font-weight:700; line-height:1;
+  }
+  .stat-help-btn.on{color:var(--accent);}
+  .stat-help{
+    margin:2px 0 14px; font-size:12.5px; line-height:1.5; color:var(--text-dim);
+    border-left:2px solid var(--border-strong); padding-left:10px;
+  }
+  .stat-help b{color:var(--text); font-weight:700;}
+
   .ex-numbers-time{border-top:1px solid var(--border); padding-top:14px; margin-top:2px;}
   .ex-numbers-time .ex-numbers{margin-bottom:14px;}
   .ex-numbers-time dd{font-size:14px; color:var(--text-dim);}

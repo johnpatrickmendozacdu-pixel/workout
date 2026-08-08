@@ -89,6 +89,7 @@ const state = {
   editingDayTotal: null,
   openExercise: null,
   openGroups: {},   // { [`${view}:${key}`]: true } — which schedule groups are expanded
+  statHelp: {},     // { [`${exId}:${group}`]: true } — which stat groups are explaining themselves
   dayLimits: {},
   repMode: 'add',   // 'add' | 'sub' — the pad lever
   version: { local: typeof __BUILD_ID__ === 'string' ? __BUILD_ID__ : 'dev', status: 'unknown' },
@@ -1336,9 +1337,21 @@ function exerciseHistory(ex, s) {
    * starts the clock loses the entire second group rather than reading three
    * dashes.
    */
-  const group = (tiles) => {
+  /**
+   * Each group carries one "?" rather than a caption per number. Seven captions
+   * would say more than the numbers do; one, folded away until asked, says the
+   * same thing and costs nothing while it is shut.
+   */
+  const group = (tiles, key, help) => {
     const filled = tiles.filter(Boolean);
-    return filled.length ? `<dl class="ex-numbers">${filled.join('')}</dl>` : '';
+    if (!filled.length) return '';
+    const open = !!state.statHelp[`${ex.id}:${key}`];
+    return `<div class="stat-group">
+      <button class="stat-help-btn ${open ? 'on' : ''}" data-action="toggle-stat-help"
+        data-key="${ex.id}:${key}" aria-expanded="${open}" aria-label="What these numbers mean">?</button>
+      <dl class="ex-numbers">${filled.join('')}</dl>
+      ${open ? `<p class="stat-help">${help}</p>` : ''}
+    </div>`;
   };
   const has = (v) => v != null && v !== '' && v !== '—';
 
@@ -1351,12 +1364,18 @@ function exerciseHistory(ex, s) {
   ];
   const timeTiles = [
     has(formatDuration(s.bestTime)) && num('Best time', formatDuration(s.bestTime)),
-    has(formatDuration(s.avgTime)) && num('Average', formatDuration(s.avgTime)),
+    has(formatDuration(s.avgTime)) && num('Average time', formatDuration(s.avgTime)),
     has(formatTotalDuration(s.totalTime)) && num('Total time', formatTotalDuration(s.totalTime)),
   ];
 
-  const numbers = group(repsTiles) + (timeTiles.some(Boolean)
-    ? `<div class="ex-numbers-time">${group(timeTiles)}</div>` : '');
+  // No unit interpolated into these: "every reps since" is what you get when a
+  // plural label is dropped into a singular sentence, and the unit is free text
+  // so there is no safe way to inflect it.
+  const repsHelp = `How much you have done. <b>Top set</b> is your biggest single set, <b>first day</b> where you began, <b>best day</b> your biggest total in one day, and <b>lifetime</b> everything you have logged since.`;
+  const timeHelp = `How long a session takes, from the moment you start to the moment you finish. Sessions you ended early are left out, so these stay comparable.`;
+
+  const numbers = group(repsTiles, 'reps', repsHelp)
+    + (timeTiles.some(Boolean) ? `<div class="ex-numbers-time">${group(timeTiles, 'time', timeHelp)}</div>` : '');
 
   const chart = trajectoryChartHtml(ex);
 
@@ -2770,6 +2789,10 @@ document.addEventListener('click', async (e) => {
     case 'restore': await setArchived(btn.dataset.id, false); rerender(); break;
     case 'reorder': await reorder(btn.dataset.id, parseInt(btn.dataset.dir, 10)); rerender(); break;
     case 'toggle-archived': state.showArchived = !state.showArchived; renderView(); break;
+    case 'toggle-stat-help':
+      state.statHelp[btn.dataset.key] = !state.statHelp[btn.dataset.key];
+      renderView();
+      break;
     case 'toggle-group': {
       // Flip whatever is actually on screen — the rendered state carries the
       // default (a lone group starts open), so the first tap never no-ops.
@@ -2796,6 +2819,10 @@ document.addEventListener('click', async (e) => {
     case 'restore': await setArchived(btn.dataset.id, false); rerender(); break;
     case 'reorder': await reorder(btn.dataset.id, parseInt(btn.dataset.dir, 10)); rerender(); break;
     case 'toggle-archived': state.showArchived = !state.showArchived; renderView(); break;
+    case 'toggle-stat-help':
+      state.statHelp[btn.dataset.key] = !state.statHelp[btn.dataset.key];
+      renderView();
+      break;
     case 'toggle-group': {
       // Flip whatever is actually on screen — the rendered state carries the
       // default (a lone group starts open), so the first tap never no-ops.

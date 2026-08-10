@@ -212,6 +212,37 @@
   .logger-unit{text-align:center; color:var(--text-dim); font-size:13px; margin-bottom:6px;}
   .logger-tally{display:flex; justify-content:center; align-items:center; min-height:22px; margin-bottom:18px; flex-wrap:wrap; gap:2px;}
 
+  /* ---------- exact set ----------
+     Directly under the total, because that is where the eye is when the number
+     you just did is not on a key. It reads as a way IN — accent hairline, its
+     own line of explanation — rather than as another quiet control, since the
+     one thing it must never be is missed. */
+  .exact-set{
+    display:block; width:100%; text-align:left; margin:0 0 14px; padding:9px 14px; min-height:52px;
+    background:rgba(62,224,127,0.05); border:1px solid rgba(62,224,127,0.35); border-radius:var(--radius-md);
+    transition:background .16s ease, transform .09s ease;
+  }
+  .exact-set:active{background:rgba(62,224,127,0.12); transform:scale(0.985);}
+  .exact-set span{display:block; font-size:14px; font-weight:700; color:var(--accent);}
+  .exact-set em{display:block; font-style:normal; font-size:11.5px; color:var(--text-faint); margin-top:2px;}
+  .exact-set.open{display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:10px 12px;}
+  .exact-set.open input{
+    flex:1 1 90px; min-width:0; min-height:44px; padding:0 12px;
+    background:var(--bg-card); border:1px solid var(--border-strong); border-radius:10px;
+    color:var(--text); font-family:var(--font-mono); font-size:20px; font-weight:700;
+  }
+  .exact-set.open input:focus{border-color:var(--accent); outline:none;}
+  .exact-go{
+    flex:0 0 auto; min-height:44px; padding:0 16px; border:0; border-radius:10px;
+    background:var(--accent); color:var(--accent-ink); font-size:14px; font-weight:700;
+  }
+  .exact-go:active{transform:scale(0.95);}
+  .exact-set.open em{flex:1 0 100%; font-style:normal; font-size:11.5px; color:var(--text-faint);}
+
+  /* The clock's own way in, for an exercise with no reps to start it. */
+  .timer-btn.start{background:var(--accent); color:var(--accent-ink); border-color:var(--accent); padding:8px 26px;}
+  .today-go{display:inline-flex; align-items:center; justify-content:center; color:var(--accent);}
+
   /* ---------- workout timer ---------- */
   .timer-block{
     background:var(--bg-elevated); border:1px solid var(--border); border-radius:var(--radius-md);
@@ -1076,6 +1107,7 @@
     font-family:var(--font-mono); font-size:12px; letter-spacing:0.06em; text-transform:uppercase;
   }
   .share-btn:active{color:var(--accent); border-color:var(--accent);}
+  .logger-share{margin-top:12px;}
 
   .exday-more{
     width:100%; min-height:44px; margin-top:4px; background:none; border:none;
@@ -1467,6 +1499,10 @@
 .wunit{min-width:44px;min-height:44px;background:transparent;border:0;color:var(--text-dim);
   font-family:var(--font-mono);font-size:12px;text-transform:uppercase;}
 .wunit.on{background:var(--accent);color:var(--accent-ink);}
+/* Same shape as the dumbbell weight row, because it is the same idea: a number
+   plus the unit it is typed in. */
+.time-target{display:flex;gap:8px;align-items:stretch;margin-top:8px;}
+.time-target #f-target{flex:1;min-height:44px;}
 .weight-tag{font-family:var(--font-mono);font-size:.72em;color:var(--text-faint);font-weight:400;letter-spacing:.02em;}
 
 /* ---- Schedule groups (Plan + Progress) ---- */

@@ -28,6 +28,9 @@ import {
   removeExercise as removeExercisePure,
   purgeExerciseSets as purgeExerciseSetsPure,
   setDayTotal as setDayTotalPure,
+  isTimeMode,
+  minutesFromMs,
+  bankTimeSession as bankTimeSessionPure,
   getTimer as getTimerPure,
   timerPhase,
   sessionSealed,
@@ -58,7 +61,7 @@ import {
 import { GUIDE_SECTIONS, GUIDE_INTRO } from './guide.js';
 import { CATEGORIES, categoryOf, categoryLabel, categoryIconUrl } from './categories.js';
 import * as gsync from './sync/googleSync.js';
-import { allStats, exerciseStats, recentDayStates, workoutDates, streakTier, dayHistory, trajectorySeries, formatDuration, formatTotalDuration, formatCount, formatClock, groupBySchedule, comboTimes } from './domain/stats.js';
+import { allStats, exerciseStats, recentDayStates, workoutDates, streakTier, dayHistory, trajectorySeries, formatDuration, formatTotalDuration, formatMinutes, formatCount, formatClock, groupBySchedule, comboTimes } from './domain/stats.js';
 
 // Every number is on screen — no hunting, no typing. One tap applies it in
 // whichever direction the lever is set to.
@@ -83,7 +86,6 @@ const state = {
   expandedDay: null,
   showArchived: false,
   editingPlanTarget: null,
-  editingTodayTotal: null,
   editingDayTarget: null,
   editingTopSet: null,
   editingDayTotal: null,
@@ -717,7 +719,7 @@ async function takeTheWinHandler(exId) {
   const ex = state.exercises.find((e) => e.id === exId);
   state.timersLog = finishTimerPure(state.timersLog, d, exId, Date.now(), 'completed');
   await persistTimers();
-  const t = getTimerPure(state.timersLog, d, exId);
+  await bankTime(exId);
   closeModal();
   rerender();
 
@@ -769,26 +771,65 @@ async function decrementHandler(exId, amount) {
 /**
  * Correcting the record is not the same as working out. The seal stops you
  * *training* an exercise you already finished; it must not stop you fixing a
- * number you got wrong, which is what the Progress day list is for. So this
- * takes no seal guard — only the sealed card's own inline edit does.
- *
- * Consistency comes for free: totals are stored, everything else is derived,
- * so correcting a total below its target unseals the day and moves it back to
- * To do on its own.
+ * number you got wrong, which is what the Progress day list is for — the only
+ * place a whole day's total can still be typed. Today has no such field: there,
+ * a number you did is a SET, and Exact set is how you enter one.
  */
 async function setTotalHandler(exId, dateStr, rawValue) {
   const parsed = rawValue === '' || rawValue == null ? null : parseFloat(rawValue);
   const value = (parsed == null || isNaN(parsed) || parsed <= 0) ? null : Math.round(parsed * 100) / 100;
   state.setsLog = setDayTotalPure(state.setsLog, dateStr, exId, value);
   await persistSets();
-  state.editingTodayTotal = null;
-  if (state.modal && state.modal.type === 'logger') state.modal.editingTotal = false;
   renderView();
   if (state.modal && state.modal.type === 'logger') renderModal();
 }
+
+/**
+ * One set of exactly what was typed — the fix for a real 28 arriving as 20 + 8.
+ * It goes through the same `logSet` as every pad key, so the PR bump, the
+ * target crossing and the undo toast all behave identically; the only thing
+ * that is new is where the number came from.
+ */
+async function exactSetHandler(exId, rawValue) {
+  const parsed = parseFloat(rawValue);
+  if (!(parsed > 0)) { showToast('Type a number first.'); return; }
+  const value = Math.round(parsed * 100) / 100;
+  if (state.modal) state.modal.exactOpen = false;
+  if (state.repMode === 'sub') await decrementHandler(exId, value);
+  else await logSet(exId, value);
+  if (state.modal && state.modal.type === 'logger') renderModal();
+}
+/**
+ * A time exercise's total IS its clock, so every transition that stops the
+ * clock writes the minutes into the day's log — pause included. Stopping for a
+ * phone call and never coming back must not lose the work you already did.
+ *
+ * One entry, overwritten each time (`bankTimeSession` in the domain), because a
+ * session is one unbroken effort and the clock only ever grows.
+ */
+async function bankTime(exId) {
+  const ex = state.exercises.find((e) => e.id === exId);
+  if (!isTimeMode(ex)) return;
+  const d = todayISO();
+  const t = getTimerPure(state.timersLog, d, exId);
+  state.setsLog = bankTimeSessionPure(state.setsLog, d, exId, minutesFromMs(timerElapsedMs(t, Date.now())));
+  await persistSets();
+}
+
+/** The one button a time exercise needs: there are no reps to start its clock. */
+async function startTimeSessionHandler(exId) {
+  if (sealedToday(exId)) return;
+  state.timersLog = startTimerPure(state.timersLog, todayISO(), exId, Date.now());
+  await persistTimers();
+  renderModal();
+  renderView();
+  ensureGlobalTick();
+}
+
 async function pauseTimerHandler(exId) {
   state.timersLog = pauseTimerPure(state.timersLog, todayISO(), exId, Date.now());
   await persistTimers();
+  await bankTime(exId);
   renderModal();
   renderView();
 }
@@ -802,6 +843,9 @@ async function resumeTimerHandler(exId) {
 async function giveUpTimerHandler(exId) {
   state.timersLog = finishTimerPure(state.timersLog, todayISO(), exId, Date.now(), 'gaveup');
   await persistTimers();
+  // Ending early still banks what the clock actually did — the minutes are the
+  // work; only the *time stat* is forfeited, exactly as it is for reps.
+  await bankTime(exId);
   // Confirmed from the give-up sheet, so land back on the card the sheet came
   // from — now reading "Ended early" — rather than re-rendering the question.
   if (state.modal && state.modal.type === 'giveup') state.modal = { type: 'logger', exId };
@@ -834,6 +878,8 @@ async function reopenSessionHandler(exId) {
 async function resetTimerHandler(exId) {
   state.timersLog = resetTimerPure(state.timersLog, todayISO(), exId);
   await persistTimers();
+  // On a time exercise the clock is the record, so clearing it clears the day.
+  await bankTime(exId);
   renderModal();
   renderView();
 }
@@ -867,6 +913,7 @@ async function addExercise(data) {
     // reads it, and every view follows from that.
     oneTimeDate: data.oneTimeDate || null,
     unit: (data.unit || 'reps').trim(),
+    mode: data.mode === 'time' ? 'time' : 'count',
     active: true,
     archived: false,
     order: maxOrder + 1,
@@ -918,6 +965,7 @@ async function updateExercise(id, data) {
   ex.name = data.name.trim();
   if (data.category !== undefined) ex.category = data.category;
   ex.unit = (data.unit || 'reps').trim();
+  if (data.mode !== undefined) ex.mode = data.mode === 'time' ? 'time' : 'count';
   applyScheduleChange(ex, data.schedule || 'daily');
   if (data.equipment !== undefined) ex.equipment = data.equipment === 'dumbbell' ? 'dumbbell' : 'bodyweight';
   if (data.weightUnit !== undefined) ex.weightUnit = data.weightUnit === 'lb' ? 'lb' : 'kg';
@@ -1358,6 +1406,17 @@ function exerciseHistory(ex, s) {
   };
   const has = (v) => v != null && v !== '' && v !== '—';
 
+  // A time exercise answers the same four questions in the same order, in its
+  // own currency — and drops "fastest session", which is a race's idea of good,
+  // not a 30-minute session's.
+  const timeMode = isTimeMode(ex);
+  const timeExTiles = [
+    has(s.topSet) && num('Longest session', formatMinutes(s.topSet)),
+    firstTotal != null && num('First day', `${formatMinutes(firstTotal)} <i>${escapeHtml(formatDisplayDate(firstDate, { month: 'short', day: 'numeric' }))}</i>`),
+    has(formatDuration(s.avgTime)) && num('Average session', formatDuration(s.avgTime)),
+    s.totalReps > 0 && num('Lifetime', `${formatMinutes(s.totalReps)}${s.since ? ` <i>since ${escapeHtml(s.since)}</i>` : ''}`),
+  ];
+
   const repsTiles = [
     has(s.topSet) && num('Top set', `<button class="mini-num" data-action="edit-top-set" data-id="${ex.id}">${s.topSet}</button>`),
     firstTotal != null && num('First day', `${firstTotal} <i>${escapeHtml(formatDisplayDate(firstDate, { month: 'short', day: 'numeric' }))}</i>`),
@@ -1395,8 +1454,18 @@ function exerciseHistory(ex, s) {
     ['Not counted', 'sessions you ended early'],
   ]);
 
-  const numbers = group(repsTiles, 'reps', repsHelp)
-    + (timeTiles.some(Boolean) ? `<div class="ex-numbers-time">${group(timeTiles, 'time', timeHelp)}</div>` : '');
+  const timeExHelp = meanings([
+    ['Longest session', 'your longest unbroken session'],
+    ['First day', 'where you began'],
+    ['Average session', 'how long one usually lasts'],
+    ['Lifetime', 'every minute you have logged'],
+    ['Not counted', 'sessions you ended early'],
+  ]);
+
+  const numbers = timeMode
+    ? group(timeExTiles, 'time-ex', timeExHelp)
+    : group(repsTiles, 'reps', repsHelp)
+      + (timeTiles.some(Boolean) ? `<div class="ex-numbers-time">${group(timeTiles, 'time', timeHelp)}</div>` : '');
 
   const chart = trajectoryChartHtml(ex);
 
@@ -1574,18 +1643,29 @@ async function buildShareImage(ex, s) {
   g.strokeStyle = '#2A312D'; g.lineWidth = 2;
   g.beginPath(); g.moveTo(pad, 700); g.lineTo(S - pad, 700); g.stroke();
 
-  drawRow([
-    ['TOP SET', s.topSet != null ? formatCount(s.topSet) : null],
-    ['FIRST DAY', firstTotal != null ? formatCount(firstTotal) : null],
-    ['BEST DAY', s.maxReps != null ? formatCount(s.maxReps) : null],
-    ['LIFETIME', s.totalReps > 0 ? formatCount(s.totalReps) : null],
-  ], 748);
+  // A time exercise's figures are the same four questions in minutes — the same
+  // set the Progress card shows, so the picture and the screen agree.
+  if (isTimeMode(ex)) {
+    drawRow([
+      ['LONGEST', s.topSet != null ? formatMinutes(s.topSet) : null],
+      ['FIRST DAY', firstTotal != null ? formatMinutes(firstTotal) : null],
+      ['AVERAGE', formatDuration(s.avgTime)],
+      ['LIFETIME', s.totalReps > 0 ? formatMinutes(s.totalReps) : null],
+    ], 748);
+  } else {
+    drawRow([
+      ['TOP SET', s.topSet != null ? formatCount(s.topSet) : null],
+      ['FIRST DAY', firstTotal != null ? formatCount(firstTotal) : null],
+      ['BEST DAY', s.maxReps != null ? formatCount(s.maxReps) : null],
+      ['LIFETIME', s.totalReps > 0 ? formatCount(s.totalReps) : null],
+    ], 748);
 
-  drawRow([
-    ['BEST TIME', formatDuration(s.bestTime)],
-    ['AVERAGE TIME', formatDuration(s.avgTime)],
-    ['TOTAL TIME', formatTotalDuration(s.totalTime)],
-  ], 874);
+    drawRow([
+      ['BEST TIME', formatDuration(s.bestTime)],
+      ['AVERAGE TIME', formatDuration(s.avgTime)],
+      ['TOTAL TIME', formatTotalDuration(s.totalTime)],
+    ], 874);
+  }
 
   // Watermark. Says where it came from without shouting over the numbers.
   g.fillStyle = ACCENT; g.font = "800 34px Manrope, system-ui, sans-serif";
@@ -1596,20 +1676,112 @@ async function buildShareImage(ex, s) {
   return new Promise((resolve) => c.toBlob(resolve, 'image/png'));
 }
 
-async function shareExerciseImage(exId) {
-  const ex = state.exercises.find((e) => e.id === exId);
-  if (!ex) return;
-  const s = exerciseStats(ex, state.setsLog, state.timersLog, null, state.streakOverrides);
-  showToast('Building image…');
-  let blob;
-  try { blob = await buildShareImage(ex, s); } catch (e) { blob = null; }
+/**
+ * The same card for one day instead of one lifetime.
+ *
+ * Everything about the frame is shared with the exercise card — same size,
+ * same ink, same watermark, same share-sheet route — because two cards that
+ * differ only in their numbers should not differ in anything else. What
+ * changes is what it is proud of: today's session, while it is still today.
+ */
+async function buildSessionImage(ex, session) {
+  const S = SHARE_SIZE;
+  const c = document.createElement('canvas');
+  c.width = S; c.height = S;
+  const g = c.getContext('2d');
+  if (document.fonts && document.fonts.ready) { try { await document.fonts.ready; } catch (e) { /* draw anyway */ } }
+
+  const INK = '#0A0C0B', TEXT = '#EEF2EF', DIM = '#9AA5A0', FAINT = '#6E7975', ACCENT = '#3EE07F';
+  g.fillStyle = INK; g.fillRect(0, 0, S, S);
+
+  const pad = 76;
+  const icon = await shareLoadIcon(ex);
+  if (icon) g.drawImage(icon, pad, pad, 104, 104);
+
+  g.textBaseline = 'alphabetic';
+  g.fillStyle = TEXT; g.font = "700 44px Manrope, system-ui, sans-serif";
+  const nameX = icon ? pad + 132 : pad;
+  let name = ex.name;
+  while (g.measureText(name).width > S - nameX - pad && name.length > 4) name = name.slice(0, -1);
+  if (name !== ex.name) name += '…';
+  g.fillText(name, nameX, pad + 52);
+
+  const cat = categoryOf(ex);
+  g.fillStyle = FAINT; g.font = "600 24px 'JetBrains Mono', ui-monospace, monospace";
+  g.fillText([cat ? cat.label.toUpperCase() : null, session.dateLabel.toUpperCase()].filter(Boolean).join(' · '), nameX, pad + 92);
+
+  // The day's number is the headline here, the way the streak is on the other
+  // card — with its target beside it, so the size of the thing is legible.
+  // Sized to fill the square: the day's number is the whole point, so it takes
+  // the room the lifetime card spends on a chart.
+  const big = session.timeMode ? formatMinutes(session.total) : formatCount(session.total);
+  const targetStr = session.target ? `/ ${session.timeMode ? formatMinutes(session.target) : session.target}` : '';
+  // "1h 30m" is a much wider headline than "30", so the size is fitted rather
+  // than fixed — the number and its target have to sit on one line inside the
+  // margins whatever the exercise measures.
+  g.font = "600 44px Manrope, system-ui, sans-serif";
+  const targetW = targetStr ? g.measureText(targetStr).width + 26 : 0;
+  let bigSize = 168;
+  g.font = `700 ${bigSize}px 'Martian Mono', ui-monospace, monospace`;
+  while (g.measureText(big).width + targetW > S - pad * 2 && bigSize > 56) {
+    bigSize -= 6;
+    g.font = `700 ${bigSize}px 'Martian Mono', ui-monospace, monospace`;
+  }
+  g.fillStyle = ACCENT;
+  g.fillText(big, pad, 500);
+  const bigW = g.measureText(big).width;
+  if (targetStr) {
+    g.fillStyle = DIM; g.font = "600 44px Manrope, system-ui, sans-serif";
+    g.fillText(targetStr, pad + bigW + 26, 500);
+  }
+  g.fillStyle = session.short ? DIM : ACCENT;
+  g.font = "700 34px Manrope, system-ui, sans-serif";
+  g.fillText(session.headline, pad, 576);
+
+  // The meter: one bar, the same proportion the card on Today was showing.
+  const barY = 632, barW = S - pad * 2, barH = 20;
+  g.fillStyle = '#1A201C'; g.fillRect(pad, barY, barW, barH);
+  g.fillStyle = session.short ? '#6E7975' : ACCENT;
+  g.fillRect(pad, barY, Math.max(6, Math.round(barW * session.pct)), barH);
+
+  g.strokeStyle = '#2A312D'; g.lineWidth = 2;
+  g.beginPath(); g.moveTo(pad, 780); g.lineTo(S - pad, 780); g.stroke();
+
+  // Today's figures only — the target is already beside the big number, so
+  // repeating it here would be the same fact twice.
+  const tiles = [
+    ['TIME', session.elapsed],
+    session.timeMode ? null : ['SETS', session.sets ? String(session.sets) : null],
+    ['STREAK', session.streak ? `${session.streak}d` : null],
+  ].filter(Boolean).filter(([, v]) => v != null && v !== '' && v !== '—');
+  const colW = (S - pad * 2) / (tiles.length || 1);
+  tiles.forEach(([label, value], i) => {
+    const x = pad + i * colW;
+    g.fillStyle = FAINT; g.font = "600 22px 'JetBrains Mono', ui-monospace, monospace";
+    g.fillText(label, x, 846);
+    g.fillStyle = TEXT;
+    let size = 56;
+    g.font = `700 ${size}px 'Martian Mono', ui-monospace, monospace`;
+    while (g.measureText(value).width > colW - 16 && size > 26) {
+      size -= 2;
+      g.font = `700 ${size}px 'Martian Mono', ui-monospace, monospace`;
+    }
+    g.fillText(value, x, 912);
+  });
+
+  g.fillStyle = ACCENT; g.font = "800 34px Manrope, system-ui, sans-serif";
+  g.fillText('Sets', pad, S - pad + 8);
+  g.fillStyle = FAINT; g.font = "500 24px 'JetBrains Mono', ui-monospace, monospace";
+  g.fillText('sets-workout.vercel.app', pad + 82, S - pad + 8);
+
+  return new Promise((resolve) => c.toBlob(resolve, 'image/png'));
+}
+
+/** Canvas → blob → share sheet, with a download fallback. Shared by both cards
+ *  so there is one answer to "where does the picture go". */
+async function offerImage(blob, ex, suffix) {
   if (!blob) { showToast("Couldn't build the image."); return; }
-
-  const file = new File([blob], `sets-${ex.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.png`, { type: 'image/png' });
-
-  // The share sheet is the better path on a phone: it offers Save Image, and it
-  // is the only route that reaches the photo library at all. Download is the
-  // fallback for desktop and anywhere the sheet refuses files.
+  const file = new File([blob], `sets-${ex.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}${suffix}.png`, { type: 'image/png' });
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
     try { await navigator.share({ files: [file] }); return; } catch (e) { if (e && e.name === 'AbortError') return; }
   }
@@ -1619,6 +1791,49 @@ async function shareExerciseImage(exId) {
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
   showToast('Image saved');
+}
+
+/** Today's session, from the finished card it was tapped on. */
+async function shareSessionImage(exId) {
+  const ex = state.exercises.find((e) => e.id === exId);
+  if (!ex) return;
+  const d = todayISO();
+  const arr = getSetsFor(exId, d);
+  const total = calcTotal(arr);
+  const target = getEffectiveTarget(ex, d);
+  const timer = getTimerPure(state.timersLog, d, exId);
+  const s = exerciseStats(ex, state.setsLog, state.timersLog, null, state.streakOverrides);
+  const short = timerPhase(timer) === 'gaveup' && target > 0 && total < target;
+  showToast('Building image…');
+  let blob;
+  try {
+    blob = await buildSessionImage(ex, {
+      total, target,
+      timeMode: isTimeMode(ex),
+      sets: arr.length,
+      streak: s.currentStreak,
+      elapsed: formatDuration(timerElapsedMs(timer, Date.now())),
+      pct: target > 0 ? Math.min(1, total / target) : 1,
+      short,
+      dateLabel: formatDisplayDate(d, { weekday: 'short', day: 'numeric', month: 'short' }),
+      headline: short ? 'Ended early — it still counts'
+        : (target > 0 ? 'Target met' : 'Session complete'),
+    });
+  } catch (e) { blob = null; }
+  await offerImage(blob, ex, '-today');
+}
+
+async function shareExerciseImage(exId) {
+  const ex = state.exercises.find((e) => e.id === exId);
+  if (!ex) return;
+  const s = exerciseStats(ex, state.setsLog, state.timersLog, null, state.streakOverrides);
+  showToast('Building image…');
+  let blob;
+  try { blob = await buildShareImage(ex, s); } catch (e) { blob = null; }
+  // The share sheet is the better path on a phone: it offers Save Image, and it
+  // is the only route that reaches the photo library at all. Download is the
+  // fallback for desktop and anywhere the sheet refuses files.
+  await offerImage(blob, ex, '');
 }
 
 /* ============================= SIDE PANELS ============================= *//* ============================= SIDE PANELS ============================= */
@@ -1657,6 +1872,12 @@ function render() {
   renderBanner();
   renderView();
   renderPanels();
+  // Boot is a render like any other, and it can land on a session that is
+  // still running — the clock is derived from timestamps, so it survives a
+  // reload even though the interval driving it does not. Without this the
+  // clock sat frozen until something else happened to open a modal, and a
+  // timed exercise would never notice it had reached its target.
+  ensureGlobalTick();
 }
 function rerender() {
   renderPanels();
@@ -1844,21 +2065,27 @@ function modalGuide() {
   const anyTarget = has.some((e) => getEffectiveTarget(e, todayISO()));
   const anyHistory = Object.keys(state.setsLog).length > 0;
 
+  const anyTimed = has.some((e) => isTimeMode(e));
+
   const byView = {
     today: [
       has.length && ['Log reps', 'Tap the exercise, then a number.'],
+      has.length && ['A number the pad hasn’t got', 'Exact set, under the total. Logged as one set.'],
       has.length && ['Take reps off', 'Flip the lever to Subtract.'],
+      anyTimed && ['Timed exercises', 'No pad. Tap Start, and the clock is the work.'],
       has.length && ['The clock', 'Starts on your first rep. Pause any time.'],
       anyTarget && ['Hit the target', 'Take the win, or Keep going.'],
       has.length && ['End early', 'Give up keeps your reps and stops the clock.'],
       anyTarget && ['Once it is done', 'Hitting the target locks the card. Train again to reopen it.'],
       anyTarget && ['Rest a day', 'Open the exercise, Take a break. Streak holds.'],
+      has.length && ['Share a session', 'Once it is finished: Save image.'],
       !has.length && ['Start', 'Add an exercise.'],
       ['Daily weigh-in', 'A health habit, not an exercise. It never touches a streak, and it disappears once today is logged.'],
     ],
     plan: [
       ['Edit', 'Tap the exercise.'],
       ['Schedule', 'Every day, or pick weekdays. A day off is never a miss.'],
+      ['Count or Time', 'Count gives it a keypad. Time gives it a clock and a target in minutes.'],
       ['One-time', 'Add → One-time makes an unscheduled workout: name and a unit, no target. Log into it on Today, then Complete it.'],
       has.length && ['Retire', 'Archive keeps history. Delete removes it.'],
     ],
@@ -1867,6 +2094,7 @@ function modalGuide() {
       ['Open a card', 'Its numbers, best day and recent days.'],
       anyHistory && ['Fix a number', 'Tap a total or target inside a card.'],
       ['Top set vs Max', 'Best single set, versus biggest day.'],
+      anyTimed && ['Timed exercises', 'Longest and average session, in place of top set.'],
       (state.profile && (state.profile.weightLog || []).length) && ['Weight tracking', 'Log daily. The chart plots each week’s average weight, so you see the trend, not the daily noise.'],
     ],
   };
@@ -1972,21 +2200,29 @@ function viewToday() {
     </div>`;
   }
 
+  const now = Date.now();
   const read = (ex) => {
     const target = getEffectiveTarget(ex, today);
     const arr = getSetsFor(ex.id, today);
     const total = calcTotal(arr);
     const hasTarget = !!target && target > 0;
-    const left = hasTarget ? Math.max(0, target - total) : 0;
+    // A time exercise banks its minutes when the clock stops, so mid-session the
+    // log is behind the clock. What is DONE follows the banked number (the same
+    // rule as reps); what is SHOWN follows the clock, because a running session
+    // reading "0 of 30" would be a lie about the last twelve minutes.
+    const timeMode = isTimeMode(ex);
+    const t = getTimerPure(state.timersLog, today, ex.id);
+    const shown = timeMode ? Math.max(total, minutesFromMs(timerElapsedMs(t, now))) : total;
+    const left = hasTarget ? Math.max(0, target - shown) : 0;
     // A session you deliberately ended is not work still owing. Today answers
     // "what's left"; it should not keep asking for reps you already declined.
     const endedEarly = timerPhase(getTimerPure(state.timersLog, today, ex.id)) === 'gaveup';
     return {
-      ex, target, total, hasTarget, left, endedEarly,
+      ex, target, total, shown, timeMode, hasTarget, left, endedEarly,
       done: endedEarly || isBreakDay(state.streakOverrides, today, ex.id) || (hasTarget ? total >= target : total > 0),
       rest: isBreakDay(state.streakOverrides, today, ex.id),
-      pct: hasTarget ? Math.min(1, total / target) : (total > 0 ? 1 : 0),
-      timer: getTimerPure(state.timersLog, today, ex.id),
+      pct: hasTarget ? Math.min(1, shown / target) : (shown > 0 ? 1 : 0),
+      timer: t,
     };
   };
 
@@ -2002,10 +2238,15 @@ function viewToday() {
       <span class="today-body">
         <span class="today-name">${escapeHtml(r.ex.name)}${weightTag(r.ex)}</span>
         <span class="today-meter" aria-hidden="true"><i style="width:${Math.round(r.pct * 100)}%"></i></span>
-        <span class="today-sub">${r.hasTarget ? `${r.total} of ${r.target} ${escapeHtml(r.ex.unit)}` : `${r.total} ${escapeHtml(r.ex.unit)} · no target`}${categoryLabel(r.ex) ? ` · ${catTagHtml(r.ex)}` : ''}${running ? ` · <b data-elapsed="${r.ex.id}">${formatElapsed(timerElapsedMs(r.timer, Date.now()))}</b>` : ''}</span>
+        <span class="today-sub">${r.hasTarget
+          ? `${r.timeMode ? `<b data-elapsed-min="${r.ex.id}">${r.shown}</b>` : r.shown} of ${r.target} ${escapeHtml(r.ex.unit)}`
+          : `${r.timeMode ? `<b data-elapsed-min="${r.ex.id}">${r.shown}</b>` : r.shown} ${escapeHtml(r.ex.unit)} · no target`}${categoryLabel(r.ex) ? ` · ${catTagHtml(r.ex)}` : ''}${running ? ` · <b data-elapsed="${r.ex.id}">${formatElapsed(timerElapsedMs(r.timer, Date.now()))}</b>` : ''}</span>
       </span>
       <span class="today-left">
-        ${r.hasTarget ? `<b>${r.left}</b><em>to go</em>` : `<b>${r.total}</b><em>logged</em>`}
+        ${r.timeMode && !running && !r.shown ? `<b class="today-go">${ICONS.play}</b><em>start</em>`
+          : r.hasTarget
+            ? `<b${r.timeMode ? ` data-elapsed-min="${r.ex.id}" data-left-of="${r.target}"` : ''}>${r.left}</b><em>${r.timeMode ? 'min left' : 'to go'}</em>`
+            : `<b${r.timeMode ? ` data-elapsed-min="${r.ex.id}"` : ''}>${r.shown}</b><em>logged</em>`}
       </span>
     </button>`;
   };
@@ -2196,7 +2437,56 @@ function ensureGlobalTick() {
       const t = getTimerPure(state.timersLog, todayISO(), el.dataset.elapsed);
       if (t) el.textContent = formatElapsed(timerElapsedMs(t, now));
     });
+    // A time exercise's totals are minutes off the same clock, so they move
+    // every second too. Updating the text in place is what keeps a running
+    // session off the full re-render that used to flash the whole screen.
+    document.querySelectorAll('[data-elapsed-min]').forEach((el) => {
+      const id = el.dataset.elapsedMin;
+      const t = getTimerPure(state.timersLog, todayISO(), id);
+      const mins = Math.max(calcTotal(getSetsFor(id, todayISO())), minutesFromMs(timerElapsedMs(t, now)));
+      const left = el.dataset.leftOf;
+      el.textContent = left ? String(Math.max(0, Math.round((parseFloat(left) - mins) * 10) / 10)) : String(mins);
+    });
+    checkTimeTargets(now);
   }, 1000);
+}
+
+/**
+ * A time exercise reaching its target, handled the same way a rep exercise
+ * crossing its target is handled: pause the clock, bank what was done, and ask
+ * — Take the win, or Keep going.
+ *
+ * Nothing auto-completes. A phone in a pocket keeps its clock running (elapsed
+ * is derived from timestamps, so the seconds are real either way), and this
+ * fires on the tick that follows you opening the app again — which is when the
+ * question can actually be answered.
+ *
+ * `pushingOn` is what stops it asking twice, the same flag Keep going already
+ * sets for reps.
+ */
+function checkTimeTargets(now) {
+  if (state.modal && state.modal.type !== 'logger') return;
+  const d = todayISO();
+  const day = state.timersLog[d] || {};
+  const hit = state.exercises.find((ex) => {
+    if (!isTimeMode(ex) || !ex.active) return false;
+    const t = day[ex.id];
+    if (!t || t.status !== 'running' || t.pushingOn) return false;
+    const target = getEffectiveTarget(ex, d);
+    // Against the raw clock, not the rounded minutes it is displayed as —
+    // 30 minutes has to mean 30 minutes, not the tenth that rounds up to it.
+    return target > 0 && timerElapsedMs(t, now) >= target * 60000;
+  });
+  if (!hit) return;
+  (async () => {
+    state.timersLog = pauseTimerPure(state.timersLog, d, hit.id, Date.now());
+    await persistTimers();
+    await bankTime(hit.id);
+    const t = getTimerPure(state.timersLog, d, hit.id);
+    state.modal = { type: 'complete', exId: hit.id, total: calcTotal(getSetsFor(hit.id, d)), elapsedMs: t ? t.elapsedMs : 0 };
+    renderModal();
+    rerender();
+  })();
 }
 
 /**
@@ -2225,9 +2515,12 @@ const TIMER_COPY_SEALED = {
   paused: ['Paused', 'Stopped where you left it.'],
 };
 
-function timerBlockHtml(exId, timer, sealed, hasTarget) {
+function timerBlockHtml(exId, timer, sealed, hasTarget, timeMode) {
   const phase = timerPhase(timer);
   let [statusLabel, note] = (sealed && TIMER_COPY_SEALED[phase]) || TIMER_COPY[phase];
+  // On a time exercise the clock IS the work, so the idle line cannot promise
+  // that a rep will start it — there are no reps.
+  if (timeMode && phase === 'idle' && !sealed) note = 'Tap Start when you begin.';
   // "Target hit" is a lie on an exercise that never had one. Same banked time,
   // honest word for it.
   if (phase === 'completed' && !hasTarget) statusLabel = 'Workout complete';
@@ -2238,7 +2531,12 @@ function timerBlockHtml(exId, timer, sealed, hasTarget) {
   const live = !sealed && (phase === 'running' || phase === 'paused');
 
   // Nothing to pause, end or reset before the first rep; nothing to touch at
-  // all once the day is sealed. Only a live session carries controls.
+  // all once the day is sealed. Only a live session carries controls — except
+  // on a time exercise, where the dormant clock needs the one button that gets
+  // it moving.
+  const startBtn = (timeMode && !sealed && phase === 'idle')
+    ? `<div class="timer-controls"><button class="timer-btn start" data-action="start-time-session" data-id="${exId}">${ICONS.play}Start</button></div>`
+    : '';
   const controls = live ? `<div class="timer-controls">
       ${phase === 'running'
         ? `<button class="timer-btn" data-action="pause-timer" data-id="${exId}">${ICONS.pause}Pause</button>`
@@ -2253,7 +2551,7 @@ function timerBlockHtml(exId, timer, sealed, hasTarget) {
       <span class="timer-clock" id="timer-display" data-elapsed="${exId}" data-status="${phase}">${elapsed}</span>
       <span class="timer-status">${phase === 'completed' ? ICONS.trophy : ''}${statusLabel}${finishedClock ? ` · ${escapeHtml(finishedClock)}` : ''}</span>
     </div>
-    ${controls}
+    ${startBtn}${controls}
     <p class="timer-note">${escapeHtml(note)}</p>
   </div>`;
 }
@@ -2289,9 +2587,14 @@ function modalGiveUp() {
   const ex = state.exercises.find((e) => e.id === m.exId);
   if (!ex) return '';
   const today = todayISO();
-  const total = calcTotal(getSetsFor(m.exId, today));
   const target = getEffectiveTarget(ex, today);
   const timer = getTimerPure(state.timersLog, today, m.exId);
+  // A timed session banks when its clock stops, so mid-session the log is
+  // behind the clock — and this sheet is asked BEFORE it stops. Read the clock,
+  // or it offers to end a session it says you have not started.
+  const total = isTimeMode(ex)
+    ? Math.max(calcTotal(getSetsFor(m.exId, today)), minutesFromMs(timerElapsedMs(timer, Date.now())))
+    : calcTotal(getSetsFor(m.exId, today));
   const done = target ? `${total} of ${target} ${escapeHtml(ex.unit)}` : `${total} ${escapeHtml(ex.unit)}`;
   return `<div class="modal-backdrop">
     <div class="modal-sheet center celebrate" data-stop>
@@ -2437,19 +2740,62 @@ function modalLogger(exId) {
       ${sealed ? '' : `<button class="set-del" data-action="delete-set" data-id="${exId}" data-date="${today}" data-index="${i}" aria-label="Remove set">${ICONS.trash}</button>`}
     </div>`;
   }).join('');
-  const editingTotal = !!(state.modal && !sealed && state.modal.editingTotal);
-  const totalDisplay = editingTotal
-    ? `<span class="inline-total-edit" data-stop>
-         <input type="number" min="0" step="any" id="logger-total-input" class="total-edit-input large" value="${total || ''}" placeholder="0" autofocus>
-         <button class="mini-btn" data-action="save-logger-total-inline" data-id="${exId}" data-date="${today}" aria-label="Save">${ICONS.check}</button>
-         <button class="mini-btn" data-action="cancel-logger-total-inline" aria-label="Cancel">${ICONS.close}</button>
-       </span>`
-    : sealed
-      ? `<div class="logger-total">${total}</div>`
-      : `<div class="logger-total editable-target" data-editable-logger-total data-id="${exId}" title="Tap to edit total">${total}</div>`;
+  // The total is a readout, not a field. Typing into it used to be the only way
+  // to enter a number the pad does not carry, and a typed day total is split
+  // into chunks on purpose — which is exactly how a genuine set of 28 came back
+  // as 20 and 8. Exact set, below, is the honest route now.
+  const totalDisplay = `<div class="logger-total">${total}</div>`;
 
   const timer = getTimerPure(state.timersLog, today, exId);
-  const timerHtml = timerBlockHtml(exId, timer, sealed, hasTarget);
+  const timeMode = isTimeMode(ex);
+  const shownTotal = timeMode ? Math.max(total, minutesFromMs(timerElapsedMs(timer, Date.now()))) : total;
+  const timerHtml = timerBlockHtml(exId, timer, sealed, hasTarget, timeMode);
+
+  /**
+   * The way in for a number the pad does not carry, parked directly under the
+   * total because that is where you are looking when the number you did isn't
+   * on a key. Its own line says what it does, so it reads in a glance and the
+   * note under it only confirms.
+   *
+   * It is deliberately a SET, not a total: one tap adds one set of exactly what
+   * you typed, which is the thing Top Set can honestly read.
+   */
+  const sub = state.repMode === 'sub';
+  const exactOpen = !!(state.modal && state.modal.exactOpen) && !sealed;
+  const exactHtml = sealed ? '' : (exactOpen
+    ? `<div class="exact-set open" data-stop>
+        <input type="number" min="0" step="any" inputmode="decimal" id="exact-set-input"
+          placeholder="${sub ? 'Take off…' : 'e.g. 28'}" autofocus>
+        <button class="exact-go" data-action="save-exact-set" data-id="${exId}">${sub ? 'Subtract' : 'Add set'}</button>
+        <button class="mini-btn" data-action="cancel-exact-set" aria-label="Cancel">${ICONS.close}</button>
+        <em>${sub ? 'Comes off your latest sets.' : `Goes in as ONE set, on top of today's ${total}.`}</em>
+      </div>`
+    : `<button class="exact-set" data-action="open-exact-set" data-id="${exId}">
+        <span>${sub ? '−' : '+'} Exact ${sub ? 'amount' : 'set'}</span>
+        <em>${sub ? 'Take off a number the pad has not got.' : 'Did 28? Type any number the pad has not got.'}</em>
+      </button>`);
+
+  const padBlock = timeMode ? '' : `
+      ${sealed
+        ? ''
+        : (sub
+          ? tipHtml('sub-rep', 'Tap any number to subtract it straight away.')
+          : tipHtml('log-rep', 'Tap any number to add it straight away.'))}
+      <div class="rep-lever" role="group" aria-label="Add or subtract reps">
+        <button class="lever-opt ${!sub ? 'on' : ''}" data-action="rep-mode" data-mode="add" ${sealed ? 'disabled' : ''}>Add</button>
+        <button class="lever-opt sub ${sub ? 'on' : ''}" data-action="rep-mode" data-mode="sub" ${sealed ? 'disabled' : ''}>Subtract</button>
+      </div>
+      <div class="rep-pad ${sub ? 'subtracting' : ''}">
+        ${REP_PAD.map((n) => `<button class="rep-key" data-action="rep-tap" data-id="${exId}" data-val="${n}" ${sealed || (sub && !arr.length) ? 'disabled' : ''}>${sub ? '−' : '+'}${n}</button>`).join('')}
+      </div>`;
+
+  // A time exercise has one entry a day — its own clock reading — so a set
+  // history of one line, and a tally rail of one mark, would be furniture.
+  const setListBlock = timeMode ? '' : `
+      <div class="set-list">
+        <div class="set-list-head"><span>Set history</span><span>${arr.length} set${arr.length === 1 ? '' : 's'}</span></div>
+        ${arr.length ? listItems : '<div class="empty-sets">No sets logged yet today.</div>'}
+      </div>`;
 
   return `<div class="modal-backdrop" data-action="backdrop">
     <div class="modal-sheet" data-stop>
@@ -2459,25 +2805,15 @@ function modalLogger(exId) {
         <button class="sheet-close" data-action="close-modal">${ICONS.close}</button>
       </div>
       <div class="logger-total-row">
-        ${totalDisplay}
+        <div class="logger-total"${timeMode ? ` data-elapsed-min="${exId}"` : ''}>${timeMode ? shownTotal : total}</div>
         ${hasTarget ? `<div class="logger-target">/ ${target}</div>` : ''}
       </div>
-      <div class="logger-unit">${escapeHtml(ex.unit)} logged today</div>
+      <div class="logger-unit">${timeMode ? 'minutes' : escapeHtml(ex.unit)} ${timeMode ? 'on the clock today' : 'logged today'}</div>
+      ${timeMode ? '' : exactHtml}
       ${timerHtml}
-      <div class="tally-rail logger-tally">${tallyMarks(arr.length)}</div>
-
-      ${sealed
-        ? sealedNoteHtml(exId, timerPhase(timer))
-        : (state.repMode === 'sub'
-          ? tipHtml('sub-rep', 'Tap any number to subtract it straight away.')
-          : tipHtml('log-rep', 'Tap any number to add it straight away.'))}
-      <div class="rep-lever" role="group" aria-label="Add or subtract reps">
-        <button class="lever-opt ${state.repMode === 'add' ? 'on' : ''}" data-action="rep-mode" data-mode="add" ${sealed ? 'disabled' : ''}>Add</button>
-        <button class="lever-opt sub ${state.repMode === 'sub' ? 'on' : ''}" data-action="rep-mode" data-mode="sub" ${sealed ? 'disabled' : ''}>Subtract</button>
-      </div>
-      <div class="rep-pad ${state.repMode === 'sub' ? 'subtracting' : ''}">
-        ${REP_PAD.map((n) => `<button class="rep-key" data-action="rep-tap" data-id="${exId}" data-val="${n}" ${sealed || (state.repMode === 'sub' && !arr.length) ? 'disabled' : ''}>${state.repMode === 'sub' ? '−' : '+'}${n}</button>`).join('')}
-      </div>
+      ${timeMode ? '' : `<div class="tally-rail logger-tally">${tallyMarks(arr.length)}</div>`}
+      ${sealed ? sealedNoteHtml(exId, timerPhase(timer)) : ''}
+      ${padBlock}
 
       ${(() => {
         const resting = isBreakDay(state.streakOverrides, today, exId);
@@ -2486,11 +2822,8 @@ function modalLogger(exId) {
           <em>${sealed ? 'Today is already closed.' : (resting ? 'Your streak is safe. Tap to undo.' : 'Counts as rest — your streak keeps going.')}</em>
         </button>`;
       })()}
-
-      <div class="set-list">
-        <div class="set-list-head"><span>Set history</span><span>${arr.length} set${arr.length === 1 ? '' : 's'}</span></div>
-        ${arr.length ? listItems : '<div class="empty-sets">No sets logged yet today.</div>'}
-      </div>
+      ${sealed ? `<button class="share-btn logger-share" data-action="share-session" data-id="${exId}">${ICONS.share}Save image</button>` : ''}
+      ${setListBlock}
     </div>
   </div>`;
 }
@@ -2542,6 +2875,19 @@ function modalExerciseForm(exId) {
   if (state.modal && state.modal.wunit === undefined) {
     state.modal.wunit = (ex && ex.weightUnit === 'lb') ? 'lb' : 'kg';
   }
+  // Measuring by clock or by count is a draft like every other toggle, so
+  // flipping it re-renders the form without committing anything until Save.
+  if (state.modal && state.modal.measure === undefined) {
+    state.modal.measure = isTimeMode(ex) ? 'time' : 'count';
+  }
+  const timeMode = state.modal ? state.modal.measure === 'time' : false;
+  // Minutes are what get stored; hours are only how the number is typed. 90
+  // stored shows as 1.5 hr, so switching units never changes the target.
+  if (state.modal && state.modal.tunit === undefined) {
+    state.modal.tunit = (isTimeMode(ex) && target && target >= 60 && target % 60 === 0) ? 'hr' : 'min';
+  }
+  const tUnit = state.modal ? state.modal.tunit : 'min';
+  const targetShown = target ? (tUnit === 'hr' ? Math.round((target / 60) * 100) / 100 : target) : null;
   const isDumbbell = state.modal ? state.modal.equip === 'dumbbell' : false;
   const wUnit = state.modal ? state.modal.wunit : 'kg';
   const wVal = (state.modal && state.modal.weight !== undefined)
@@ -2580,9 +2926,15 @@ function modalExerciseForm(exId) {
         <div class="hint">The category picks the icon, and shows on the card.</div>
       </div>
       <div class="field">
-        <label>Unit</label>
-        <input id="f-unit" type="text" list="unit-options" placeholder="reps" value="${escapeHtml(draft.unit !== undefined ? draft.unit : (ex ? ex.unit : 'reps'))}" autocomplete="off">
+        <label>How you measure it</label>
+        <div class="sched-modes">
+          <button type="button" class="sched-mode ${timeMode ? '' : 'on'}" data-action="measure-mode" data-mode="count">Count</button>
+          <button type="button" class="sched-mode ${timeMode ? 'on' : ''}" data-action="measure-mode" data-mode="time">Time</button>
+        </div>
+        ${timeMode ? `<div class="hint">A clock instead of a keypad. Start it, and it counts your minutes.</div>`
+          : `<input id="f-unit" type="text" list="unit-options" placeholder="reps" value="${escapeHtml(draft.unit !== undefined ? draft.unit : (ex ? ex.unit : 'reps'))}" autocomplete="off" style="margin-top:8px">
         <datalist id="unit-options"><option value="reps"><option value="kg"><option value="lb"><option value="sec"><option value="min"><option value="km"><option value="mi"></datalist>
+        <div class="hint">Whatever you count — reps, km, laps.</div>`}
       </div>
       <div class="field">
         <label>Equipment</label>
@@ -2612,9 +2964,16 @@ function modalExerciseForm(exId) {
         <div class="hint">Days you don't train aren't counted as missed, so a rest day never breaks a streak.</div>`}
       </div>
       <div class="field">
-        <label>Daily target (optional)</label>
-        <input id="f-target" type="number" min="0" step="any" placeholder="Leave blank for no target" value="${draft.target !== undefined ? escapeHtml(draft.target) : (target ? target : '')}">
-        <div class="hint">${editing ? 'Changing this only affects today onward — past days keep their original target.' : 'Untargeted exercises still track totals but don’t count toward your streak.'}</div>
+        <label>Daily target${timeMode ? '' : ' (optional)'}</label>
+        ${timeMode ? `<div class="time-target">
+          <input id="f-target" type="number" min="0" step="any" inputmode="decimal" placeholder="30" value="${draft.target !== undefined ? escapeHtml(draft.target) : (targetShown != null ? targetShown : '')}">
+          <div class="wunit-toggle">
+            <button type="button" class="wunit ${tUnit === 'min' ? 'on' : ''}" data-action="tunit" data-unit="min">min</button>
+            <button type="button" class="wunit ${tUnit === 'hr' ? 'on' : ''}" data-action="tunit" data-unit="hr">hr</button>
+          </div>
+        </div>` : `<input id="f-target" type="number" min="0" step="any" placeholder="Leave blank for no target" value="${draft.target !== undefined ? escapeHtml(draft.target) : (target ? target : '')}">`}
+        <div class="hint">${timeMode ? 'How long a session should last. Reach it and you get the same choice as any target: take the win, or keep going.'
+          : (editing ? 'Changing this only affects today onward — past days keep their original target.' : 'Untargeted exercises still track totals but don’t count toward your streak.')}</div>
       </div>
       <div class="form-actions">
         <button class="secondary-btn" data-action="close-modal">Cancel</button>
@@ -2975,9 +3334,16 @@ document.addEventListener('click', async (e) => {
     case 'save-exercise': {
       const name = document.getElementById('f-name').value.trim();
       if (!name) { showToast('Name is required.'); return; }
-      const unit = document.getElementById('f-unit').value.trim() || 'reps';
+      const timeMode = !!(state.modal && state.modal.measure === 'time');
+      const unitEl = document.getElementById('f-unit');
+      // A time exercise counts minutes, full stop. Storing one unit means every
+      // total, chart and share card downstream needs no idea which mode it is.
+      const unit = timeMode ? 'min' : ((unitEl && unitEl.value.trim()) || 'reps');
       const targetRaw = document.getElementById('f-target').value;
-      const target = targetRaw === '' ? null : Math.max(0, parseFloat(targetRaw));
+      const targetTyped = targetRaw === '' ? null : Math.max(0, parseFloat(targetRaw));
+      const target = (timeMode && targetTyped != null && state.modal && state.modal.tunit === 'hr')
+        ? Math.round(targetTyped * 60 * 100) / 100
+        : targetTyped;
       const category = (state.modal && state.modal.cat) || null;
       const id = btn.dataset.id;
       const schedule = state.modal && state.modal.sched ? state.modal.sched : 'daily';
@@ -2990,8 +3356,9 @@ document.addEventListener('click', async (e) => {
       const wParsed = wRaw && wRaw.value !== '' ? Math.max(0, parseFloat(wRaw.value)) : null;
       const weight = equipment === 'dumbbell' && wParsed > 0 ? Math.round(wParsed * 10) / 10 : null;
       const equip = { equipment, weight, weightUnit };
-      if (id) await updateExercise(id, { name, unit, target, category, schedule, ...equip });
-      else await addExercise({ name, unit, target, category, schedule, ...equip,
+      const mode = timeMode ? 'time' : 'count';
+      if (id) await updateExercise(id, { name, unit, target, category, schedule, mode, ...equip });
+      else await addExercise({ name, unit, target, category, schedule, mode, ...equip,
         oneTimeDate: oneTime ? todayISO() : null });
       closeModal(); rerender();
       break;
@@ -3003,6 +3370,9 @@ document.addEventListener('click', async (e) => {
     case 'toggle-archived': state.showArchived = !state.showArchived; renderView(); break;
     case 'share-exercise':
       await shareExerciseImage(btn.dataset.id);
+      break;
+    case 'share-session':
+      await shareSessionImage(btn.dataset.id);
       break;
     case 'toggle-stat-help':
       state.statHelp[btn.dataset.key] = !state.statHelp[btn.dataset.key];
@@ -3075,6 +3445,27 @@ document.addEventListener('click', async (e) => {
       captureExerciseDraft();
       if (state.modal) { state.modal.equip = btn.dataset.equip; renderModal(); }
       break;
+    case 'measure-mode':
+      captureExerciseDraft();
+      if (state.modal) { state.modal.measure = btn.dataset.mode; renderModal(); }
+      break;
+    case 'tunit': {
+      captureExerciseDraft();
+      if (!state.modal) break;
+      const to = btn.dataset.unit;
+      const from = state.modal.tunit || 'min';
+      // Same rule as kg/lb: switching the unit converts what is typed, so the
+      // target itself never moves under you.
+      const d = state.modal.draft || {};
+      if (to !== from && d.target !== '' && d.target != null && !isNaN(parseFloat(d.target))) {
+        const mins = from === 'hr' ? parseFloat(d.target) * 60 : parseFloat(d.target);
+        d.target = String(to === 'hr' ? Math.round((mins / 60) * 100) / 100 : Math.round(mins * 100) / 100);
+        state.modal.draft = d;
+      }
+      state.modal.tunit = to;
+      renderModal();
+      break;
+    }
     case 'wunit': {
       captureExerciseDraft();
       if (!state.modal) break;
@@ -3253,25 +3644,23 @@ document.addEventListener('click', async (e) => {
       renderView();
       break;
 
-    case 'save-today-total-inline': {
-      const input = document.getElementById(`today-total-input-${btn.dataset.id}`);
-      await setTotalHandler(btn.dataset.id, btn.dataset.date, input.value);
-      break;
-    }
-    case 'cancel-today-total-inline':
-      state.editingTodayTotal = null;
-      renderView();
-      break;
-
-    case 'save-logger-total-inline': {
-      if (sealedToday(btn.dataset.id, btn.dataset.date)) break;
-      const input = document.getElementById('logger-total-input');
-      await setTotalHandler(btn.dataset.id, btn.dataset.date, input.value);
-      break;
-    }
-    case 'cancel-logger-total-inline':
-      if (state.modal) state.modal.editingTotal = false;
+    case 'open-exact-set':
+      if (sealedToday(btn.dataset.id)) break;
+      if (state.modal) state.modal.exactOpen = true;
       renderModal();
+      { const i = document.getElementById('exact-set-input'); if (i) i.focus(); }
+      break;
+    case 'save-exact-set': {
+      const input = document.getElementById('exact-set-input');
+      await exactSetHandler(btn.dataset.id, input ? input.value : '');
+      break;
+    }
+    case 'cancel-exact-set':
+      if (state.modal) state.modal.exactOpen = false;
+      renderModal();
+      break;
+    case 'start-time-session':
+      await startTimeSessionHandler(btn.dataset.id);
       break;
 
     case 'take-the-win':
@@ -3300,11 +3689,17 @@ document.addEventListener('click', async (e) => {
     case 'reopen-session':
       await reopenSessionHandler(btn.dataset.id);
       break;
-    case 'reset-timer':
-      if (confirm('Reset today’s timer back to 0:00? This only clears the clock, not your logged reps.')) {
+    case 'reset-timer': {
+      // On a timed exercise the clock IS the record, so "it only clears the
+      // clock" would be a lie — resetting one really does clear today.
+      const rEx = state.exercises.find((e) => e.id === btn.dataset.id);
+      if (confirm(isTimeMode(rEx)
+        ? 'Reset today’s clock back to 0:00? The clock is this exercise’s record, so today’s minutes go with it.'
+        : 'Reset today’s timer back to 0:00? This only clears the clock, not your logged reps.')) {
         await resetTimerHandler(btn.dataset.id);
       }
       break;
+    }
 
     case 'toggle-day-override':
       await toggleDayOverrideHandler(btn.dataset.date);
@@ -3414,21 +3809,6 @@ document.addEventListener('click', (e) => {
     if (input) { input.focus(); input.select(); }
     return;
   }
-  const todayTotalEl = e.target.closest('[data-editable-today-total]');
-  if (todayTotalEl) {
-    state.editingTodayTotal = todayTotalEl.dataset.id;
-    renderView();
-    const input = document.getElementById(`today-total-input-${todayTotalEl.dataset.id}`);
-    if (input) { input.focus(); input.select(); }
-    return;
-  }
-  const loggerTotalEl = e.target.closest('[data-editable-logger-total]');
-  if (loggerTotalEl && state.modal && state.modal.type === 'logger') {
-    state.modal.editingTotal = true;
-    renderModal();
-    const input = document.getElementById('logger-total-input');
-    if (input) { input.focus(); input.select(); }
-  }
 });
 
 document.addEventListener('keydown', (e) => {
@@ -3468,26 +3848,14 @@ document.addEventListener('keydown', (e) => {
     }
     return;
   }
-  const todayTotalInput = e.target.closest('#today-total-input-' + (state.editingTodayTotal || '\0'));
-  if (todayTotalInput) {
+  const exactInput = e.target.closest('#exact-set-input');
+  if (exactInput) {
     if (e.key === 'Enter') {
       e.preventDefault();
-      document.querySelector('[data-action="save-today-total-inline"]')?.click();
+      document.querySelector('[data-action="save-exact-set"]')?.click();
     } else if (e.key === 'Escape') {
       e.preventDefault();
-      state.editingTodayTotal = null;
-      renderView();
-    }
-    return;
-  }
-  const loggerTotalInput = e.target.closest('#logger-total-input');
-  if (loggerTotalInput) {
-    if (e.key === 'Enter') {
-      e.preventDefault();
-      document.querySelector('[data-action="save-logger-total-inline"]')?.click();
-    } else if (e.key === 'Escape') {
-      e.preventDefault();
-      if (state.modal) state.modal.editingTotal = false;
+      if (state.modal) state.modal.exactOpen = false;
       renderModal();
     }
   }
@@ -3561,6 +3929,10 @@ async function init() {
   checkVersion();
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState !== 'visible') return;
+    // A backgrounded phone stops the interval but not the clock. Coming back is
+    // the moment to restart it — and, for a timed exercise, the moment its
+    // finished session can finally ask the question.
+    ensureGlobalTick();
     checkVersion();
     if (hasSyncAccount() && isOnline()) retryBackupQuietly();
   });

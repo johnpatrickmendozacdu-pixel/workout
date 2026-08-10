@@ -15,6 +15,9 @@ import {
   purgeExerciseSets,
   setDayTotal,
   splitIntoSets,
+  bankTimeSession,
+  isTimeMode,
+  minutesFromMs,
   getTimer,
   timerPhase,
   sessionSealed,
@@ -1418,3 +1421,49 @@ describe('deepEqual', () => {
     expect(deepEqual({ a: 1 }, { a: 1, b: 2 })).toBe(false);
   });
 });
+
+describe('time exercises', () => {
+  it('only counts as time mode when the exercise says so', () => {
+    expect(isTimeMode({ mode: 'time' })).toBe(true);
+    expect(isTimeMode({ unit: 'min' })).toBe(false);   // an old exercise counting minutes is still reps
+    expect(isTimeMode(null)).toBe(false);
+  });
+
+  it('reads the clock in tenths of a minute', () => {
+    expect(minutesFromMs(30 * 60000)).toBe(30);
+    expect(minutesFromMs(90 * 1000)).toBe(1.5);
+    expect(minutesFromMs(0)).toBe(0);
+    expect(minutesFromMs(null)).toBe(0);
+  });
+
+  it('banks a session as ONE entry, never split', () => {
+    const log = bankTimeSession({}, '2026-08-10', 'ex1', 110);
+    expect(log['2026-08-10'].ex1).toEqual([110]);      // splitIntoSets would have made six
+  });
+
+  it('overwrites rather than accumulating, because the clock only grows', () => {
+    let log = bankTimeSession({}, '2026-08-10', 'ex1', 12);
+    log = bankTimeSession(log, '2026-08-10', 'ex1', 30);
+    expect(log['2026-08-10'].ex1).toEqual([30]);
+    expect(calcTotal(log['2026-08-10'].ex1)).toBe(30);
+  });
+
+  it('clears the day when the clock is reset to nothing', () => {
+    let log = bankTimeSession({}, '2026-08-10', 'ex1', 30);
+    log = bankTimeSession(log, '2026-08-10', 'ex1', 0);
+    expect(log['2026-08-10'].ex1).toBeUndefined();
+  });
+
+  it('leaves other exercises on the day alone', () => {
+    const log = bankTimeSession({ '2026-08-10': { other: [10] } }, '2026-08-10', 'ex1', 5);
+    expect(log['2026-08-10'].other).toEqual([10]);
+  });
+
+  it('makes the day complete once the banked minutes reach the target', () => {
+    const ex = { id: 'ex1', mode: 'time', unit: 'min', active: true, schedule: 'daily',
+      targetHistory: [{ effectiveDate: '2026-08-01', target: 30 }] };
+    const log = bankTimeSession({}, '2026-08-10', 'ex1', 30);
+    expect(calcDayStats([ex], log, '2026-08-10', {}).allComplete).toBe(true);
+  });
+});
+

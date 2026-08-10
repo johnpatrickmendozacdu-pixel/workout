@@ -70,7 +70,7 @@ export const GUIDE_SECTIONS = [
     lead: 'Plan → Add. Name it, pick a category, then Save.',
     notes: [
       'The category picks the icon and shows on the card. Nothing else to choose.',
-      'Unit is whatever you count — reps, minutes, km.',
+      'Count or Time. Count is reps, km, laps. Time gives it a clock instead of a keypad.',
       'Using a dumbbell? Add the weight. It’s a label, not a score.',
       'Edit it any time in Plan. Archive keeps its history, Delete doesn’t.',
     ],
@@ -115,8 +115,9 @@ export const GUIDE_SECTIONS = [
     lead: 'Tap the exercise. Tap a number. That’s it.',
     notes: [
       'Wrong number? Flip to Subtract, or tap Undo.',
-      'Tap the big total to type an exact one.',
+      'Did a number the pad hasn’t got? Exact set, under the total. It goes in as one set.',
       'The clock starts on your first rep. Pause any time.',
+      'A Time exercise has no pad — tap Start, and it counts your minutes.',
     ],
   },
   {
@@ -128,6 +129,7 @@ export const GUIDE_SECTIONS = [
       'No target? Tap Complete when you’re done — it banks the time the same way.',
       'Give up ends it early. Your reps still count, the time doesn’t.',
       'Reset clears the clock, never the reps.',
+      'Finished? Save image puts the session on a card you can share.',
     ],
   },
   {
@@ -160,6 +162,7 @@ export const GUIDE_SECTIONS = [
     notes: [
       'Filled = hit. 🌙 = rest. Hollow = missed.',
       'Top set is one set. Max is a whole day.',
+      'A Time exercise shows its longest and average session instead.',
       'Tap a number inside a card to correct it.',
     ],
   },

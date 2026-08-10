@@ -437,6 +437,20 @@ export function formatTotalDuration(ms) {
   return m ? `${h.toLocaleString()}h ${m}m` : `${h.toLocaleString()}h`;
 }
 
+/**
+ * Minutes as words, for time exercises. The stored number is minutes, so this
+ * is the one place that decides when it stops being "90 min" and starts being
+ * "1h 30m" — anything over an hour reads better broken up.
+ */
+export function formatMinutes(min) {
+  if (min == null || min <= 0) return '—';
+  const rounded = Math.round(min * 10) / 10;
+  if (rounded < 60) return `${rounded} min`;
+  const whole = Math.round(rounded);
+  const h = Math.floor(whole / 60), m = whole % 60;
+  return m ? `${h}h ${m}m` : `${h}h`;
+}
+
 /** Compact thousands for big lifetime numbers: 12400 -> "12.4k". */
 export function formatCount(n) {
   if (n == null) return '—';

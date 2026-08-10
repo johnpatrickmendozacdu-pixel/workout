@@ -433,6 +433,43 @@ export function splitIntoSets(total, chunk = 20) {
   return out;
 }
 
+/**
+ * A time exercise is measured by its clock rather than by reps, and that is the
+ * only difference. Everything else — schedule, target, streak, history — is
+ * shared, because the minutes it banks are stored in the same log as any other
+ * total. No `mode` at all means counting, so every exercise made before this
+ * existed keeps working without a migration.
+ */
+export function isTimeMode(exercise) {
+  return !!exercise && exercise.mode === 'time';
+}
+
+/** Milliseconds on the clock as minutes, to a tenth (6 seconds). */
+export function minutesFromMs(ms) {
+  return Math.max(0, Math.round((ms || 0) / 6000) / 10);
+}
+
+/**
+ * Bank a time session as the day's total: ONE entry, never split.
+ *
+ * `setDayTotal` deliberately breaks a typed number into chunks so a whole day
+ * cannot pose as a single heroic set. A clock reading is not a typed number —
+ * 30 minutes really was one unbroken session — so it takes this path instead,
+ * and Longest session stays truthful.
+ *
+ * Called on pause as well as on finish, so walking away mid-session never loses
+ * what was already done. Later calls overwrite: the clock only ever grows.
+ */
+export function bankTimeSession(setsLog, dateStr, exId, minutes) {
+  const m = clampNum(minutes);
+  const next = { ...setsLog };
+  const dayEntry = { ...(next[dateStr] || {}) };
+  if (m > 0) dayEntry[exId] = [m];
+  else delete dayEntry[exId];
+  next[dateStr] = dayEntry;
+  return next;
+}
+
 export function setDayTotal(setsLog, dateStr, exId, value) {
   const next = { ...setsLog };
   const dayEntry = { ...(next[dateStr] || {}) };

@@ -8,7 +8,7 @@ import {
   streakInfo,
   lifetimeSince,
   exerciseStats,
-  formatDuration, formatTotalDuration,
+  formatDuration, formatTotalDuration, formatMinutes,
   formatCount,
   recentDayStates,
   streakTier,
@@ -610,3 +610,19 @@ describe('a one-off never joins a scheduled group', () => {
     expect(rows[rows.length - 1].key).toBe('one-time');
   });
 });
+
+describe('formatMinutes', () => {
+  it('stays in minutes below an hour', () => {
+    expect(formatMinutes(30)).toBe('30 min');
+    expect(formatMinutes(1.5)).toBe('1.5 min');
+  });
+  it('breaks into hours above one', () => {
+    expect(formatMinutes(90)).toBe('1h 30m');
+    expect(formatMinutes(120)).toBe('2h');
+  });
+  it('shows nothing as a dash', () => {
+    expect(formatMinutes(0)).toBe('—');
+    expect(formatMinutes(null)).toBe('—');
+  });
+});
+

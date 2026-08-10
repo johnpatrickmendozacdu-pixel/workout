@@ -33,14 +33,14 @@ one Cloudflare variable — never a code change.
 - `src/sync/googleSync.js` — self-contained Google auth + Drive (no test coverage)
 - `worker/` — the Cloudflare token-broker (deployed separately, see below)
 
-**267 tests, all passing** (`npm test`). They cover the pure domain layer and the
+**277 tests, all passing** (`npm test`). They cover the pure domain layer and the
 Worker's pure helpers only — **not `main.js`, not `googleSync.js`**.
 
 ## State right now
 
-- `main` = **`556ff41`**, live on Vercel, byte-verified. Working tree clean apart
-  from `.DS_Store` and an untracked `badmintoncategory.png` (see Next up).
-- **267 tests pass.** Byte-verify every deploy against a build of the *pushed*
+- `main` = **`8e0abb9`**, live on Vercel, byte-verified. Working tree clean apart
+  from `.DS_Store`.
+- **277 tests pass.** Byte-verify every deploy against a build of the *pushed*
   commit — `__BUILD_ID__` is the commit SHA, so a build made before committing
   can never match. That mistake has cost a round of false-alarm polling twice.
 - Migration finished and verified 2026-08-05: the old Pages address serves a
@@ -52,19 +52,14 @@ Worker's pure helpers only — **not `main.js`, not `googleSync.js`**.
 
 ## Next up (raised, not built)
 
-- **`badmintoncategory.png` is sitting untracked in the repo root.** The user drops
-  a category image in and expects it wired up. The whole job is: add a row to
-  `SINGLES` in `tools/slice-icons.py` with a crop box, add a row to `CATEGORIES`
-  in `src/categories.js`, run the script, commit the source image too. Measure the
-  crop first — see the Skateboard entry for the method.
-- A tenth category makes the picker 10, which is 3+3+3+1 in the current 3-across
-  grid. Four across gives 3 clean rows; the grid width is one line in `.cat-grid`.
 - UX ideas brainstormed and **not** built, in the user's order of interest: a
   "last time you did this" line inside the logger, a rest timer between sets
   (iOS has no vibration and the audio system was deleted, so it would be visual
   only), a session summary when the last card clears, and a year heatmap.
   Reminder notifications were explicitly ruled out: reliable ones need a server,
   which breaks "zero maintenance".
+- Badminton (2026-08-10) took the picker to ten, so `.cat-grid` is four across.
+  Add an eleventh and check that row again.
 
 ## Architecture decisions that are settled — do not re-litigate
 
@@ -113,6 +108,27 @@ its streak and strip: four separate places (`calcDayStats`, `streakInfo`,
 `recentDayStates`, `dayHistory`) re-judged every past day against the *current*
 schedule. Rule now: a day with logged reps always counts; only an **empty** unscheduled
 day is a rest day. Schedule also records history (`scheduleHistory`), like targets do.
+
+**A typed number on Today is a SET, not a day total.** A real 28 came back as
+20 + 8 because the pad has no 28, so the only way in was the logger's editable
+total — and `setDayTotal` splits a typed total into 20-chunks on purpose, so a
+day's number can never pose as one heroic set. The total is now a readout and
+**Exact set** (under it) logs one set of whatever is typed. `splitIntoSets`
+survives only on the Progress day list, where correcting an old record lives.
+
+**A time exercise banks minutes into the same log as everything else.**
+`mode:'time'`, `unit:'min'`, target in minutes, and `bankTimeSession` writes ONE
+entry (never split — a clock reading is not a typed number) on pause, give-up,
+take-the-win and reset. That is why streaks, best day, lifetime, charts, the day
+list and both share cards needed no special cases. What is *done* reads the
+banked number; what is *shown* reads the live clock, or a running session would
+claim 0.
+
+**`render()` never restarted the clock.** `ensureGlobalTick` was only reached
+through `renderModal`, so a reload during a live session left the clock frozen
+until something opened a modal. Harmless-looking until timed exercises arrived —
+their target check rides that tick. It is now called from `render()` and on
+`visibilitychange`.
 
 **Never trust "it was always broken."** Top set went 20 → 25 → 89 across three fixes
 because the assistant reasoned about data it could not see. The real fix was the user's
@@ -175,8 +191,9 @@ asking.
 | Progress | Same schedule groups + combo times. Weekly-average weight chart. BMI. One-offs get their own group, sorted last. Per-exercise card: 7-day strip, streak, then figures in **two groups** — reps (top set, first day, best day, lifetime) and time (best/average/total) — each with a 💡 that opens term-and-meaning rows. Empty figures are not rendered at all. Day list is unboxed: green total = target met, dashed underline = tap to edit. |
 | Health habit | Daily weigh-in, weekly-average line chart. Never touches any exercise streak. |
 | Guide | **Two of them, deliberately.** The Guide tab (book icon, 4th slot) is the full 12-step walkthrough, collapsed on arrival, content as data in `src/guide.js`. The topbar **?** opens a short sheet about the screen you are standing on (`modalGuide`). The Guide screen carries no ? of its own. They were merged once and it was worse — the user asked for both back. |
-| Categories | Nine, in `src/categories.js`. The exercise stores the **category key, never the picture**, so artwork can be redrawn without touching a single saved exercise. Icons are cut from committed source art by `tools/slice-icons.py` — a grid (`icon-source.png`) plus per-category singles. Exercises saved before categories show no icon until edited; that blank is deliberate. |
-| Share image | "Save image" on an opened exercise card draws a 1080² card on a canvas — name, category, streak, the climb, all seven figures, and a `Sets · sets-workout.vercel.app` watermark. Canvas → blob → `navigator.share` (the only route to the photo library) with a download fallback. Nothing is uploaded. No dependency: `html2canvas` was rejected on those grounds. |
+| Categories | Ten, in `src/categories.js`. The exercise stores the **category key, never the picture**, so artwork can be redrawn without touching a single saved exercise. Icons are cut from committed source art by `tools/slice-icons.py` — a grid (`icon-source.png`) plus per-category singles. Exercises saved before categories show no icon until edited; that blank is deliberate. |
+| Timed exercises | Plan → How you measure it → **Time** (number + min/hr). No keypad on Today: a dormant clock with Start, then the usual Pause / Resume / Give up / Complete. Nothing auto-completes — reaching the target pauses and asks *Take the win / Keep going* the next tick you are looking at it. Progress swaps in Longest session, First day, Average session, Lifetime, all as durations. |
+| Share image | "Save image" on an opened exercise card draws a 1080² card on a canvas — name, category, streak, the climb, all seven figures, and a `Sets · sets-workout.vercel.app` watermark. A **finished exercise on Today** has its own button drawing the same frame with the day's figures instead: total / target, the clock, sets, streak. Canvas → blob → `navigator.share` (the only route to the photo library) with a download fallback. Nothing is uploaded. No dependency: `html2canvas` was rejected on those grounds. |
 | One-time | A real exercise carrying `oneTimeDate` — same clock, target and keypad as any other. `isScheduledOn` returns true only on that date, so every view and the streak maths follow for free. Hidden after its day, never deleted. |
 | Sync | Per-Google-account namespaced data; Drive appdata backup; token-broker keeps it alive. Failures queue quietly — no red alarms. |
 

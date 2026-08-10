@@ -25,6 +25,10 @@ one Cloudflare variable — never a code change.
 - `src/domain/domain.js` + `src/domain/stats.js` — pure, hold every rule
 - `src/main.js` — all rendering and events (large; no test coverage)
 - `src/guide.js` — the Guide tab's content, as data. No logic.
+- `src/categories.js` — the nine categories and their icon lookup. No logic.
+- `tools/slice-icons.py` — cuts the icons out of the committed source art. Re-run
+  after changing any source image; it is the only place crop boxes live.
+- `pages-redirect/` — what the retired GitHub Pages address now serves.
 - `src/db/db.js` — IndexedDB wrapper, namespaced per Google account
 - `src/sync/googleSync.js` — self-contained Google auth + Drive (no test coverage)
 - `worker/` — the Cloudflare token-broker (deployed separately, see below)
@@ -34,16 +38,33 @@ Worker's pure helpers only — **not `main.js`, not `googleSync.js`**.
 
 ## State right now
 
-- `main` is live on Vercel. Byte-verify every deploy against a fresh local build —
-  `__BUILD_ID__` is the commit SHA, so build the *pushed* commit or the hashes
-  will never match.
-- Migration finished 2026-08-05 and verified: the old address serves the
-  redirect, the old app's assets 404, Vercel is healthy, and a browser following
-  the old link lands on the new app.
-- Optional cleanup, all the user's: drop the Pages origin from Cloudflare's
-  `ALLOWED_ORIGIN` and from Google Cloud, and delete the second unused Google
-  client secret the Console warns about — check which one the Worker holds first.
-  Leaving all three costs nothing.
+- `main` = **`556ff41`**, live on Vercel, byte-verified. Working tree clean apart
+  from `.DS_Store` and an untracked `badmintoncategory.png` (see Next up).
+- **267 tests pass.** Byte-verify every deploy against a build of the *pushed*
+  commit — `__BUILD_ID__` is the commit SHA, so a build made before committing
+  can never match. That mistake has cost a round of false-alarm polling twice.
+- Migration finished and verified 2026-08-05: the old Pages address serves a
+  redirect, the old app's assets 404, and a browser following the old link lands
+  on Vercel.
+- **Nothing is outstanding in the code.** One optional chore is the user's: the
+  Google Console warns about a second, unused OAuth client secret. Check which one
+  the Worker holds before deleting the other, and never paste either into chat.
+
+## Next up (raised, not built)
+
+- **`badmintoncategory.png` is sitting untracked in the repo root.** The user drops
+  a category image in and expects it wired up. The whole job is: add a row to
+  `SINGLES` in `tools/slice-icons.py` with a crop box, add a row to `CATEGORIES`
+  in `src/categories.js`, run the script, commit the source image too. Measure the
+  crop first — see the Skateboard entry for the method.
+- A tenth category makes the picker 10, which is 3+3+3+1 in the current 3-across
+  grid. Four across gives 3 clean rows; the grid width is one line in `.cat-grid`.
+- UX ideas brainstormed and **not** built, in the user's order of interest: a
+  "last time you did this" line inside the logger, a rest timer between sets
+  (iOS has no vibration and the audio system was deleted, so it would be visual
+  only), a session summary when the last card clears, and a year heatmap.
+  Reminder notifications were explicitly ruled out: reliable ones need a server,
+  which breaks "zero maintenance".
 
 ## Architecture decisions that are settled — do not re-litigate
 
@@ -130,6 +151,17 @@ generated WAV tones in code and primed them muted inside the first tap.
 deletion. Same class of bug: arrays on the profile (`weightLog`) must
 merge as a **union**, never be replaced by a spread.
 
+**The trajectory chart is a 30-day window, and it says so.** It scales to the data
+rather than the window, so a short history fills the frame instead of hugging the
+right edge. It labels the first and last plotted totals and the change between
+them — and only claims "since you first started" when the first plotted day really
+is the first ever logged, otherwise "in N days". The all-time anchor is the First
+day tile, which never moves whatever the chart happens to reach.
+
+**`exerciseStats(ex, setsLog, timersLog, todayOverride, overrides)`** — the
+overrides are the *fifth* argument. Passing them fourth silently returns a zero
+streak. Caught only by looking at a rendered share image.
+
 **One entry per day, not per change.** `recordWeight` used to skip an unchanged weight,
 so logging the same number as yesterday never marked today done and the card kept
 asking.
@@ -140,10 +172,11 @@ asking.
 |---|---|
 | Today | Only exercises scheduled for today (or already logged), one-offs included. Daily weigh-in card → "✓ Weighed in today · N kg" once done. |
 | Plan | Grouped by shared schedule, collapsed by default, tap to open. Add → Scheduled or One-time. Category picks the icon. Equipment: bodyweight / dumbbell + kg/lb. |
-| Progress | Same schedule groups + combo times (total/avg/best per group). Weekly-average weight chart. BMI. One-offs get their own group, sorted last. Per-exercise: top set, best day, lifetime, best/avg/total time, weight progression. |
+| Progress | Same schedule groups + combo times. Weekly-average weight chart. BMI. One-offs get their own group, sorted last. Per-exercise card: 7-day strip, streak, then figures in **two groups** — reps (top set, first day, best day, lifetime) and time (best/average/total) — each with a 💡 that opens term-and-meaning rows. Empty figures are not rendered at all. Day list is unboxed: green total = target met, dashed underline = tap to edit. |
 | Health habit | Daily weigh-in, weekly-average line chart. Never touches any exercise streak. |
-| Guide | Fourth nav tab. Every section collapsed on arrival; open one to read it. Content is data in `src/guide.js` — one table, one source of truth. Adding a feature means adding a row there, not re-writing an explanation somewhere else. |
-| Categories | Eight, in `src/categories.js`. The exercise stores the category, never the picture, so artwork can be redrawn without touching saved data. Icons cut from `icon-source.png` by `tools/slice-icons.py`. |
+| Guide | **Two of them, deliberately.** The Guide tab (book icon, 4th slot) is the full 12-step walkthrough, collapsed on arrival, content as data in `src/guide.js`. The topbar **?** opens a short sheet about the screen you are standing on (`modalGuide`). The Guide screen carries no ? of its own. They were merged once and it was worse — the user asked for both back. |
+| Categories | Nine, in `src/categories.js`. The exercise stores the **category key, never the picture**, so artwork can be redrawn without touching a single saved exercise. Icons are cut from committed source art by `tools/slice-icons.py` — a grid (`icon-source.png`) plus per-category singles. Exercises saved before categories show no icon until edited; that blank is deliberate. |
+| Share image | "Save image" on an opened exercise card draws a 1080² card on a canvas — name, category, streak, the climb, all seven figures, and a `Sets · sets-workout.vercel.app` watermark. Canvas → blob → `navigator.share` (the only route to the photo library) with a download fallback. Nothing is uploaded. No dependency: `html2canvas` was rejected on those grounds. |
 | One-time | A real exercise carrying `oneTimeDate` — same clock, target and keypad as any other. `isScheduledOn` returns true only on that date, so every view and the streak maths follow for free. Hidden after its day, never deleted. |
 | Sync | Per-Google-account namespaced data; Drive appdata backup; token-broker keeps it alive. Failures queue quietly — no red alarms. |
 
@@ -179,6 +212,18 @@ asking.
   page.
 - **A "flash"/"glitch" report can be a real bug**, not a cosmetic one — it was a
   full-DOM rebuild firing on every sync.
+- **A green build and green tests prove very little here.** A dangling `oneTime`
+  reference made Progress silently render Today's markup; both bugs in the share
+  image were invisible in code. Open the thing and look at it.
+- **Never grep minified output for a local variable name.** The minifier renames
+  them; the answer is a hash comparison, not a `grep`.
+- **Editing `.github/workflows/` needs `workflow` scope on the push token.** A
+  paste into GitHub's web editor truncated silently mid-file, and an invalid
+  workflow does not merely fail — it stops Pages deploying at all. Push workflow
+  files, do not paste them.
+- **Seeding demo data to check a view is fine, but clear it afterwards.** The dev
+  server runs against real IndexedDB; a mis-tap once logged 15 reps into the
+  user's actual Push Ups and bumped its target.
 
 ## Things only the user can do
 

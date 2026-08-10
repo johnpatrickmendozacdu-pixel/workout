@@ -20,6 +20,7 @@ export const CATEGORIES = [
   { key: 'pull-up-bar', label: 'Pull-up bar' },
   { key: 'cardio', label: 'Cardio' },
   { key: 'skateboard', label: 'Skateboard' },
+  { key: 'badminton', label: 'Badminton' },
 ];
 
 const BY_KEY = new Map(CATEGORIES.map((c) => [c.key, c]));

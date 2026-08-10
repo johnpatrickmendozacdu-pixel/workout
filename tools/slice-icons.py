@@ -29,6 +29,7 @@ NAMES = [('chest', 0, 0), ('back', 1, 0), ('arms', 2, 0), ('legs', 3, 0),
 # the green accent marks survive; the alpha trim finds the real edges).
 SINGLES = [
     ('skateboard', 'icon-source-skateboard.png', (520, 190, 965, 745)),
+    ('badminton', 'icon-source-badminton.png', (440, 250, 1000, 675)),
 ]
 
 # These two enclose card background inside a closed shape that a border flood can

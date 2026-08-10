@@ -320,10 +320,10 @@
   }
   .field input:focus, .field select:focus{border-color:var(--accent);}
   /* ---------- category picker ----------
-     Three across, because nine categories divide into a clean 3x3 — at four wide
-     the ninth sat alone on its own row looking like a mistake. Three also gives
-     the longer labels the width they need. */
-  .cat-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:7px;}
+     Four across, because ten categories fill 4+4+2 — at three wide the tenth sat
+     alone on its own row looking like a mistake. Change this back if the count
+     ever divides better by three. */
+  .cat-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:7px;}
   .cat-chip{
     background:var(--bg-card); border:1px solid var(--border-strong);
     padding:9px 3px 7px; min-height:44px;

@@ -52,7 +52,11 @@ async function post(path, payload) {
         ? { ok: true, crews: (retryData && retryData.crews) || [], joinedId: retryData && retryData.joinedId }
         : { ok: false, error: (retryData && retryData.error) || 'failed' };
     }
-    if (!res.ok) return { ok: false, error: (data && data.error) || 'failed' };
+    if (!res.ok) {
+      const code = (data && data.error) || 'failed';
+      console.warn('[crew]', path, res.status, code);
+      return { ok: false, error: code };
+    }
     return { ok: true, crews: (data && data.crews) || [], joinedId: data && data.joinedId };
   } catch (e) {
     return { ok: false, error: e && e.name === 'AbortError' ? 'timeout' : 'offline' };
@@ -74,6 +78,11 @@ export function markSeen(crewId) { return post('/crew/seen', { crewId }); }
 
 /** Human words for the errors a person can actually do something about. */
 export const CREW_ERRORS = {
+  // The Worker knows the token but Google would not vouch for it. Almost always
+  // a session that has gone stale in a way a refresh cannot fix.
+  unauthorised: 'Google would not confirm your sign-in. Open your profile, sign out, and sign in again.',
+  'not-found': 'This app is talking to an older Worker — it needs redeploying.',
+  failed: 'The crew service refused that. Try again in a moment.',
   'signed-out': 'Sign in with Google to use crews.',
   'no-broker': 'Crews are not switched on in this build.',
   offline: "Can't reach your crew — you're offline.",
@@ -88,5 +97,7 @@ export const CREW_ERRORS = {
 };
 
 export function crewErrorText(code) {
-  return CREW_ERRORS[code] || 'That did not work. Try again.';
+  // Anything unmapped still names itself. "That did not work" tells a person
+  // nothing and tells whoever is debugging it less.
+  return CREW_ERRORS[code] || `That did not work (${code || 'no reason given'}).`;
 }

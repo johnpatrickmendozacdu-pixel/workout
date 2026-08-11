@@ -452,6 +452,9 @@ function renderSyncUI() {
   if (state.modal && state.modal.type === 'profile') renderModal();
   renderTopbar();
   renderBanner();
+  // Signing in finishes after the view has already drawn, and the crew screen
+  // is the one that changes completely when it does.
+  if (state.view === 'social') renderView();
 }
 
 /**
@@ -2649,12 +2652,16 @@ function memberFaceHtml(m, size) {
 }
 
 function viewSocial() {
-  if (!gsync.isSignedIn() && !(state.crew.crews || []).length) {
+  // `hasSyncAccount`, never `isSignedIn`: the access token is stale for most of
+  // any given hour and silently renewable, which is why every other sync path
+  // in this app gates on the account instead of the token. Gating on the token
+  // here told signed-in people to sign in.
+  if (!hasSyncAccount() && !(state.crew.crews || []).length) {
     return `<div class="empty-card">
       <div class="glyph">👥</div>
       <h3>Train together</h3>
       <p>A crew shows you and your friends' streaks side by side. It needs the Google account you already sync with.</p>
-      <button class="primary-btn" data-action="open-profile">Sign in with Google</button>
+      <button class="primary-btn" data-action="google-sign-in">Sign in with Google</button>
     </div>`;
   }
 
@@ -2728,7 +2735,7 @@ function crewErrorLine() {
 async function joinCrewByCode(raw) {
   const code = String(raw || '').trim();
   if (!code) { showToast('Paste or type the invite code.'); return false; }
-  if (!gsync.isSignedIn()) {
+  if (!hasSyncAccount()) {
     state.crew.pendingCode = code;
     await db.setItem('crew-pending-code', code).catch(() => {});
     state.modal = { type: 'profile' };
@@ -2795,7 +2802,8 @@ function applyCrewResult(res, opts) {
 /** Called on app open and when the tab is entered. Quiet on failure: the tab
  *  keeps whatever it had, with a line saying so. */
 async function refreshCrews(opts) {
-  if (!gsync.isSignedIn()) return;
+  // The call itself renews a stale token, so the account is the gate here too.
+  if (!hasSyncAccount()) return;
   if (state.crew.loading) return;
   state.crew.loading = true;
   const res = await crewApi.syncCrews(myCrewCard());
@@ -4684,7 +4692,7 @@ async function init() {
   // Following an invite is the one thing that should interrupt: land on the
   // crew, not on Today.
   if (state.crew.pendingCode) {
-    if (gsync.isSignedIn()) joinCrewByCode(state.crew.pendingCode).catch(() => {});
+    if (hasSyncAccount()) joinCrewByCode(state.crew.pendingCode).catch(() => {});
     else {
       state.view = 'social';
       render();

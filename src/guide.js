@@ -155,6 +155,18 @@ export const GUIDE_SECTIONS = [
     ],
   },
   {
+    id: 'crew',
+    phase: 'Every day',
+    title: 'Train with a crew',
+    lead: 'Social → Create a crew, then send the link to whoever you train with.',
+    notes: [
+      'They tap the link, sign in with their own Gmail, and they are in.',
+      'Everyone sees names, streaks and totals — never your individual sets, weight or notes.',
+      'Anyone with the link can join, so send it to people, not places.',
+      'Leave any time. Your card goes with you.',
+    ],
+  },
+  {
     id: 'progress',
     phase: 'Every day',
     title: 'Watch it add up',

@@ -2,6 +2,10 @@
 // secrets, no state — everything here is unit-tested. The Google calls that use
 // these live in index.js.
 
+/** Google's "who is this token" endpoint. Shared by the broker (which reports
+ *  the signed-in email) and the crew routes (which identify the caller). */
+export const GOOGLE_USERINFO = 'https://www.googleapis.com/oauth2/v3/userinfo';
+
 export function corsHeaders(origin, allowed) {
   // `allowed` is a comma-separated list, so the app can live at more than one
   // address at once — which is the only way to move hosts without a flag day

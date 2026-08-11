@@ -458,3 +458,44 @@ export function formatCount(n) {
   if (n < 1000000) return (Math.round(n / 100) / 10).toLocaleString() + 'k';
   return (Math.round(n / 100000) / 10).toLocaleString() + 'M';
 }
+
+/**
+ * What this phone publishes about itself to a crew.
+ *
+ * Built here, in the pure layer, because it is a claim about training and every
+ * other claim about training is made here — and because it is the one thing
+ * that leaves the device, so what it contains has to be readable in one place
+ * rather than assembled across a render.
+ *
+ * It carries totals and streaks, never the log: no individual sets, no dates,
+ * no weight, no BMI. A crew can see that you trained today and how long your
+ * run is; it cannot reconstruct your week.
+ */
+export function buildCrewCard(profile, exercises, statsById, todayTotals, dayStreak) {
+  const active = (exercises || []).filter((e) => e.active && !e.archived);
+  const cards = active.map((ex) => {
+    const s = (statsById && statsById[ex.id]) || {};
+    return {
+      name: ex.name,
+      category: ex.category || '',
+      unit: ex.unit || 'reps',
+      streak: s.currentStreak || 0,
+      total: s.totalReps || 0,
+      today: (todayTotals && todayTotals[ex.id]) || 0,
+    };
+  });
+  return {
+    name: (profile && profile.username) || '',
+    photo: (profile && profile.avatar) || '',
+    streak: dayStreak && dayStreak.current ? dayStreak.current : 0,
+    best: dayStreak && dayStreak.longest ? dayStreak.longest : 0,
+    // "Trained today" is any logged work at all, not a met target — a crew
+    // should see that you turned up, which is the thing worth nudging about.
+    trainedToday: cards.some((c) => c.today > 0),
+    lifetime: {
+      reps: cards.reduce((a, c) => a + c.total, 0),
+      timeMs: active.reduce((a, ex) => a + (((statsById && statsById[ex.id]) || {}).totalTime || 0), 0),
+    },
+    exercises: cards,
+  };
+}

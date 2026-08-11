@@ -8,7 +8,7 @@ import {
   streakInfo,
   lifetimeSince,
   exerciseStats,
-  formatDuration, formatTotalDuration, formatMinutes,
+  formatDuration, formatTotalDuration, formatMinutes, buildCrewCard,
   formatCount,
   recentDayStates,
   streakTier,
@@ -626,3 +626,40 @@ describe('formatMinutes', () => {
   });
 });
 
+describe('buildCrewCard', () => {
+  const exercises = [
+    { id: 'a', name: 'Push Ups', category: 'chest', unit: 'reps', active: true },
+    { id: 'b', name: 'Plank', category: 'abs', unit: 'min', active: true, mode: 'time' },
+    { id: 'c', name: 'Old', active: false, archived: true },
+  ];
+  const stats = {
+    a: { currentStreak: 17, totalReps: 1292, totalTime: 900000 },
+    b: { currentStreak: 4, totalReps: 40, totalTime: 600000 },
+  };
+
+  it('publishes totals and streaks, never the log', () => {
+    const card = buildCrewCard({ username: 'Johnny', avatar: 'data:image/png;base64,A' },
+      exercises, stats, { a: 76 }, { current: 9, longest: 20 });
+    expect(card.name).toBe('Johnny');
+    expect(card.streak).toBe(9);
+    expect(card.best).toBe(20);
+    expect(card.lifetime.reps).toBe(1332);
+    expect(card.lifetime.timeMs).toBe(1500000);
+    expect(JSON.stringify(card)).not.toContain('setsLog');
+    expect(card.exercises).toHaveLength(2);        // the archived one is not published
+  });
+
+  it('counts any logged work as trained today, not a met target', () => {
+    const none = buildCrewCard({}, exercises, stats, {}, { current: 0 });
+    expect(none.trainedToday).toBe(false);
+    const some = buildCrewCard({}, exercises, stats, { a: 1 }, { current: 0 });
+    expect(some.trainedToday).toBe(true);
+  });
+
+  it('survives an empty profile and missing stats', () => {
+    const card = buildCrewCard(null, exercises, null, null, null);
+    expect(card.name).toBe('');
+    expect(card.streak).toBe(0);
+    expect(card.exercises[0].streak).toBe(0);
+  });
+});

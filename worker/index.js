@@ -1,8 +1,8 @@
-import { corsHeaders, safeRedirectUri, validateBody, mapGoogleToken, jsonResponse } from './broker.js';
+import { corsHeaders, safeRedirectUri, validateBody, mapGoogleToken, jsonResponse, GOOGLE_USERINFO } from './broker.js';
+import { crewRoute } from './crew-routes.js';
 
 const GOOGLE_TOKEN = 'https://oauth2.googleapis.com/token';
 const GOOGLE_REVOKE = 'https://oauth2.googleapis.com/revoke';
-const GOOGLE_USERINFO = 'https://www.googleapis.com/oauth2/v3/userinfo';
 
 export default {
   async fetch(request, env) {
@@ -19,6 +19,15 @@ export default {
     if (url.pathname === '/exchange') return exchange(body, env, cors);
     if (url.pathname === '/token') return refresh(body, env, cors);
     if (url.pathname === '/revoke') return revoke(body, env, cors);
+
+    // The crew endpoints share this Worker because they share its one job:
+    // holding the thing a browser must not. They keep their own file, and a
+    // Worker deployed without a DB binding simply answers 503 to them while
+    // token broking carries on — sync must never depend on the crew.
+    if (url.pathname.startsWith('/crew/')) {
+      const res = await crewRoute(url.pathname, body, env, cors);
+      if (res) return res;
+    }
     return jsonResponse({ error: 'not-found' }, 404, cors);
   },
 };

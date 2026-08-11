@@ -262,6 +262,17 @@ async function fetchEmail() {
   }
 }
 
+/**
+ * The live access token, for callers that need to prove who they are to our own
+ * Worker rather than to Google. It never leaves the app except in a request to
+ * BROKER_URL, and the Worker only ever exchanges it for an identity.
+ */
+export function getAccessToken() {
+  return accessToken && Date.now() < tokenExpiresAt ? accessToken : null;
+}
+
+export function getBrokerUrl() { return BROKER_URL; }
+
 export function isSignedIn() {
   return !!accessToken && Date.now() < tokenExpiresAt;
 }

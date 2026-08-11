@@ -1,7 +1,13 @@
-# Sets token-broker Worker
+# Sets Worker — token broker + crews
 
-Stateless. Keeps Google sync alive past the 1-hour token expiry. Stores nothing —
-it only holds the Google client secret (as an env var) and swaps tokens on demand.
+Two jobs, one Worker, because they share the same reason to exist: holding what a
+browser must not. The **broker** keeps Google sync alive past the 1-hour token
+expiry and stores nothing. The **crew** routes store the social layer in D1 —
+names, streaks and totals that people have chosen to share with each other, never
+anyone's workout log.
+
+`deploy-this.js` is **generated**. Change `broker.js`, `crew.js`, `crew-routes.js`
+or `index.js`, then run `node tools/bundle-worker.mjs` and paste the result.
 
 ## One-time deploy (Cloudflare, free)
 
@@ -23,3 +29,16 @@ it only holds the Google client secret (as an env var) and swaps tokens on deman
 6. Send the Worker URL back — it gets filled into the app as `BROKER_URL`, and that's it.
 
 Never touched again after this. The Worker patches and scales itself.
+
+## Crews (added 2026-08-11)
+
+Needs a D1 database bound as `DB`. Without it the crew routes answer 503 and the
+token broker carries on untouched — sync can never depend on the crew.
+
+1. **Storage & Databases → D1 → Create** a database named `sets-crew`.
+2. Its **Console** tab, run the schema in `docs/superpowers/specs/2026-08-11-crew-social-design.md`.
+3. **sets-broker → Settings → Bindings → Add → D1 database**, variable name `DB`.
+4. Paste the regenerated `deploy-this.js` and deploy.
+
+Free tier: 5 GB, 5M row reads/day, 100k writes/day, and it does not pause when
+idle — which is why this is here rather than on Supabase.

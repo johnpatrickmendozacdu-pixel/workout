@@ -61,7 +61,8 @@ import {
 import { GUIDE_SECTIONS, GUIDE_INTRO } from './guide.js';
 import { CATEGORIES, categoryOf, categoryLabel, categoryIconUrl } from './categories.js';
 import * as gsync from './sync/googleSync.js';
-import { allStats, exerciseStats, recentDayStates, workoutDates, streakTier, dayHistory, trajectorySeries, formatDuration, formatTotalDuration, formatMinutes, formatCount, formatClock, groupBySchedule, comboTimes } from './domain/stats.js';
+import * as crewApi from './sync/crew.js';
+import { allStats, exerciseStats, recentDayStates, workoutDates, streakTier, dayHistory, trajectorySeries, formatDuration, formatTotalDuration, formatMinutes, formatCount, buildCrewCard, formatClock, groupBySchedule, comboTimes } from './domain/stats.js';
 
 // Every number is on screen — no hunting, no typing. One tap applies it in
 // whichever direction the lever is set to.
@@ -87,6 +88,12 @@ const state = {
   showArchived: false,
   editingPlanTarget: null,
   editingDayTarget: null,
+  /**
+   * The crew, exactly as the Worker last described it. Never patched locally —
+   * every call returns the whole picture and replaces this — so the screen can
+   * never drift from what the crew actually is.
+   */
+  crew: { crews: [], activeId: null, loading: false, error: null, lastSync: 0, pendingCode: null },
   editingTopSet: null,
   editingDayTotal: null,
   openExercise: null,
@@ -1112,6 +1119,7 @@ const ICONS = {
   restore: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M4 8a8 8 0 111.6 6.4M4 4v4h4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
   check: `<svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="var(--success)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
   share: `<svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M12 3v12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M8 7l4-4 4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M5 13v6.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V13" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`,
+  people: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><circle cx="9" cy="8" r="3.2" stroke="currentColor" stroke-width="1.8"/><path d="M3.5 19c0-3 2.5-4.8 5.5-4.8s5.5 1.8 5.5 4.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M16 5.5a3 3 0 0 1 0 5.6M17.5 14.6c2 .6 3.5 2.2 3.5 4.4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`,
   book: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M4 4.8A1.8 1.8 0 0 1 5.8 3H18a1 1 0 0 1 1 1v13.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 17.5h13v2.7a.8.8 0 0 1-.8.8H6a2 2 0 0 1 0-4z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M8.5 7.5h6.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>`,
   bulb: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M9.5 18h5M10.2 21h3.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2h5c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>`,
   help: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.7"/><path d="M9.6 9.2a2.5 2.5 0 114.2 1.9c-.9.7-1.3 1.1-1.3 2.1" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/><circle cx="12" cy="17" r="1" fill="currentColor"/></svg>`,
@@ -2128,6 +2136,7 @@ const NAV_ITEMS = [
   { view: 'today', label: 'Today', icon: 'today' },
   { view: 'plan', label: 'Plan', icon: 'plan' },
   { view: 'progress', label: 'Progress', icon: 'progress' },
+  { view: 'social', label: 'Social', icon: 'people' },
   { view: 'guide', label: 'Guide', icon: 'book' },
 ];
 
@@ -2266,6 +2275,17 @@ function renderTopbar() {
           ${avatarChipHtml()}
         </div>
       </div>`;
+  } else if (state.view === 'social') {
+    el.innerHTML = `
+      <div class="topbar-row">
+        <div class="topbar-left">${LOGO_MARK}<div class="screen-title">Social</div></div>
+        <div class="topbar-right">
+          <button class="icon-btn" data-action="refresh-crew" aria-label="Refresh crew">${ICONS.restore}</button>
+          ${helpChipHtml()}
+          ${versionChipHtml()}
+          ${avatarChipHtml()}
+        </div>
+      </div>`;
   } else if (state.view === 'guide') {
     // No "?" here: this screen is what that button is a shortcut to, and a guide
     // to the guide is the kind of thing that makes an app feel padded.
@@ -2297,6 +2317,7 @@ function renderView() {
   if (state.view === 'today') el.innerHTML = viewToday();
   else if (state.view === 'plan') el.innerHTML = viewPlan();
   else if (state.view === 'guide') el.innerHTML = guideBodyHtml();
+  else if (state.view === 'social') el.innerHTML = viewSocial();
   else el.innerHTML = viewProgress();
 }
 
@@ -2382,7 +2403,14 @@ function modalGuide() {
     ],
   };
 
-  const title = { today: 'Today', plan: 'Plan', progress: 'Progress' }[state.view] || 'Today';
+  byView.social = [
+    ['A crew', 'People you train with, each on their own phone and their own Google account.'],
+    ['What they see', 'Your name, photo, streaks and totals. Never your individual sets, weight or notes.'],
+    ['Invite', 'Send the link or read out the code. Anyone with it can join, so send it to people, not places.'],
+    ['Leaving', 'You can leave any time — your card goes with you.'],
+  ];
+
+  const title = { today: 'Today', plan: 'Plan', progress: 'Progress', social: 'Social' }[state.view] || 'Today';
   const items = (byView[state.view] || byView.today).filter(Boolean);
 
   return `<div class="modal-backdrop" data-action="backdrop">
@@ -2585,6 +2613,193 @@ function viewToday() {
   html += weighInCardHtml();
 
   return html;
+}
+
+/* ============================= VIEW: SOCIAL =============================
+ * A crew is the only screen in Sets that needs the network, so it is also the
+ * only one that has to be honest about not having it. Every state — signed
+ * out, no crew, a stale roster, a failed call — is a screen someone can read
+ * and act on, not a spinner.
+ *
+ * The roster is whatever the Worker last said, cached in IndexedDB. It renders
+ * before any request goes out, so opening the tab on a train shows your crew
+ * as it was rather than nothing at all.
+ */
+function activeCrew() {
+  const list = state.crew.crews || [];
+  if (!list.length) return null;
+  return list.find((c) => c.id === state.crew.activeId) || list[0];
+}
+
+/** My own row, by Google account. The Worker tells us who each member is; the
+ *  only way to recognise myself is the email I signed in with. */
+function isMe(member) {
+  const email = gsync.getSignedInEmail();
+  return !!(member && member.email && email && member.email === email);
+}
+
+function memberInitial(m) {
+  return ((m.name || '?').trim()[0] || '?').toUpperCase();
+}
+
+function memberFaceHtml(m, size) {
+  return m.photo
+    ? `<span class="crew-face" style="width:${size}px;height:${size}px"><img src="${escapeHtml(m.photo)}" alt=""></span>`
+    : `<span class="crew-face empty" style="width:${size}px;height:${size}px">${escapeHtml(memberInitial(m))}</span>`;
+}
+
+function viewSocial() {
+  if (!gsync.isSignedIn() && !(state.crew.crews || []).length) {
+    return `<div class="empty-card">
+      <div class="glyph">👥</div>
+      <h3>Train together</h3>
+      <p>A crew shows you and your friends' streaks side by side. It needs the Google account you already sync with.</p>
+      <button class="primary-btn" data-action="open-profile">Sign in with Google</button>
+    </div>`;
+  }
+
+  const crews = state.crew.crews || [];
+  const crew = activeCrew();
+
+  const notice = state.crew.error
+    ? `<p class="tip crew-stale"><span>${escapeHtml(crewErrorLine())}</span>${state.crew.lastSync ? '<em>Showing your crew as it last was.</em>' : ''}</p>`
+    : '';
+
+  if (!crews.length) {
+    return `${notice}<div class="empty-card">
+      <div class="glyph">👥</div>
+      <h3>No crew yet</h3>
+      <p>Make one and send the link to whoever you train with. Everyone keeps their own app — you just see each other's streaks.</p>
+      <button class="primary-btn" data-action="open-create-crew">Create a crew</button>
+      <button class="secondary-btn crew-join-btn" data-action="open-join-crew">Join with a code</button>
+    </div>`;
+  }
+
+  // More than one crew gets a switcher; one crew does not need naming twice.
+  const switcher = crews.length > 1
+    ? `<div class="crew-switch">${crews.map((c) => `<button class="crew-chip ${c.id === crew.id ? 'on' : ''}" data-action="pick-crew" data-id="${c.id}">${escapeHtml(c.name)}</button>`).join('')}</div>`
+    : '';
+
+  const me = (crew.members || []).find(isMe);
+  const iOwn = me && crew.owner === me.id;
+
+  const rows = (crew.members || []).map((m) => {
+    const mine = isMe(m);
+    return `<button class="crew-row ${m.trainedToday ? 'trained' : ''} ${mine ? 'me' : ''}" data-action="open-member" data-id="${m.id}">
+      ${memberFaceHtml(m, 40)}
+      <span class="crew-body">
+        <span class="crew-name">${escapeHtml(m.name || 'Someone')}${mine ? '<em>you</em>' : ''}${m.isOwner ? '<i title="Made this crew">★</i>' : ''}</span>
+        <span class="crew-sub">${m.streak ? `${m.streak} day streak` : 'no streak yet'}${m.best > m.streak ? ` · best ${m.best}` : ''}</span>
+      </span>
+      <span class="crew-state">${m.trainedToday ? ICONS.check : '<i class="crew-pending"></i>'}</span>
+    </button>`;
+  }).join('');
+
+  const trained = (crew.members || []).filter((m) => m.trainedToday).length;
+
+  return `${notice}
+    ${switcher}
+    <div class="crew-head">
+      <div class="crew-title">
+        <h2>${escapeHtml(crew.name)}</h2>
+        <span>${crew.members.length} member${crew.members.length === 1 ? '' : 's'} · ${trained} trained today</span>
+      </div>
+      <button class="icon-btn" data-action="crew-menu" data-id="${crew.id}" aria-label="Crew settings">${ICONS.gear}</button>
+    </div>
+    <div class="crew-list">${rows}</div>
+    <button class="crew-invite-btn" data-action="open-invite" data-id="${crew.id}">${ICONS.share}Invite someone</button>
+    ${iOwn ? '' : ''}
+    <p class="crew-foot">Everyone sees streaks and totals. Nobody sees your individual sets, your weight, or your notes.</p>`;
+}
+
+function crewErrorLine() {
+  return crewApi.crewErrorText(state.crew.error);
+}
+
+/**
+ * Joining, from wherever the code came from.
+ *
+ * A link, a typed code and a QR all land here, so the rules — signed in first,
+ * then join, then show me the crew I just joined — are written once. Someone
+ * following an invite while signed out is the common case, not the edge one:
+ * the code is kept, the sign-in prompt opens, and the join completes itself
+ * once they are back.
+ */
+async function joinCrewByCode(raw) {
+  const code = String(raw || '').trim();
+  if (!code) { showToast('Paste or type the invite code.'); return false; }
+  if (!gsync.isSignedIn()) {
+    state.crew.pendingCode = code;
+    await db.setItem('crew-pending-code', code).catch(() => {});
+    state.modal = { type: 'profile' };
+    renderModal();
+    showToast('Sign in to join the crew');
+    return false;
+  }
+  showToast('Joining…');
+  const res = await crewApi.joinCrew(code, myCrewCard());
+  if (!applyCrewResult(res, { toast: true })) return false;
+  state.crew.pendingCode = null;
+  await db.setItem('crew-pending-code', null).catch(() => {});
+  closeModal();
+  state.view = 'social';
+  db.prefs.set('view', 'social');
+  rerender();
+  const crew = activeCrew();
+  showToast(crew ? `You're in ${crew.name}` : 'Joined');
+  return true;
+}
+
+/** An invite link is `#/join/<code>`. Read once at boot, then wiped from the
+ *  address bar so a reload cannot re-trigger it. */
+function readInviteFromUrl() {
+  const m = /^#\/join\/([A-Za-z0-9-]{4,16})$/.exec(location.hash || '');
+  if (!m) return null;
+  history.replaceState(null, '', location.pathname + location.search);
+  return m[1];
+}
+
+/* ---- crew data ---- */
+
+/** What this device publishes. Built fresh at the moment of sending, never
+ *  stored, so it cannot go stale in a cache the way a snapshot would. */
+function myCrewCard() {
+  const today = todayISO();
+  const stats = allStats(state.exercises, state.setsLog, state.timersLog, null, state.streakOverrides);
+  const todayTotals = {};
+  state.exercises.forEach((ex) => { todayTotals[ex.id] = calcTotal(getSetsFor(ex.id, today)); });
+  const dayStreak = calcStreakInfo(state.exercises, state.setsLog, today, state.streakOverrides);
+  return buildCrewCard(state.profile, state.exercises, stats, todayTotals, dayStreak);
+}
+
+function applyCrewResult(res, opts) {
+  if (res.ok) {
+    state.crew.crews = res.crews || [];
+    state.crew.error = null;
+    state.crew.lastSync = Date.now();
+    if (res.joinedId) state.crew.activeId = res.joinedId;
+    if (state.crew.activeId && !state.crew.crews.some((c) => c.id === state.crew.activeId)) {
+      state.crew.activeId = null;
+    }
+    db.setItem('crews-cache', { crews: state.crew.crews, at: state.crew.lastSync }).catch(() => {});
+  } else {
+    state.crew.error = res.error;
+    if (opts && opts.toast) showToast(crewApi.crewErrorText(res.error));
+  }
+  state.crew.loading = false;
+  renderView();
+  renderNav();
+  return res.ok;
+}
+
+/** Called on app open and when the tab is entered. Quiet on failure: the tab
+ *  keeps whatever it had, with a line saying so. */
+async function refreshCrews(opts) {
+  if (!gsync.isSignedIn()) return;
+  if (state.crew.loading) return;
+  state.crew.loading = true;
+  const res = await crewApi.syncCrews(myCrewCard());
+  applyCrewResult(res, opts);
 }
 
 /* ============================= VIEW: PLAN ============================= */
@@ -2970,6 +3185,11 @@ function renderModal() {
   else if (m.type === 'data') root.innerHTML = modalData();
   else if (m.type === 'profile') root.innerHTML = modalProfile();
   else if (m.type === 'screenGuide') root.innerHTML = modalGuide();
+  else if (m.type === 'crewCreate') root.innerHTML = modalCrewCreate();
+  else if (m.type === 'crewJoin') root.innerHTML = modalCrewJoin();
+  else if (m.type === 'crewInvite') root.innerHTML = modalCrewInvite();
+  else if (m.type === 'crewMember') root.innerHTML = modalCrewMember();
+  else if (m.type === 'crewSettings') root.innerHTML = modalCrewSettings();
   else if (m.type === 'importChoice') root.innerHTML = modalImportChoice();
   const key = `${m.type}:${m.exId || ''}`;
   if (key !== lastModalKey) {
@@ -3271,6 +3491,135 @@ function modalExerciseForm(exId) {
         <button class="secondary-btn" data-action="close-modal">Cancel</button>
         <button class="primary-btn" data-action="save-exercise" data-id="${exId || ''}">Save</button>
       </div>
+    </div>
+  </div>`;
+}
+
+/* ---- crew sheets ----
+ * Four small sheets rather than one screen with modes: each does one thing, and
+ * the one that matters most — the invite — is the only one that has to be
+ * understood by someone who has never seen the app.
+ */
+function modalCrewCreate() {
+  return `<div class="modal-backdrop" data-action="backdrop">
+    <div class="modal-sheet" data-stop>
+      <div class="sheet-handle"></div>
+      <div class="sheet-head"><h2>New crew</h2><button class="sheet-close" data-action="close-modal">${ICONS.close}</button></div>
+      <div class="field">
+        <label>Crew name</label>
+        <input id="crew-name" type="text" maxlength="40" placeholder="e.g. Morning crew" autocomplete="off">
+        <div class="hint">Anyone you invite sees this name, your profile name and your streaks.</div>
+      </div>
+      <div class="form-actions">
+        <button class="secondary-btn" data-action="close-modal">Cancel</button>
+        <button class="primary-btn" data-action="create-crew">Create</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function modalCrewJoin() {
+  const code = (state.modal && state.modal.code) || '';
+  return `<div class="modal-backdrop" data-action="backdrop">
+    <div class="modal-sheet" data-stop>
+      <div class="sheet-handle"></div>
+      <div class="sheet-head"><h2>Join a crew</h2><button class="sheet-close" data-action="close-modal">${ICONS.close}</button></div>
+      <div class="field">
+        <label>Invite code</label>
+        <input id="crew-code" type="text" maxlength="12" placeholder="ABCD2345" value="${escapeHtml(code)}" autocomplete="off" autocapitalize="characters" spellcheck="false">
+        <div class="hint">The eight characters at the end of the invite link. Case does not matter.</div>
+      </div>
+      <div class="form-actions">
+        <button class="secondary-btn" data-action="close-modal">Cancel</button>
+        <button class="primary-btn" data-action="join-crew">Join</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+function inviteLinkFor(crew) {
+  return `${location.origin}${location.pathname}#/join/${crew.code}`;
+}
+
+function modalCrewInvite() {
+  const crew = activeCrew();
+  if (!crew) return '';
+  const link = inviteLinkFor(crew);
+  return `<div class="modal-backdrop" data-action="backdrop">
+    <div class="modal-sheet" data-stop>
+      <div class="sheet-handle"></div>
+      <div class="sheet-head"><h2>Invite to ${escapeHtml(crew.name)}</h2><button class="sheet-close" data-action="close-modal">${ICONS.close}</button></div>
+      <div class="invite-code">${escapeHtml(crew.code)}</div>
+      <div class="invite-hint">Send them the link, or read them the code.</div>
+      <div class="invite-link">${escapeHtml(link)}</div>
+      <button class="primary-btn" data-action="copy-invite" data-link="${escapeHtml(link)}">Copy link</button>
+      <button class="secondary-btn" data-action="share-invite" data-link="${escapeHtml(link)}">Send…</button>
+      <p class="hint">Anyone with this link can join and see the crew's streaks, so send it to people, not places. You can remove someone later.</p>
+    </div>
+  </div>`;
+}
+
+function modalCrewMember() {
+  const crew = activeCrew();
+  const m = crew && (crew.members || []).find((x) => x.id === state.modal.memberId);
+  if (!m) return '';
+  const mine = isMe(m);
+  const iOwn = crew.members.some((x) => isMe(x) && x.id === crew.owner);
+  const ex = (m.exercises || []).slice().sort((a, b) => (b.streak - a.streak) || (b.total - a.total));
+  return `<div class="modal-backdrop" data-action="backdrop">
+    <div class="modal-sheet" data-stop>
+      <div class="sheet-handle"></div>
+      <div class="sheet-head">
+        <h2>${memberFaceHtml(m, 30)}${escapeHtml(m.name || 'Someone')}</h2>
+        <button class="sheet-close" data-action="close-modal">${ICONS.close}</button>
+      </div>
+      <div class="member-top">
+        <div class="member-streak"><b>${m.streak}</b><span>day streak</span></div>
+        <div class="member-side">
+          <div>best <b>${m.best}</b></div>
+          <div class="${m.trainedToday ? 'yes' : 'no'}">${m.trainedToday ? 'trained today' : 'not yet today'}</div>
+        </div>
+      </div>
+      <dl class="ex-numbers member-life">
+        ${m.lifetime && m.lifetime.reps ? `<div><dt>Lifetime</dt><dd>${formatCount(m.lifetime.reps)}</dd></div>` : ''}
+        ${m.lifetime && m.lifetime.timeMs ? `<div><dt>Total time</dt><dd>${formatTotalDuration(m.lifetime.timeMs)}</dd></div>` : ''}
+      </dl>
+      ${ex.length ? `<div class="set-list member-ex">
+        <div class="set-list-head"><span>Exercises</span><span>${ex.length}</span></div>
+        ${ex.map((e) => `<div class="member-ex-row">
+          <span class="member-ex-name">${escapeHtml(e.name)}</span>
+          <span class="member-ex-num">${e.today > 0 ? `<b>${formatCount(e.today)}</b> today · ` : ''}${e.streak ? `${e.streak}d` : '—'}</span>
+        </div>`).join('')}
+      </div>` : '<p class="hint">Nothing published yet — they have not opened Sets since joining.</p>'}
+      ${iOwn && !mine ? `<button class="danger-btn" data-action="remove-member" data-id="${m.id}">Remove from crew</button>` : ''}
+    </div>
+  </div>`;
+}
+
+function modalCrewSettings() {
+  const crew = activeCrew();
+  if (!crew) return '';
+  const iOwn = crew.members.some((x) => isMe(x) && x.id === crew.owner);
+  const renaming = !!(state.modal && state.modal.renaming);
+  return `<div class="modal-backdrop" data-action="backdrop">
+    <div class="modal-sheet" data-stop>
+      <div class="sheet-handle"></div>
+      <div class="sheet-head"><h2>${escapeHtml(crew.name)}</h2><button class="sheet-close" data-action="close-modal">${ICONS.close}</button></div>
+      ${iOwn ? (renaming
+        ? `<div class="field">
+            <label>Crew name</label>
+            <input id="crew-rename" type="text" maxlength="40" value="${escapeHtml(crew.name)}" autocomplete="off">
+            <div class="form-actions">
+              <button class="secondary-btn" data-action="cancel-rename-crew">Cancel</button>
+              <button class="primary-btn" data-action="rename-crew" data-id="${crew.id}">Save name</button>
+            </div>
+          </div>`
+        : `<button class="secondary-btn wide" data-action="start-rename-crew">Rename crew</button>`) : ''}
+      <button class="secondary-btn wide" data-action="open-invite" data-id="${crew.id}">Invite someone</button>
+      <button class="secondary-btn wide" data-action="open-create-crew">Create another crew</button>
+      <button class="secondary-btn wide" data-action="open-join-crew">Join another crew</button>
+      <button class="danger-btn" data-action="leave-crew" data-id="${crew.id}">Leave this crew</button>
+      <p class="hint">${iOwn ? 'You made this crew. If you leave, it passes to whoever joined first — and the last person out closes it.' : 'Leaving removes your card from this crew straight away.'}</p>
     </div>
   </div>`;
 }
@@ -3607,6 +3956,7 @@ document.addEventListener('click', async (e) => {
 
   switch (action) {
     case 'nav':
+      if (btn.dataset.view === 'social') setTimeout(() => refreshCrews().catch(() => {}), 0);
       state.view = btn.dataset.view;
       db.prefs.set('view', state.view);
       state.expandedDay = null;
@@ -3668,6 +4018,102 @@ document.addEventListener('click', async (e) => {
       break;
     case 'share-day':
       await shareDayImage();
+      break;
+
+    /* ---- crew ---- */
+    case 'pick-crew':
+      state.crew.activeId = btn.dataset.id;
+      renderView();
+      break;
+    case 'open-create-crew':
+      state.modal = { type: 'crewCreate' };
+      renderModal();
+      { const i = document.getElementById('crew-name'); if (i) i.focus(); }
+      break;
+    case 'open-join-crew':
+      state.modal = { type: 'crewJoin' };
+      renderModal();
+      { const i = document.getElementById('crew-code'); if (i) i.focus(); }
+      break;
+    case 'create-crew': {
+      const el = document.getElementById('crew-name');
+      const name = el ? el.value.trim() : '';
+      if (!name) { showToast('Give the crew a name.'); break; }
+      showToast('Creating…');
+      const res = await crewApi.createCrew(name, myCrewCard());
+      if (applyCrewResult(res, { toast: true })) { closeModal(); showToast(`${name} is ready — invite someone`); }
+      break;
+    }
+    case 'join-crew': {
+      const el = document.getElementById('crew-code');
+      await joinCrewByCode(el ? el.value : '');
+      break;
+    }
+    case 'open-invite':
+      state.crew.activeId = btn.dataset.id;
+      state.modal = { type: 'crewInvite' };
+      renderModal();
+      break;
+    case 'copy-invite':
+      try {
+        await navigator.clipboard.writeText(btn.dataset.link);
+        showToast('Link copied');
+      } catch (e) { showToast('Copy failed — long-press the link instead'); }
+      break;
+    case 'share-invite': {
+      const crew = activeCrew();
+      const text = `Join ${crew ? crew.name : 'my crew'} on Sets: ${btn.dataset.link}`;
+      if (navigator.share) {
+        try { await navigator.share({ text }); } catch (e) { /* dismissed */ }
+      } else {
+        try { await navigator.clipboard.writeText(text); showToast('Invite copied'); } catch (e) { /* nothing to do */ }
+      }
+      break;
+    }
+    case 'crew-menu':
+      state.crew.activeId = btn.dataset.id;
+      state.modal = { type: 'crewSettings' };
+      renderModal();
+      break;
+    case 'open-member':
+      state.modal = { type: 'crewMember', memberId: btn.dataset.id };
+      renderModal();
+      break;
+    case 'start-rename-crew':
+      if (state.modal) state.modal.renaming = true;
+      renderModal();
+      { const i = document.getElementById('crew-rename'); if (i) { i.focus(); i.select(); } }
+      break;
+    case 'cancel-rename-crew':
+      if (state.modal) state.modal.renaming = false;
+      renderModal();
+      break;
+    case 'rename-crew': {
+      const el = document.getElementById('crew-rename');
+      const name = el ? el.value.trim() : '';
+      if (!name) { showToast('Give the crew a name.'); break; }
+      const res = await crewApi.renameCrew(btn.dataset.id, name);
+      if (applyCrewResult(res, { toast: true })) { closeModal(); showToast('Crew renamed'); }
+      break;
+    }
+    case 'leave-crew': {
+      const crew = activeCrew();
+      if (!confirm(`Leave ${crew ? crew.name : 'this crew'}? Your card is removed from it straight away.`)) break;
+      const res = await crewApi.leaveCrew(btn.dataset.id);
+      if (applyCrewResult(res, { toast: true })) { closeModal(); showToast('You left the crew'); }
+      break;
+    }
+    case 'remove-member': {
+      const crew = activeCrew();
+      if (!crew) break;
+      const m = (crew.members || []).find((x) => x.id === btn.dataset.id);
+      if (!confirm(`Remove ${m ? m.name : 'this person'} from ${crew.name}?`)) break;
+      const res = await crewApi.removeMember(crew.id, btn.dataset.id);
+      if (applyCrewResult(res, { toast: true })) { closeModal(); showToast('Removed'); }
+      break;
+    }
+    case 'refresh-crew':
+      await refreshCrews({ toast: true });
       break;
     case 'toggle-stat-help':
       state.statHelp[btn.dataset.key] = !state.statHelp[btn.dataset.key];
@@ -4218,7 +4664,34 @@ async function init() {
   await restoreNamespace();
   await loadAll();
   db.requestPersistence();
+
+  // The crew, as it last was, before a single request goes out — so the tab is
+  // never empty on a slow connection.
+  try {
+    const cached = await db.getItem('crews-cache');
+    if (cached && Array.isArray(cached.crews)) {
+      state.crew.crews = cached.crews;
+      state.crew.lastSync = cached.at || 0;
+    }
+    state.crew.pendingCode = (await db.getItem('crew-pending-code')) || null;
+  } catch (e) { /* an empty crew tab is not a broken app */ }
+
+  const invite = readInviteFromUrl();
+  if (invite) state.crew.pendingCode = invite;
+
   render();
+
+  // Following an invite is the one thing that should interrupt: land on the
+  // crew, not on Today.
+  if (state.crew.pendingCode) {
+    if (gsync.isSignedIn()) joinCrewByCode(state.crew.pendingCode).catch(() => {});
+    else {
+      state.view = 'social';
+      render();
+      showToast('Sign in with Google to join the crew');
+    }
+  }
+  refreshCrews().catch(() => {});
 
   tryResumeSync().catch(() => {});
   checkVersion();

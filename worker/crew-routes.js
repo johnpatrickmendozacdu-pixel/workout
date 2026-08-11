@@ -16,15 +16,24 @@ import { jsonResponse, GOOGLE_USERINFO } from './broker.js';
 /**
  * Who is calling, according to Google.
  *
- * The app already holds an access token for its own Drive backup, so identity
- * costs no new scope and no new consent screen — the same trick `exchange()`
- * already uses to learn the account's email.
+ * **Drive first, userinfo second, and the order is the whole point.** The app
+ * only ever asked for `drive.appdata`, and `userinfo` is not covered by it — a
+ * token that syncs your backup perfectly well gets a 401 there, which is how
+ * the first attempt at this failed. Drive's own `about` endpoint answers on the
+ * scope the app already has, and its `permissionId` is a stable per-user id.
+ *
+ * Asking for the email scope instead would have meant a fresh consent screen
+ * for every user and a Google Console change, to learn something Drive was
+ * willing to tell us for nothing.
+ *
+ * The userinfo path stays as a fallback for tokens minted by the code exchange,
+ * which do carry it.
  *
  * Verified answers are cached for the isolate's life, keyed by the token, so a
- * burst of calls from one phone is one round trip. The cache can only ever
- * shorten a token's usefulness, never extend it: entries expire well inside the
- * token's own hour.
+ * burst of calls from one phone is one round trip. Entries expire well inside
+ * the token's own hour, so the cache can only ever shorten its usefulness.
  */
+const GOOGLE_DRIVE_ABOUT = 'https://www.googleapis.com/drive/v3/about?fields=user(emailAddress,permissionId)';
 const identityCache = new Map();
 const IDENTITY_TTL_MS = 5 * 60 * 1000;
 
@@ -32,14 +41,28 @@ export async function identify(token) {
   if (typeof token !== 'string' || token.length < 20) return null;
   const hit = identityCache.get(token);
   if (hit && hit.expires > Date.now()) return hit.user;
+
   let user = null;
   try {
-    const res = await fetch(GOOGLE_USERINFO, { headers: { Authorization: `Bearer ${token}` } });
+    const res = await fetch(GOOGLE_DRIVE_ABOUT, { headers: { Authorization: `Bearer ${token}` } });
     if (res.ok) {
       const info = await res.json();
-      if (info && info.sub) user = { id: info.sub, email: info.email || null };
+      const u = info && info.user;
+      // Prefixed so a Drive-derived id can never collide with a userinfo `sub`.
+      if (u && u.permissionId) user = { id: 'drive:' + u.permissionId, email: u.emailAddress || null };
     }
-  } catch (e) { /* treated as unauthenticated */ }
+  } catch (e) { /* fall through to userinfo */ }
+
+  if (!user) {
+    try {
+      const res = await fetch(GOOGLE_USERINFO, { headers: { Authorization: `Bearer ${token}` } });
+      if (res.ok) {
+        const info = await res.json();
+        if (info && info.sub) user = { id: info.sub, email: info.email || null };
+      }
+    } catch (e) { /* treated as unauthenticated */ }
+  }
+
   if (user) {
     if (identityCache.size > 500) identityCache.clear();
     identityCache.set(token, { user, expires: Date.now() + IDENTITY_TTL_MS });

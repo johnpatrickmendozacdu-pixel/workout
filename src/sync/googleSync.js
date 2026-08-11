@@ -247,18 +247,34 @@ export async function ensureEmail(timeoutMs) {
   return signedInEmail;
 }
 
+/**
+ * The signed-in address, for the profile and for the login hint on renewal.
+ *
+ * Drive's `about` first: the app holds only `drive.appdata`, and `userinfo` is
+ * not covered by it, so that endpoint 401s on a token that syncs perfectly
+ * well — which is exactly why the address stopped appearing in the profile.
+ * `about` answers on the scope we already have.
+ */
 async function fetchEmail() {
-  try {
-    const res = await fetchWithTimeout('https://www.googleapis.com/oauth2/v3/userinfo', {
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-    if (res.ok) {
-      const info = await res.json();
-      signedInEmail = info.email || null;
-      if (signedInEmail) lastEmailHint = signedInEmail;
+  const read = async (url, pick) => {
+    try {
+      const res = await fetchWithTimeout(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+      if (!res.ok) return null;
+      return pick(await res.json());
+    } catch (e) {
+      return null;   // non-fatal — sync works without knowing the address
     }
-  } catch (e) {
-    // non-fatal — sync still works without knowing the email to display
+  };
+  const email = await read(
+    'https://www.googleapis.com/drive/v3/about?fields=user(emailAddress)',
+    (j) => (j && j.user && j.user.emailAddress) || null,
+  ) || await read(
+    'https://www.googleapis.com/oauth2/v3/userinfo',
+    (j) => (j && j.email) || null,
+  );
+  if (email) {
+    signedInEmail = email;
+    lastEmailHint = email;
   }
 }
 

@@ -195,7 +195,7 @@
   .modal-sheet.center{border-radius:22px; max-width:340px; margin:0 20px 40px;}
   .sheet-handle{width:36px; height:4px; background:var(--border-strong); border-radius:99px; margin:0 auto 14px;}
   .sheet-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;}
-  .sheet-head h2{margin:0; font-size:18px; font-weight:800;}
+  .sheet-head h2{margin:0; font-size:18px; font-weight:800; flex:1; min-width:0;}
   .sheet-close{
     width:44px; height:44px; border-radius:999px; background:rgba(168,67,43,0.16);
     border:1.5px solid var(--danger); color:#F2957B; display:flex; align-items:center; justify-content:center;
@@ -1033,6 +1033,10 @@
     letter-spacing:-0.02em; color:var(--text);}
   .ex-numbers dd i{font-style:normal; font-family:var(--font-body); font-weight:500;
     font-size:11px; color:var(--text-faint); margin-left:3px;}
+  /* The unit the lifetime is counted in. Same weight as the "since" note, so
+     the number keeps the eye and the word only answers "of what". */
+  .ex-numbers dd .life-of{font-family:var(--font-body); font-weight:600;
+    font-size:11.5px; color:var(--text-dim); margin-left:3px;}
   /* Visually inline so the numbers grid stays aligned; the touch area is an
      overlay rather than a taller box, which was stretching the cell. */
   .mini-num{
@@ -1107,7 +1111,16 @@
     font-family:var(--font-mono); font-size:12px; letter-spacing:0.06em; text-transform:uppercase;
   }
   .share-btn:active{color:var(--accent); border-color:var(--accent);}
-  .logger-share{margin-top:12px;}
+  /* Sharing a finished session belongs beside its name, not under the pad —
+     it is the first thing you want once the work is done, and hunting for it
+     past a keypad you can no longer use was the wrong order. */
+  .sheet-share{
+    width:44px; height:44px; flex-shrink:0; display:flex; align-items:center; justify-content:center;
+    background:rgba(62,224,127,0.08); border:1.5px solid var(--accent); border-radius:999px;
+    color:var(--accent); margin-right:8px;
+  }
+  .sheet-share:active{background:rgba(62,224,127,0.2); transform:scale(0.92);}
+  .sheet-share svg{width:17px; height:17px;}
 
   .exday-more{
     width:100%; min-height:44px; margin-top:4px; background:none; border:none;

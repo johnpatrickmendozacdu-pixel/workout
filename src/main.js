@@ -1414,14 +1414,16 @@ function exerciseHistory(ex, s) {
     has(s.topSet) && num('Longest session', formatMinutes(s.topSet)),
     firstTotal != null && num('First day', `${formatMinutes(firstTotal)} <i>${escapeHtml(formatDisplayDate(firstDate, { month: 'short', day: 'numeric' }))}</i>`),
     has(formatDuration(s.avgTime)) && num('Average session', formatDuration(s.avgTime)),
-    s.totalReps > 0 && num('Lifetime', `${formatMinutes(s.totalReps)}${s.since ? ` <i>since ${escapeHtml(s.since)}</i>` : ''}`),
+    s.totalReps > 0 && num('Lifetime', `${formatMinutes(s.totalReps)} <b class="life-of">of ${escapeHtml(ex.name.toLowerCase())}</b>${s.since ? ` <i>since ${escapeHtml(s.since)}</i>` : ''}`),
   ];
 
   const repsTiles = [
     has(s.topSet) && num('Top set', `<button class="mini-num" data-action="edit-top-set" data-id="${ex.id}">${s.topSet}</button>`),
     firstTotal != null && num('First day', `${firstTotal} <i>${escapeHtml(formatDisplayDate(firstDate, { month: 'short', day: 'numeric' }))}</i>`),
     has(s.maxReps) && num('Best day', `${s.maxReps}${s.maxRepsDate ? ` <i>${escapeHtml(formatDisplayDate(s.maxRepsDate, { month: 'short', day: 'numeric' }))}</i>` : ''}`),
-    s.totalReps > 0 && num('Lifetime', `${formatCount(s.totalReps)}${s.since ? ` <i>since ${escapeHtml(s.since)}</i>` : ''}`),
+    // "2,065" alone made you remember which card you were in. The name earns
+    // its place here and nowhere else — every other tile is read in context.
+    s.totalReps > 0 && num('Lifetime', `${formatCount(s.totalReps)} <b class="life-of">${escapeHtml(ex.name.toLowerCase())}</b>${s.since ? ` <i>since ${escapeHtml(s.since)}</i>` : ''}`),
     weightTile(ex) || null,
   ];
   const timeTiles = [
@@ -1514,7 +1516,78 @@ function exerciseHistory(ex, s) {
  * share sheet or straight to the downloads folder. No upload, no server, no
  * account — which is also why it stays free.
  */
-const SHARE_SIZE = 1080;
+/**
+ * 1080 x 1920 — an Instagram Story frame, which is where these actually go.
+ *
+ * A square was the safe default before anyone had shared one; in practice iOS
+ * hands the picture to Stories, and a square there floats in a letterboxed band
+ * with the app's own furniture crowding it. A 9:16 card fills the screen.
+ *
+ * SAFE_TOP and SAFE_BOTTOM are the strips Instagram covers with its close
+ * button, its caption tools and the reply bar. Nothing that has to be read goes
+ * in them — which is why every card starts lower and ends higher than its
+ * margins suggest.
+ */
+const SHARE_W = 1080;
+const SHARE_H = 1920;
+const SAFE_TOP = 300;
+const SAFE_BOTTOM = 1680;
+
+/**
+ * The foot of every card: where it came from, and — if the profile has a name —
+ * who made it. The name is right-aligned against the same baseline rather than
+ * given a line of its own, so a card with no username loses nothing but the
+ * name, and one with a username gains no height.
+ */
+function drawShareFooter(g, S, pad, avatar) {
+  const y = SAFE_BOTTOM;
+  g.textAlign = 'left';
+  g.fillStyle = '#3EE07F'; g.font = "800 34px Manrope, system-ui, sans-serif";
+  g.fillText('Sets', pad, y);
+  g.fillStyle = '#6E7975'; g.font = "500 24px 'JetBrains Mono', ui-monospace, monospace";
+  g.fillText('sets-workout.vercel.app', pad + 82, y);
+
+  // Read at draw time, never stored on the card: change your name or photo in
+  // the profile and the very next image carries the new one.
+  const name = (state.profile && state.profile.username || '').trim();
+  if (!name && !avatar) return;
+
+  const size = 56;
+  let right = S - pad;
+  if (avatar) {
+    const cx = right - size / 2, cy = y - 18;
+    g.save();
+    g.beginPath(); g.arc(cx, cy, size / 2, 0, Math.PI * 2); g.clip();
+    // Cover, not stretch: a rectangular photo keeps its proportions and loses
+    // its edges instead of being squashed into the circle.
+    const scale = Math.max(size / avatar.width, size / avatar.height);
+    const w = avatar.width * scale, h = avatar.height * scale;
+    g.drawImage(avatar, cx - w / 2, cy - h / 2, w, h);
+    g.restore();
+    g.strokeStyle = 'rgba(62,224,127,0.5)'; g.lineWidth = 3;
+    g.beginPath(); g.arc(cx, cy, size / 2, 0, Math.PI * 2); g.stroke();
+    right -= size + 16;
+  }
+  if (name) {
+    g.textAlign = 'right';
+    g.fillStyle = '#9AA5A0'; g.font = "700 26px Manrope, system-ui, sans-serif";
+    g.fillText(name, right, y);
+    g.textAlign = 'left';
+  }
+}
+
+/** The profile photo, decoded once per card. Missing or broken is not an error:
+ *  the footer simply falls back to the name alone. */
+function shareLoadAvatar() {
+  const src = state.profile && state.profile.avatar;
+  if (!src) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+}
 
 function shareLoadIcon(ex) {
   const cat = categoryOf(ex);
@@ -1528,9 +1601,9 @@ function shareLoadIcon(ex) {
 }
 
 async function buildShareImage(ex, s) {
-  const S = SHARE_SIZE;
+  const S = SHARE_W;
   const c = document.createElement('canvas');
-  c.width = S; c.height = S;
+  c.width = SHARE_W; c.height = SHARE_H;
   const g = c.getContext('2d');
 
   // The app's fonts are loaded by CSS; without waiting, the first share of a
@@ -1542,36 +1615,36 @@ async function buildShareImage(ex, s) {
   const mono = "600 26px 'JetBrains Mono', ui-monospace, monospace";
   const num = "700 132px 'Martian Mono', ui-monospace, monospace";
 
-  g.fillStyle = INK; g.fillRect(0, 0, S, S);
+  g.fillStyle = INK; g.fillRect(0, 0, SHARE_W, SHARE_H);
 
   const pad = 76;
   const icon = await shareLoadIcon(ex);
-  if (icon) g.drawImage(icon, pad, pad, 104, 104);
+  if (icon) g.drawImage(icon, pad, SAFE_TOP - 78, 118, 118);
 
-  g.fillStyle = TEXT; g.font = body;
+  g.fillStyle = TEXT; g.font = "700 52px Manrope, system-ui, sans-serif";
   g.textBaseline = 'alphabetic';
-  const nameX = icon ? pad + 132 : pad;
+  const nameX = icon ? pad + 146 : pad;
   let name = ex.name;
   while (g.measureText(name).width > S - nameX - pad && name.length > 4) name = name.slice(0, -1);
   if (name !== ex.name) name += '…';
-  g.fillText(name, nameX, pad + 52);
+  g.fillText(name, nameX, SAFE_TOP - 20);
 
   const cat = categoryOf(ex);
   if (cat) {
-    g.fillStyle = FAINT; g.font = "600 24px 'JetBrains Mono', ui-monospace, monospace";
-    g.fillText(cat.label.toUpperCase(), nameX, pad + 92);
+    g.fillStyle = FAINT; g.font = "600 26px 'JetBrains Mono', ui-monospace, monospace";
+    g.fillText(cat.label.toUpperCase(), nameX, SAFE_TOP + 22);
   }
 
   // The streak is the headline: it is the number people actually want to show.
-  g.fillStyle = ACCENT; g.font = num;
-  g.fillText(String(s.currentStreak), pad, 342);
+  g.fillStyle = ACCENT; g.font = "700 168px 'Martian Mono', ui-monospace, monospace";
+  g.fillText(String(s.currentStreak), pad, 640);
   const streakW = g.measureText(String(s.currentStreak)).width;
-  g.fillStyle = DIM; g.font = "600 34px Manrope, system-ui, sans-serif";
-  g.fillText('day streak', pad + streakW + 22, 342);
+  g.fillStyle = DIM; g.font = "600 40px Manrope, system-ui, sans-serif";
+  g.fillText('day streak', pad + streakW + 26, 640);
 
   // Trajectory, same data as the card's chart.
   const { points, maxY, minY } = trajectorySeries(ex, state.setsLog, 30);
-  const cTop = 430, cH = 200, cL = pad, cW = S - pad * 2;
+  const cTop = 760, cH = 300, cL = pad, cW = S - pad * 2;
   if (points.length >= 2) {
     const lo = Math.max(0, minY - (maxY - minY) * 0.25 - 1);
     const hi = maxY + (maxY - minY) * 0.1 + 1;
@@ -1607,7 +1680,7 @@ async function buildShareImage(ex, s) {
       const everFirst = workoutDates(ex.id, state.setsLog)[0];
       const days = last.dayIndex - first.dayIndex + 1;
       const note = everFirst === first.date ? 'since you first started' : `in ${days} days`;
-      g.fillText(`${delta > 0 ? '+' : '\u2212'}${formatCount(Math.abs(delta))} ${ex.unit} ${note}`, cL, 400);
+      g.fillText(`${delta > 0 ? '+' : '\u2212'}${formatCount(Math.abs(delta))} ${ex.unit} ${note}`, cL, 706);
     }
   }
 
@@ -1622,17 +1695,17 @@ async function buildShareImage(ex, s) {
     const colW = (S - pad * 2) / filled.length;
     filled.forEach(([label, value], i) => {
       const x = pad + i * colW;
-      g.fillStyle = FAINT; g.font = "600 20px 'JetBrains Mono', ui-monospace, monospace";
+      g.fillStyle = FAINT; g.font = "600 24px 'JetBrains Mono', ui-monospace, monospace";
       g.fillText(label, x, y);
       g.fillStyle = TEXT;
       // Shrink to fit rather than run into the next column.
-      let size = 46;
+      let size = 56;
       g.font = `700 ${size}px 'Martian Mono', ui-monospace, monospace`;
       while (g.measureText(value).width > colW - 16 && size > 26) {
         size -= 2;
         g.font = `700 ${size}px 'Martian Mono', ui-monospace, monospace`;
       }
-      g.fillText(value, x, y + 54);
+      g.fillText(value, x, y + 68);
     });
     return true;
   };
@@ -1641,7 +1714,7 @@ async function buildShareImage(ex, s) {
   const firstTotal = firstDate ? calcTotal(getSetsFor(ex.id, firstDate)) : null;
 
   g.strokeStyle = '#2A312D'; g.lineWidth = 2;
-  g.beginPath(); g.moveTo(pad, 700); g.lineTo(S - pad, 700); g.stroke();
+  g.beginPath(); g.moveTo(pad, 1190); g.lineTo(S - pad, 1190); g.stroke();
 
   // A time exercise's figures are the same four questions in minutes — the same
   // set the Progress card shows, so the picture and the screen agree.
@@ -1651,27 +1724,24 @@ async function buildShareImage(ex, s) {
       ['FIRST DAY', firstTotal != null ? formatMinutes(firstTotal) : null],
       ['AVERAGE', formatDuration(s.avgTime)],
       ['LIFETIME', s.totalReps > 0 ? formatMinutes(s.totalReps) : null],
-    ], 748);
+    ], 1260);
   } else {
     drawRow([
       ['TOP SET', s.topSet != null ? formatCount(s.topSet) : null],
       ['FIRST DAY', firstTotal != null ? formatCount(firstTotal) : null],
       ['BEST DAY', s.maxReps != null ? formatCount(s.maxReps) : null],
       ['LIFETIME', s.totalReps > 0 ? formatCount(s.totalReps) : null],
-    ], 748);
+    ], 1260);
 
     drawRow([
       ['BEST TIME', formatDuration(s.bestTime)],
       ['AVERAGE TIME', formatDuration(s.avgTime)],
       ['TOTAL TIME', formatTotalDuration(s.totalTime)],
-    ], 874);
+    ], 1450);
   }
 
   // Watermark. Says where it came from without shouting over the numbers.
-  g.fillStyle = ACCENT; g.font = "800 34px Manrope, system-ui, sans-serif";
-  g.fillText('Sets', pad, S - pad + 8);
-  g.fillStyle = FAINT; g.font = "500 24px 'JetBrains Mono', ui-monospace, monospace";
-  g.fillText('sets-workout.vercel.app', pad + 82, S - pad + 8);
+  drawShareFooter(g, S, pad, await shareLoadAvatar());
 
   return new Promise((resolve) => c.toBlob(resolve, 'image/png'));
 }
@@ -1685,30 +1755,30 @@ async function buildShareImage(ex, s) {
  * changes is what it is proud of: today's session, while it is still today.
  */
 async function buildSessionImage(ex, session) {
-  const S = SHARE_SIZE;
+  const S = SHARE_W;
   const c = document.createElement('canvas');
-  c.width = S; c.height = S;
+  c.width = SHARE_W; c.height = SHARE_H;
   const g = c.getContext('2d');
   if (document.fonts && document.fonts.ready) { try { await document.fonts.ready; } catch (e) { /* draw anyway */ } }
 
   const INK = '#0A0C0B', TEXT = '#EEF2EF', DIM = '#9AA5A0', FAINT = '#6E7975', ACCENT = '#3EE07F';
-  g.fillStyle = INK; g.fillRect(0, 0, S, S);
+  g.fillStyle = INK; g.fillRect(0, 0, SHARE_W, SHARE_H);
 
   const pad = 76;
   const icon = await shareLoadIcon(ex);
-  if (icon) g.drawImage(icon, pad, pad, 104, 104);
+  if (icon) g.drawImage(icon, pad, SAFE_TOP - 78, 118, 118);
 
   g.textBaseline = 'alphabetic';
-  g.fillStyle = TEXT; g.font = "700 44px Manrope, system-ui, sans-serif";
-  const nameX = icon ? pad + 132 : pad;
+  g.fillStyle = TEXT; g.font = "700 52px Manrope, system-ui, sans-serif";
+  const nameX = icon ? pad + 146 : pad;
   let name = ex.name;
   while (g.measureText(name).width > S - nameX - pad && name.length > 4) name = name.slice(0, -1);
   if (name !== ex.name) name += '…';
-  g.fillText(name, nameX, pad + 52);
+  g.fillText(name, nameX, SAFE_TOP - 20);
 
   const cat = categoryOf(ex);
-  g.fillStyle = FAINT; g.font = "600 24px 'JetBrains Mono', ui-monospace, monospace";
-  g.fillText([cat ? cat.label.toUpperCase() : null, session.dateLabel.toUpperCase()].filter(Boolean).join(' · '), nameX, pad + 92);
+  g.fillStyle = FAINT; g.font = "600 26px 'JetBrains Mono', ui-monospace, monospace";
+  g.fillText([cat ? cat.label.toUpperCase() : null, session.dateLabel.toUpperCase()].filter(Boolean).join(' · '), nameX, SAFE_TOP + 22);
 
   // The day's number is the headline here, the way the streak is on the other
   // card — with its target beside it, so the size of the thing is legible.
@@ -1719,33 +1789,33 @@ async function buildSessionImage(ex, session) {
   // "1h 30m" is a much wider headline than "30", so the size is fitted rather
   // than fixed — the number and its target have to sit on one line inside the
   // margins whatever the exercise measures.
-  g.font = "600 44px Manrope, system-ui, sans-serif";
-  const targetW = targetStr ? g.measureText(targetStr).width + 26 : 0;
-  let bigSize = 168;
+  g.font = "600 48px Manrope, system-ui, sans-serif";
+  const targetW = targetStr ? g.measureText(targetStr).width + 28 : 0;
+  let bigSize = 210;
   g.font = `700 ${bigSize}px 'Martian Mono', ui-monospace, monospace`;
-  while (g.measureText(big).width + targetW > S - pad * 2 && bigSize > 56) {
+  while (g.measureText(big).width + targetW > S - pad * 2 && bigSize > 64) {
     bigSize -= 6;
     g.font = `700 ${bigSize}px 'Martian Mono', ui-monospace, monospace`;
   }
   g.fillStyle = ACCENT;
-  g.fillText(big, pad, 500);
+  g.fillText(big, pad, 860);
   const bigW = g.measureText(big).width;
   if (targetStr) {
-    g.fillStyle = DIM; g.font = "600 44px Manrope, system-ui, sans-serif";
-    g.fillText(targetStr, pad + bigW + 26, 500);
+    g.fillStyle = DIM; g.font = "600 48px Manrope, system-ui, sans-serif";
+    g.fillText(targetStr, pad + bigW + 28, 860);
   }
   g.fillStyle = session.short ? DIM : ACCENT;
-  g.font = "700 34px Manrope, system-ui, sans-serif";
-  g.fillText(session.headline, pad, 576);
+  g.font = "700 38px Manrope, system-ui, sans-serif";
+  g.fillText(session.headline, pad, 946);
 
   // The meter: one bar, the same proportion the card on Today was showing.
-  const barY = 632, barW = S - pad * 2, barH = 20;
+  const barY = 1010, barW = S - pad * 2, barH = 22;
   g.fillStyle = '#1A201C'; g.fillRect(pad, barY, barW, barH);
   g.fillStyle = session.short ? '#6E7975' : ACCENT;
   g.fillRect(pad, barY, Math.max(6, Math.round(barW * session.pct)), barH);
 
   g.strokeStyle = '#2A312D'; g.lineWidth = 2;
-  g.beginPath(); g.moveTo(pad, 780); g.lineTo(S - pad, 780); g.stroke();
+  g.beginPath(); g.moveTo(pad, 1330); g.lineTo(S - pad, 1330); g.stroke();
 
   // Today's figures only — the target is already beside the big number, so
   // repeating it here would be the same fact twice.
@@ -1757,22 +1827,19 @@ async function buildSessionImage(ex, session) {
   const colW = (S - pad * 2) / (tiles.length || 1);
   tiles.forEach(([label, value], i) => {
     const x = pad + i * colW;
-    g.fillStyle = FAINT; g.font = "600 22px 'JetBrains Mono', ui-monospace, monospace";
-    g.fillText(label, x, 846);
+    g.fillStyle = FAINT; g.font = "600 24px 'JetBrains Mono', ui-monospace, monospace";
+    g.fillText(label, x, 1410);
     g.fillStyle = TEXT;
-    let size = 56;
+    let size = 62;
     g.font = `700 ${size}px 'Martian Mono', ui-monospace, monospace`;
     while (g.measureText(value).width > colW - 16 && size > 26) {
       size -= 2;
       g.font = `700 ${size}px 'Martian Mono', ui-monospace, monospace`;
     }
-    g.fillText(value, x, 912);
+    g.fillText(value, x, 1484);
   });
 
-  g.fillStyle = ACCENT; g.font = "800 34px Manrope, system-ui, sans-serif";
-  g.fillText('Sets', pad, S - pad + 8);
-  g.fillStyle = FAINT; g.font = "500 24px 'JetBrains Mono', ui-monospace, monospace";
-  g.fillText('sets-workout.vercel.app', pad + 82, S - pad + 8);
+  drawShareFooter(g, S, pad, await shareLoadAvatar());
 
   return new Promise((resolve) => c.toBlob(resolve, 'image/png'));
 }
@@ -1787,77 +1854,152 @@ async function buildSessionImage(ex, session) {
 const DAY_CARD_ROWS = 7;
 
 async function buildDayImage(day) {
-  const S = SHARE_SIZE;
+  const S = SHARE_W;
   const c = document.createElement('canvas');
-  c.width = S; c.height = S;
+  c.width = SHARE_W; c.height = SHARE_H;
   const g = c.getContext('2d');
   if (document.fonts && document.fonts.ready) { try { await document.fonts.ready; } catch (e) { /* draw anyway */ } }
 
   const INK = '#0A0C0B', TEXT = '#EEF2EF', DIM = '#9AA5A0', FAINT = '#6E7975', ACCENT = '#3EE07F';
-  g.fillStyle = INK; g.fillRect(0, 0, S, S);
+  g.fillStyle = INK; g.fillRect(0, 0, SHARE_W, SHARE_H);
   g.textBaseline = 'alphabetic';
 
   const pad = 76;
-  g.fillStyle = ACCENT; g.font = "800 30px 'JetBrains Mono', ui-monospace, monospace";
-  g.fillText('ALL DONE', pad, pad + 30);
-  g.fillStyle = TEXT; g.font = "700 62px Manrope, system-ui, sans-serif";
-  g.fillText(day.dateLabel, pad, pad + 104);
-  g.fillStyle = FAINT; g.font = "600 24px 'JetBrains Mono', ui-monospace, monospace";
-  g.fillText(day.subtitle.toUpperCase(), pad, pad + 146);
+  g.fillStyle = ACCENT; g.font = "800 32px 'JetBrains Mono', ui-monospace, monospace";
+  g.fillText(day.headline, pad, SAFE_TOP);
+  g.fillStyle = TEXT; g.font = "700 72px Manrope, system-ui, sans-serif";
+  g.fillText(day.dateLabel, pad, SAFE_TOP + 88);
+  g.fillStyle = FAINT; g.font = "600 26px 'JetBrains Mono', ui-monospace, monospace";
+  g.fillText(day.subtitle.toUpperCase(), pad, SAFE_TOP + 136);
 
-  // One line per exercise: icon, name, what it came to. The icons are already
-  // loaded for the cards, so this costs nothing new.
+  /**
+   * One line per exercise, sized to fill.
+   *
+   * The band between the header and the figures is fixed, so the row height is
+   * whatever divides it — and the type, the icon and the rule scale with it.
+   * A one-exercise day cannot leave a hole, and a seven-exercise day cannot
+   * overflow, without either being laid out by hand.
+   *
+   * Rows tall enough to afford it carry a second line — sets and time — so the
+   * height is spent on something worth reading rather than on air.
+   */
   const rows = day.rows.slice(0, DAY_CARD_ROWS);
   const icons = await Promise.all(rows.map((r) => shareLoadIcon(r.ex)));
-  // The list is given the whole band between the header and the figures, so a
-  // three-exercise day fills the card the same way a seven-exercise one does
-  // instead of leaving a hole under it.
-  let y = 320;
-  const rowH = Math.max(64, Math.min(110, Math.floor(500 / Math.max(1, rows.length))));
+  const BAND_TOP = SAFE_TOP + 200, BAND_BOTTOM = 1380;
+  const rowH = (BAND_BOTTOM - BAND_TOP) / rows.length;
+  // Past a certain height a row stops being a line and becomes a block: the
+  // number moves onto its own line at headline size and takes a meter with it.
+  // That is what stops a one-exercise day from being one sentence adrift in the
+  // middle of a tall frame — the same content, spent on the space it has.
+  const stacked = rowH >= 240;
+
   rows.forEach((r, i) => {
+    const top = BAND_TOP + rowH * i;
+    const mid = top + rowH / 2;
     const icon = icons[i];
-    if (icon) g.drawImage(icon, pad, y - 34, 44, 44);
-    g.fillStyle = r.short ? DIM : TEXT;
-    g.font = "700 34px Manrope, system-ui, sans-serif";
-    let name = r.ex.name;
-    while (g.measureText(name).width > S - pad * 2 - 300 && name.length > 4) name = name.slice(0, -1);
-    if (name !== r.ex.name) name += '…';
-    g.fillText(name, pad + 62, y);
 
-    g.textAlign = 'right';
-    g.fillStyle = r.short ? DIM : ACCENT;
-    g.font = "700 34px 'Martian Mono', ui-monospace, monospace";
-    g.fillText(r.value, S - pad, y);
-    g.textAlign = 'left';
+    if (stacked) {
+      const valueSize = Math.round(Math.max(64, Math.min(200, rowH * 0.30)));
+      const nameSize = Math.round(Math.max(38, Math.min(64, rowH * 0.13)));
+      const iconSize = Math.round(nameSize * 1.9);
+      // Every piece counted, meter included — leave the bar out of this and the
+      // whole block centres too high and hangs a gap under itself.
+      const blockH = iconSize + 18 + valueSize + (r.detail ? 44 : 0) + 44;
+      let y = mid - blockH / 2 + iconSize;
 
-    g.strokeStyle = '#1E2522'; g.lineWidth = 2;
-    g.beginPath(); g.moveTo(pad, y + 22); g.lineTo(S - pad, y + 22); g.stroke();
-    y += rowH;
+      if (icon) g.drawImage(icon, pad, y - iconSize, iconSize, iconSize);
+      g.fillStyle = r.short ? DIM : TEXT;
+      g.font = `700 ${nameSize}px Manrope, system-ui, sans-serif`;
+      let name = r.ex.name;
+      while (g.measureText(name).width > S - pad * 2 - iconSize - 24 && name.length > 4) name = name.slice(0, -1);
+      if (name !== r.ex.name) name += '…';
+      g.fillText(name, pad + iconSize + 24, y - iconSize * 0.28);
+
+      y += valueSize + 18;
+      g.fillStyle = r.short ? DIM : ACCENT;
+      let vs = valueSize;
+      g.font = `700 ${vs}px 'Martian Mono', ui-monospace, monospace`;
+      while (g.measureText(r.value).width > S - pad * 2 && vs > 44) {
+        vs -= 4;
+        g.font = `700 ${vs}px 'Martian Mono', ui-monospace, monospace`;
+      }
+      g.fillText(r.value, pad, y);
+
+      if (r.detail) {
+        y += 44;
+        g.fillStyle = FAINT; g.font = "600 26px 'JetBrains Mono', ui-monospace, monospace";
+        g.fillText(r.detail.toUpperCase(), pad, y);
+      }
+      const barY = y + 28, barW = S - pad * 2;
+      g.fillStyle = '#1A201C'; g.fillRect(pad, barY, barW, 16);
+      g.fillStyle = r.short ? '#6E7975' : ACCENT;
+      g.fillRect(pad, barY, Math.max(6, Math.round(barW * (r.pct || 1))), 16);
+    } else {
+      const nameSize = Math.round(Math.max(34, Math.min(62, rowH * 0.36)));
+      const iconSize = Math.round(Math.max(48, Math.min(110, rowH * 0.54)));
+      const withDetail = rowH >= 130;
+      const base = mid + nameSize * 0.34;
+      if (icon) g.drawImage(icon, pad, mid - iconSize / 2, iconSize, iconSize);
+      const textX = pad + iconSize + 20;
+
+      g.textAlign = 'right';
+      g.font = `700 ${nameSize}px 'Martian Mono', ui-monospace, monospace`;
+      const valueW = g.measureText(r.value).width;
+      g.fillStyle = r.short ? DIM : ACCENT;
+      g.fillText(r.value, S - pad, base);
+      g.textAlign = 'left';
+
+      g.fillStyle = r.short ? DIM : TEXT;
+      g.font = `700 ${nameSize}px Manrope, system-ui, sans-serif`;
+      let name = r.ex.name;
+      const room = S - pad - textX - valueW - 30;
+      while (g.measureText(name).width > room && name.length > 4) name = name.slice(0, -1);
+      if (name !== r.ex.name) name += '…';
+      g.fillText(name, textX, withDetail ? base - 22 : base);
+
+      if (withDetail && r.detail) {
+        g.fillStyle = FAINT; g.font = "600 26px 'JetBrains Mono', ui-monospace, monospace";
+        g.fillText(r.detail.toUpperCase(), textX, base + 30);
+      }
+    }
+
+    if (i < rows.length - 1) {
+      g.strokeStyle = '#1E2522'; g.lineWidth = 2;
+      g.beginPath(); g.moveTo(pad, BAND_TOP + rowH * (i + 1)); g.lineTo(S - pad, BAND_TOP + rowH * (i + 1)); g.stroke();
+    }
   });
 
   if (day.rows.length > DAY_CARD_ROWS) {
     g.fillStyle = FAINT; g.font = "600 24px 'JetBrains Mono', ui-monospace, monospace";
-    g.fillText(`+${day.rows.length - DAY_CARD_ROWS} more`, pad, y + 6);
+    g.fillText(`+${day.rows.length - DAY_CARD_ROWS} more`, pad, BAND_BOTTOM + 44);
   }
 
+  // "Streak" alone invited the wrong comparison: this is the run of days you
+  // finished EVERYTHING, which is a smaller number than any one exercise's own
+  // streak and a different claim. The label now says which one it is.
   const tiles = [
     ['EXERCISES', String(day.rows.length)],
     ['TIME', day.totalTime],
-    ['STREAK', day.streak ? `${day.streak}d` : null],
+    ['DAY STREAK', day.streak ? `${day.streak}d` : null],
   ].filter(([, v]) => v != null && v !== '' && v !== '—');
+  g.strokeStyle = '#2A312D'; g.lineWidth = 2;
+  g.beginPath(); g.moveTo(pad, 1470); g.lineTo(S - pad, 1470); g.stroke();
   const colW = (S - pad * 2) / (tiles.length || 1);
   tiles.forEach(([label, value], i) => {
     const x = pad + i * colW;
     g.fillStyle = FAINT; g.font = "600 22px 'JetBrains Mono', ui-monospace, monospace";
-    g.fillText(label, x, 878);
-    g.fillStyle = TEXT; g.font = "700 52px 'Martian Mono', ui-monospace, monospace";
-    g.fillText(value, x, 940);
+    g.fillText(label, x, 1540);
+    g.fillStyle = TEXT;
+    let size = 52;
+    g.font = `700 ${size}px 'Martian Mono', ui-monospace, monospace`;
+    while (g.measureText(value).width > colW - 16 && size > 28) {
+      size -= 2;
+      g.font = `700 ${size}px 'Martian Mono', ui-monospace, monospace`;
+    }
+    g.fillText(value, x, 1606);
   });
 
-  g.fillStyle = ACCENT; g.font = "800 34px Manrope, system-ui, sans-serif";
-  g.fillText('Sets', pad, S - pad + 8);
-  g.fillStyle = FAINT; g.font = "500 24px 'JetBrains Mono', ui-monospace, monospace";
-  g.fillText('sets-workout.vercel.app', pad + 82, S - pad + 8);
+  drawShareFooter(g, S, pad, await shareLoadAvatar());
 
   return new Promise((resolve) => c.toBlob(resolve, 'image/png'));
 }
@@ -1870,13 +2012,20 @@ async function shareDayImage() {
     .filter((ex) => ex.active && isScheduledOn(ex, d) && !isBreakDay(state.streakOverrides, d, ex.id))
     .sort((a, b) => a.order - b.order)
     .map((ex) => {
-      const total = calcTotal(getSetsFor(ex.id, d));
+      const arr = getSetsFor(ex.id, d);
+      const total = calcTotal(arr);
       const target = getEffectiveTarget(ex, d);
       const timer = getTimerPure(state.timersLog, d, ex.id);
+      const ms = timerElapsedMs(timer, Date.now());
       return {
-        ex, total, ms: timerElapsedMs(timer, Date.now()),
+        ex, total, ms,
         short: !!(target > 0 && total < target),
         value: isTimeMode(ex) ? formatMinutes(total) : `${formatCount(total)} ${ex.unit}`,
+        pct: target > 0 ? Math.min(1, total / target) : 1,
+        // Only used when the rows are tall enough to read it.
+        detail: [isTimeMode(ex) ? null : `${arr.length} set${arr.length === 1 ? '' : 's'}`,
+          ms > 0 ? formatDuration(ms) : null,
+          target > 0 ? `target ${isTimeMode(ex) ? formatMinutes(target) : target}` : null].filter(Boolean).join(' · '),
       };
     })
     .filter((r) => r.total > 0);
@@ -1884,14 +2033,20 @@ async function shareDayImage() {
   if (!rows.length) { showToast('Nothing logged today yet.'); return; }
 
   const totalMs = rows.reduce((a, r) => a + r.ms, 0);
+  const allMet = rows.every((r) => !r.short);
   showToast('Building image…');
   let blob;
   try {
     blob = await buildDayImage({
       rows,
+      headline: allMet ? 'ALL DONE' : 'TRAINED',
       dateLabel: formatDisplayDate(d, { weekday: 'long', day: 'numeric', month: 'long' }),
-      subtitle: `${rows.length} exercise${rows.length === 1 ? '' : 's'} · every target met`,
-      totalTime: formatTotalDuration(totalMs) === '—' ? formatDuration(totalMs) : formatTotalDuration(totalMs),
+      // Says what happened, not what would sound best: a day with one session
+      // ended early has not met every target, and must not claim it did.
+      subtitle: `${rows.length} exercise${rows.length === 1 ? '' : 's'}${allMet ? ' · every target met' : ''}`,
+      // The clock as it really read. Rounding 31:45 up to "32m" was the whole
+      // complaint — this card is the record, so it keeps the seconds.
+      totalTime: formatDuration(totalMs),
       streak: calcStreakInfo(state.exercises, state.setsLog, d, state.streakOverrides).current,
     });
   } catch (e) { blob = null; }
@@ -1902,7 +2057,13 @@ async function shareDayImage() {
  *  cards so there is one answer to "where does the picture go". */
 async function offerImage(blob, ex, suffix) {
   if (!blob) { showToast("Couldn't build the image."); return; }
-  const file = new File([blob], `sets-${ex.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}${suffix}.png`, { type: 'image/png' });
+  // The file is named for whoever it belongs to, read from the profile at the
+  // moment of sharing — rename yourself and Save profile, and the next image
+  // saves under the new name. No stored copy to go stale.
+  const slug = (v) => String(v || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  const who = slug(state.profile && state.profile.username);
+  const parts = ['sets', who, slug(ex.name)].filter(Boolean);
+  const file = new File([blob], `${parts.join('-')}${suffix}.png`, { type: 'image/png' });
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
     try { await navigator.share({ files: [file] }); return; } catch (e) { if (e && e.name === 'AbortError') return; }
   }
@@ -2933,6 +3094,7 @@ function modalLogger(exId) {
       <div class="sheet-handle"></div>
       <div class="sheet-head">
         <h2>${exIconHtml(ex, 24)}${escapeHtml(ex.name)}</h2>
+        ${sealed ? `<button class="sheet-share" data-action="share-session" data-id="${exId}" aria-label="Share this session">${ICONS.share}</button>` : ''}
         <button class="sheet-close" data-action="close-modal">${ICONS.close}</button>
       </div>
       <div class="logger-total-row">
@@ -2953,7 +3115,6 @@ function modalLogger(exId) {
           <em>${sealed ? 'Today is already closed.' : (resting ? 'Your streak is safe. Tap to undo.' : 'Counts as rest — your streak keeps going.')}</em>
         </button>`;
       })()}
-      ${sealed ? `<button class="share-btn logger-share" data-action="share-session" data-id="${exId}">${ICONS.share}Share image</button>` : ''}
       ${setListBlock}
     </div>
   </div>`;

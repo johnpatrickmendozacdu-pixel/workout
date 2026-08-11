@@ -65,6 +65,28 @@ async function post(path, payload) {
   }
 }
 
+/**
+ * What an invite leads to, before accepting it. The only call that works signed
+ * out — someone following a link deserves to be told what they are joining
+ * before being asked to sign in.
+ */
+export async function peekCrew(code) {
+  const base = gsync.getBrokerUrl();
+  if (!base) return { ok: false, error: 'no-broker' };
+  try {
+    const res = await fetch(base + '/crew/peek', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) return { ok: false, error: (data && data.error) || 'failed' };
+    return { ok: true, crew: data && data.crew };
+  } catch (e) {
+    return { ok: false, error: 'offline' };
+  }
+}
+
 /** Push my card and pull every crew I am in. The one call the app makes on open. */
 export function syncCrews(card) { return post('/crew/sync', { card }); }
 

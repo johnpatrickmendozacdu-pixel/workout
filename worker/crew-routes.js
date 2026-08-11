@@ -105,6 +105,25 @@ async function pushCard(env, user, card) {
 
 export async function crewRoute(path, body, env, cors) {
   if (!env || !env.DB) return jsonResponse({ error: 'no-db' }, 503, cors);
+
+  /**
+   * What an invite is for, before accepting it — the crew's name and how many
+   * people are in it. Deliberately the one route that needs no token: someone
+   * following a link has not signed in yet, and being asked to sign in before
+   * being told what you are signing into is the wrong order.
+   *
+   * It gives away nothing the link did not already give away, and it is not
+   * guessable: the code is eight characters from a 29-letter alphabet.
+   */
+  if (path === '/crew/peek') {
+    const code = normaliseCode(body && body.code);
+    if (!code) return jsonResponse({ error: 'bad-code' }, 400, cors);
+    const crew = await env.DB.prepare(`SELECT id, name FROM crews WHERE invite_code = ?`).bind(code).first();
+    if (!crew) return jsonResponse({ error: 'no-such-crew' }, 404, cors);
+    const size = await env.DB.prepare(`SELECT COUNT(*) AS n FROM members WHERE crew_id = ?`).bind(crew.id).first();
+    return jsonResponse({ crew: { name: crew.name, members: (size && size.n) || 0 } }, 200, cors);
+  }
+
   const user = await identify(body && body.token);
   if (!user) return jsonResponse({ error: 'unauthorised' }, 401, cors);
   const now = Date.now();

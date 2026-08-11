@@ -2757,6 +2757,21 @@ async function joinCrewByCode(raw) {
   return true;
 }
 
+/** Opens the Accept sheet for a code, fetching what the invite leads to. */
+function openInviteAccept(code) {
+  state.view = 'social';
+  db.prefs.set('view', 'social');
+  state.modal = { type: 'crewAccept', code, loading: true, crew: null, error: null };
+  rerender();
+  crewApi.peekCrew(code).then((res) => {
+    if (!state.modal || state.modal.type !== 'crewAccept') return;
+    state.modal.loading = false;
+    if (res.ok) state.modal.crew = res.crew;
+    else state.modal.error = res.error;
+    renderModal();
+  });
+}
+
 /** An invite link is `#/join/<code>`. Read once at boot, then wiped from the
  *  address bar so a reload cannot re-trigger it. */
 function readInviteFromUrl() {
@@ -3196,6 +3211,7 @@ function renderModal() {
   else if (m.type === 'crewCreate') root.innerHTML = modalCrewCreate();
   else if (m.type === 'crewJoin') root.innerHTML = modalCrewJoin();
   else if (m.type === 'crewInvite') root.innerHTML = modalCrewInvite();
+  else if (m.type === 'crewAccept') root.innerHTML = modalCrewInviteAccept();
   else if (m.type === 'crewMember') root.innerHTML = modalCrewMember();
   else if (m.type === 'crewSettings') root.innerHTML = modalCrewSettings();
   else if (m.type === 'importChoice') root.innerHTML = modalImportChoice();
@@ -3563,6 +3579,37 @@ function modalCrewInvite() {
       <button class="primary-btn" data-action="copy-invite" data-link="${escapeHtml(link)}">Copy link</button>
       <button class="secondary-btn" data-action="share-invite" data-link="${escapeHtml(link)}">Send…</button>
       <p class="hint">Anyone with this link can join and see the crew's streaks, so send it to people, not places. You can remove someone later.</p>
+    </div>
+  </div>`;
+}
+
+/**
+ * What a tapped invite lands on.
+ *
+ * Joining used to happen the instant the link opened, which is the wrong shape
+ * for something that publishes your streaks to strangers-of-a-friend: you
+ * should see whose crew it is, and how many people are in it, before you are
+ * in it. Signing in, if needed, happens after Accept rather than before —
+ * being asked to sign in to find out what you are signing into is backwards.
+ */
+function modalCrewInviteAccept() {
+  const m = state.modal;
+  const crew = m.crew;
+  const name = crew ? crew.name : null;
+  return `<div class="modal-backdrop" data-action="backdrop">
+    <div class="modal-sheet center celebrate" data-stop>
+      <div class="celebrate-glyph">👥</div>
+      ${m.loading
+        ? '<h2>Checking the invite…</h2>'
+        : m.error
+          ? `<h2>That invite didn't work</h2><div class="celebrate-line">${escapeHtml(crewApi.crewErrorText(m.error))}</div>`
+          : `<h2>Join ${escapeHtml(name || 'this crew')}?</h2>
+             <div class="celebrate-line">${crew && crew.members ? `${crew.members} member${crew.members === 1 ? '' : 's'} already in` : 'A crew on Sets'}</div>
+             <div class="hint invite-what">They will see your name, photo, streaks and totals. Never your individual sets, your weight or your notes. You can leave any time.</div>`}
+      <div class="celebrate-actions">
+        ${m.loading || m.error ? '' : `<button class="primary-btn" data-action="accept-invite" data-code="${escapeHtml(m.code)}">Accept and join</button>`}
+        <button class="secondary-btn" data-action="decline-invite">${m.error ? 'Close' : 'Not now'}</button>
+      </div>
     </div>
   </div>`;
 }
@@ -4054,9 +4101,19 @@ document.addEventListener('click', async (e) => {
     }
     case 'join-crew': {
       const el = document.getElementById('crew-code');
-      await joinCrewByCode(el ? el.value : '');
+      const typed = (el ? el.value : '').trim();
+      if (!typed) { showToast('Type the invite code.'); break; }
+      openInviteAccept(typed);
       break;
     }
+    case 'accept-invite':
+      await joinCrewByCode(btn.dataset.code);
+      break;
+    case 'decline-invite':
+      state.crew.pendingCode = null;
+      await db.setItem('crew-pending-code', null).catch(() => {});
+      closeModal();
+      break;
     case 'open-invite':
       state.crew.activeId = btn.dataset.id;
       state.modal = { type: 'crewInvite' };
@@ -4070,11 +4127,21 @@ document.addEventListener('click', async (e) => {
       break;
     case 'share-invite': {
       const crew = activeCrew();
-      const text = `Join ${crew ? crew.name : 'my crew'} on Sets: ${btn.dataset.link}`;
+      // `url` as its own field, not buried in the text: Messenger, WhatsApp and
+      // Instagram all build their link preview from that field, and a URL that
+      // is only inside a sentence often arrives unlinked.
+      const payload = {
+        title: `Join ${crew ? crew.name : 'my crew'} on Sets`,
+        text: `Training with me on Sets — join ${crew ? crew.name : 'my crew'}:`,
+        url: btn.dataset.link,
+      };
       if (navigator.share) {
-        try { await navigator.share({ text }); } catch (e) { /* dismissed */ }
+        try { await navigator.share(payload); } catch (e) { /* dismissed, or no target chosen */ }
       } else {
-        try { await navigator.clipboard.writeText(text); showToast('Invite copied'); } catch (e) { /* nothing to do */ }
+        try {
+          await navigator.clipboard.writeText(`${payload.text} ${payload.url}`);
+          showToast('Invite copied');
+        } catch (e) { showToast('Copy the link above instead'); }
       }
       break;
     }
@@ -4689,17 +4756,17 @@ async function init() {
 
   render();
 
-  // Following an invite is the one thing that should interrupt: land on the
-  // crew, not on Today.
-  if (state.crew.pendingCode) {
-    if (hasSyncAccount()) joinCrewByCode(state.crew.pendingCode).catch(() => {});
-    else {
-      state.view = 'social';
-      render();
-      showToast('Sign in with Google to join the crew');
-    }
-  }
+  // Following an invite is the one thing that should interrupt.
+  if (state.crew.pendingCode) openInviteAccept(state.crew.pendingCode);
   refreshCrews().catch(() => {});
+
+  // A link tapped while Sets is already open changes the hash without reloading
+  // — the common case when the app is installed, and the one a boot-time read
+  // alone would miss entirely.
+  window.addEventListener('hashchange', () => {
+    const code = readInviteFromUrl();
+    if (code) openInviteAccept(code);
+  });
 
   tryResumeSync().catch(() => {});
   checkVersion();

@@ -97,6 +97,13 @@ describe('cards', () => {
     expect(fitted.streak).toBe(17);
   });
 
+  it('keeps a per-exercise target and whether it is due today', () => {
+    const c = sanitiseCard({ ...good, exercises: [{ name: 'Squats', target: 80, due: 1, today: 30 }] });
+    expect(c.exercises[0].target).toBe(80);
+    expect(c.exercises[0].due).toBe(true);
+    expect(sanitiseCard({ ...good, exercises: [{ name: 'X', target: -4 }] }).exercises[0].target).toBe(0);
+  });
+
   it('rejects a non-object outright', () => {
     expect(sanitiseCard(null)).toBeNull();
     expect(sanitiseCard('hello')).toBeNull();
@@ -151,6 +158,13 @@ describe('roster', () => {
     const r = buildRoster(crew, [{ user_id: 'u9', name: 'Broken', card: '{not json', updated_at: 0, joined_at: 0 }], []);
     expect(r.members[0].name).toBe('Broken');
     expect(r.members[0].streak).toBe(0);
+  });
+
+  it('marks which member is the caller, so the client never has to guess', () => {
+    const r = buildRoster(crew, rows, [], 'u2');
+    expect(r.members.find((m) => m.id === 'u2').isMe).toBe(true);
+    expect(r.members.find((m) => m.id === 'u1').isMe).toBe(false);
+    expect(buildRoster(crew, rows, [], null).members.every((m) => !m.isMe)).toBe(true);
   });
 
   it('marks the owner and attaches reactions to their target', () => {

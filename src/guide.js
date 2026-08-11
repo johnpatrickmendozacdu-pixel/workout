@@ -163,6 +163,8 @@ export const GUIDE_SECTIONS = [
       'They tap the link, sign in with their own Gmail, and they are in.',
       'Everyone sees names, streaks and totals — never your individual sets, weight or notes.',
       'Anyone with the link can join, so send it to people, not places.',
+      'Tap someone to see their day: what they have lined up, and what they have done.',
+      'Nudge someone who has not trained, or send Respect to someone who has. The crew sees it.',
       'Leave any time. Your card goes with you.',
     ],
   },

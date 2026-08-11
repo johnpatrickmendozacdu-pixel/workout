@@ -2146,9 +2146,10 @@ const NAV_ITEMS = [
 function renderNav() {
   const el = document.getElementById('bottom-nav');
   if (!el) return;
+  const unseen = unseenReactions();
   el.innerHTML = `<div class="nav-inner">${NAV_ITEMS.map((n) => `
     <button class="nav-btn ${state.view === n.view ? 'active' : ''}" data-action="nav" data-view="${n.view}"
-      aria-current="${state.view === n.view ? 'page' : 'false'}">${ICONS[n.icon]}<span>${n.label}</span></button>`).join('')}</div>`;
+      aria-current="${state.view === n.view ? 'page' : 'false'}">${ICONS[n.icon]}${n.view === 'social' && unseen ? `<i class="nav-dot">${unseen > 9 ? '9+' : unseen}</i>` : ''}<span>${n.label}</span></button>`).join('')}</div>`;
 }
 
 function render() {
@@ -2410,6 +2411,7 @@ function modalGuide() {
     ['A crew', 'People you train with, each on their own phone and their own Google account.'],
     ['What they see', 'Your name, photo, streaks and totals. Never your individual sets, weight or notes.'],
     ['Invite', 'Send the link or read out the code. Anyone with it can join, so send it to people, not places.'],
+    ['Nudge and Respect', 'Open someone: nudge them if they have not trained, respect them if they have.'],
     ['Leaving', 'You can leave any time — your card goes with you.'],
   ];
 
@@ -2634,11 +2636,10 @@ function activeCrew() {
   return list.find((c) => c.id === state.crew.activeId) || list[0];
 }
 
-/** My own row, by Google account. The Worker tells us who each member is; the
- *  only way to recognise myself is the email I signed in with. */
+/** The Worker marks the caller's own row — it knows the id Google gave it, and
+ *  the app does not. Guessing by email here recognised nobody. */
 function isMe(member) {
-  const email = gsync.getSignedInEmail();
-  return !!(member && member.email && email && member.email === email);
+  return !!(member && member.isMe);
 }
 
 function memberInitial(m) {
@@ -2698,7 +2699,7 @@ function viewSocial() {
         <span class="crew-name">${escapeHtml(m.name || 'Someone')}${mine ? '<em>you</em>' : ''}${m.isOwner ? '<i title="Made this crew">★</i>' : ''}</span>
         <span class="crew-sub">${m.streak ? `${m.streak} day streak` : 'no streak yet'}${m.best > m.streak ? ` · best ${m.best}` : ''}</span>
       </span>
-      <span class="crew-state">${m.trainedToday ? ICONS.check : '<i class="crew-pending"></i>'}</span>
+      <span class="crew-state">${reactionChipsHtml(m, true)}${m.trainedToday ? ICONS.check : '<i class="crew-pending"></i>'}</span>
     </button>`;
   }).join('');
 
@@ -2788,10 +2789,14 @@ function readInviteFromUrl() {
 function myCrewCard() {
   const today = todayISO();
   const stats = allStats(state.exercises, state.setsLog, state.timersLog, null, state.streakOverrides);
-  const todayTotals = {};
-  state.exercises.forEach((ex) => { todayTotals[ex.id] = calcTotal(getSetsFor(ex.id, today)); });
+  const todayTotals = {}, dueToday = {}, targets = {};
+  state.exercises.forEach((ex) => {
+    todayTotals[ex.id] = calcTotal(getSetsFor(ex.id, today));
+    dueToday[ex.id] = isScheduledOn(ex, today);
+    targets[ex.id] = getEffectiveTarget(ex, today) || 0;
+  });
   const dayStreak = calcStreakInfo(state.exercises, state.setsLog, today, state.streakOverrides);
-  return buildCrewCard(state.profile, state.exercises, stats, todayTotals, dayStreak);
+  return buildCrewCard(state.profile, state.exercises, stats, todayTotals, dayStreak, dueToday, targets);
 }
 
 function applyCrewResult(res, opts) {
@@ -2812,6 +2817,16 @@ function applyCrewResult(res, opts) {
   renderView();
   renderNav();
   return res.ok;
+}
+
+/** Reactions aimed at me that I have not seen yet — the number on the tab. */
+function unseenReactions() {
+  let n = 0;
+  (state.crew.crews || []).forEach((c) => {
+    const me = (c.members || []).find((m) => m.isMe);
+    if (me) n += (me.received || []).filter((r) => !r.seen && !r.mine).length;
+  });
+  return n;
 }
 
 /** Called on app open and when the tab is entered. Quiet on failure: the tab
@@ -3614,38 +3629,107 @@ function modalCrewInviteAccept() {
   </div>`;
 }
 
+/* ---- reactions ----
+ * Two named ones and a small set of emoji. Nudge is only offered for someone
+ * who has not trained, Respect only for someone who has — a reaction that
+ * contradicts the day is noise, and hiding the wrong one is cheaper to read
+ * than explaining it.
+ */
+const CREW_EMOJI = ['🔥', '💪', '👏', '🐐', '😤', '🙌'];
+const REACTION_FACE = { nudge: '👊', respect: '🔥' };
+
+/** Today's reactions for one member, folded into counts with the emoji kept. */
+function reactionCounts(member) {
+  const today = todayISO();
+  const out = new Map();
+  (member.received || []).filter((r) => r.day === today).forEach((r) => {
+    const key = r.kind === 'emoji' ? r.emoji : r.kind;
+    const face = r.kind === 'emoji' ? r.emoji : REACTION_FACE[r.kind] || '•';
+    const cur = out.get(key) || { face, n: 0, mine: false };
+    cur.n += 1;
+    cur.mine = cur.mine || !!r.mine;
+    out.set(key, cur);
+  });
+  return [...out.values()];
+}
+
+function reactionChipsHtml(member, small) {
+  const counts = reactionCounts(member);
+  if (!counts.length) return '';
+  return `<span class="react-chips ${small ? 'small' : ''}">${counts
+    .map((c) => `<span class="react-chip ${c.mine ? 'mine' : ''}">${c.face}${c.n > 1 ? `<b>${c.n}</b>` : ''}</span>`)
+    .join('')}</span>`;
+}
+
 function modalCrewMember() {
   const crew = activeCrew();
   const m = crew && (crew.members || []).find((x) => x.id === state.modal.memberId);
   if (!m) return '';
   const mine = isMe(m);
-  const iOwn = crew.members.some((x) => isMe(x) && x.id === crew.owner);
-  const ex = (m.exercises || []).slice().sort((a, b) => (b.streak - a.streak) || (b.total - a.total));
+  const iOwn = (crew.members || []).some((x) => x.isMe && x.id === crew.owner);
+  const emojiOpen = !!(state.modal && state.modal.emojiOpen);
+
+  const ex = m.exercises || [];
+  // Today first, because a crew is a thing you check today. Due-but-untouched
+  // is what a nudge is for, so it has to be visible rather than derived.
+  const due = ex.filter((e) => e.due || e.today > 0);
+  const dayRow = (e) => {
+    const met = e.target > 0 ? e.today >= e.target : e.today > 0;
+    const shown = e.unit === 'min' ? formatMinutes(e.today) : `${formatCount(e.today)} ${escapeHtml(e.unit || '')}`;
+    const goal = e.target > 0 ? (e.unit === 'min' ? formatMinutes(e.target) : `${formatCount(e.target)}`) : null;
+    return `<div class="crew-day ${met ? 'met' : ''}">
+      <span class="crew-day-name">${escapeHtml(e.name)}</span>
+      <span class="crew-day-num">${e.today > 0 ? shown : '—'}${goal ? `<i>/ ${goal}</i>` : ''}</span>
+      <span class="crew-day-tick">${met ? ICONS.check : '<i class="crew-pending"></i>'}</span>
+    </div>`;
+  };
+
+  // Every figure sits on the exercise it belongs to. A floating "lifetime
+  // 2,065" next to a list of exercises reads as a number about nothing.
+  const allTime = ex.slice().sort((a, b) => (b.streak - a.streak) || (b.total - a.total));
+  const lifeRow = (e) => `<div class="member-ex-row">
+    <span class="member-ex-name">${escapeHtml(e.name)}</span>
+    <span class="member-ex-num">${e.streak ? `<b>${e.streak}d</b> streak · ` : ''}${e.unit === 'min' ? formatMinutes(e.total) : `${formatCount(e.total)} ${escapeHtml(e.unit || '')}`}</span>
+  </div>`;
+
+  const reactRow = mine ? '' : `
+    <div class="react-bar">
+      ${m.trainedToday
+        ? `<button class="react-btn respect" data-action="react" data-id="${m.id}" data-kind="respect">🔥 Respect</button>`
+        : `<button class="react-btn nudge" data-action="react" data-id="${m.id}" data-kind="nudge">👊 Nudge</button>`}
+      <button class="react-btn emoji" data-action="toggle-emoji" aria-expanded="${emojiOpen}">😀</button>
+    </div>
+    ${emojiOpen ? `<div class="emoji-row">${CREW_EMOJI.map((e) => `<button class="emoji-pick" data-action="react" data-id="${m.id}" data-kind="emoji" data-emoji="${e}">${e}</button>`).join('')}</div>` : ''}
+    <p class="hint react-hint">${m.trainedToday ? 'They trained today — say so.' : 'They have not trained yet. A nudge shows on their card.'} Everyone in the crew sees it.</p>`;
+
   return `<div class="modal-backdrop" data-action="backdrop">
     <div class="modal-sheet" data-stop>
       <div class="sheet-handle"></div>
-      <div class="sheet-head">
-        <h2>${memberFaceHtml(m, 30)}${escapeHtml(m.name || 'Someone')}</h2>
+      <div class="sheet-head member-head">
+        <h2>${escapeHtml(m.name || 'Someone')}${m.isOwner ? '<i title="Made this crew">★</i>' : ''}</h2>
         <button class="sheet-close" data-action="close-modal">${ICONS.close}</button>
       </div>
-      <div class="member-top">
-        <div class="member-streak"><b>${m.streak}</b><span>day streak</span></div>
-        <div class="member-side">
-          <div>best <b>${m.best}</b></div>
-          <div class="${m.trainedToday ? 'yes' : 'no'}">${m.trainedToday ? 'trained today' : 'not yet today'}</div>
+
+      <div class="member-hero">
+        ${memberFaceHtml(m, 84)}
+        <div class="member-hero-nums">
+          <div class="member-streak"><b>${m.streak}</b><span>day streak${m.best > m.streak ? ` · best ${m.best}` : ''}</span></div>
+          <div class="member-today ${m.trainedToday ? 'yes' : 'no'}">${m.trainedToday ? 'trained today' : 'not yet today'}</div>
+          ${reactionChipsHtml(m)}
         </div>
       </div>
-      <dl class="ex-numbers member-life">
-        ${m.lifetime && m.lifetime.reps ? `<div><dt>Lifetime</dt><dd>${formatCount(m.lifetime.reps)}</dd></div>` : ''}
-        ${m.lifetime && m.lifetime.timeMs ? `<div><dt>Total time</dt><dd>${formatTotalDuration(m.lifetime.timeMs)}</dd></div>` : ''}
-      </dl>
-      ${ex.length ? `<div class="set-list member-ex">
-        <div class="set-list-head"><span>Exercises</span><span>${ex.length}</span></div>
-        ${ex.map((e) => `<div class="member-ex-row">
-          <span class="member-ex-name">${escapeHtml(e.name)}</span>
-          <span class="member-ex-num">${e.today > 0 ? `<b>${formatCount(e.today)}</b> today · ` : ''}${e.streak ? `${e.streak}d` : '—'}</span>
-        </div>`).join('')}
+
+      <div class="section-label">Today</div>
+      ${due.length
+        ? `<div class="crew-days">${due.map(dayRow).join('')}</div>`
+        : '<p class="hint">Nothing scheduled for them today.</p>'}
+
+      ${allTime.length ? `<div class="set-list member-ex">
+        <div class="set-list-head"><span>All time</span><span>${allTime.length} exercise${allTime.length === 1 ? '' : 's'}</span></div>
+        ${allTime.map(lifeRow).join('')}
       </div>` : '<p class="hint">Nothing published yet — they have not opened Sets since joining.</p>'}
+
+      ${reactRow}
       ${iOwn && !mine ? `<button class="danger-btn" data-action="remove-member" data-id="${m.id}">Remove from crew</button>` : ''}
     </div>
   </div>`;
@@ -4011,7 +4095,14 @@ document.addEventListener('click', async (e) => {
 
   switch (action) {
     case 'nav':
-      if (btn.dataset.view === 'social') setTimeout(() => refreshCrews().catch(() => {}), 0);
+      if (btn.dataset.view === 'social') {
+        setTimeout(() => refreshCrews().catch(() => {}), 0);
+        // Opening the tab IS reading them — no separate "mark as read".
+        if (unseenReactions()) {
+          const c = activeCrew();
+          if (c) crewApi.markSeen(c.id).then((r) => applyCrewResult(r)).catch(() => {});
+        }
+      }
       state.view = btn.dataset.view;
       db.prefs.set('view', state.view);
       state.expandedDay = null;
@@ -4106,6 +4197,21 @@ document.addEventListener('click', async (e) => {
       openInviteAccept(typed);
       break;
     }
+    case 'react': {
+      const crew = activeCrew();
+      if (!crew) break;
+      const res = await crewApi.react(crew.id, btn.dataset.id, btn.dataset.kind, btn.dataset.emoji || '');
+      if (state.modal) state.modal.emojiOpen = false;
+      if (applyCrewResult(res, { toast: true })) {
+        renderModal();
+        showToast(btn.dataset.kind === 'nudge' ? 'Nudged' : 'Sent');
+      }
+      break;
+    }
+    case 'toggle-emoji':
+      if (state.modal) state.modal.emojiOpen = !state.modal.emojiOpen;
+      renderModal();
+      break;
     case 'accept-invite':
       await joinCrewByCode(btn.dataset.code);
       break;

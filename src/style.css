@@ -1442,13 +1442,68 @@
     background:var(--bg-elevated); border:1px solid var(--border); padding:10px 12px; margin-bottom:12px;
   }
 
-  .member-top{display:flex; align-items:flex-end; gap:16px; margin:4px 0 14px;}
-  .member-streak b{font-family:var(--font-num); font-size:44px; font-weight:700; color:var(--accent); line-height:1;}
-  .member-streak span{display:block; font-size:12px; color:var(--text-dim); margin-top:4px;}
-  .member-side{flex:1; text-align:right; font-family:var(--font-mono); font-size:12px; color:var(--text-faint);}
-  .member-side .yes{color:var(--accent);}
-  .member-side .no{color:var(--text-faint);}
+  /* The face is the point of a person's card, so it leads and everything else
+     lines up beside it. */
+  .member-head h2{display:flex; align-items:center; gap:6px;}
+  .member-head h2 i{font-style:normal; color:var(--accent); font-size:13px;}
+  .member-hero{display:flex; align-items:center; gap:16px; margin:2px 0 20px;}
+  .member-hero .crew-face{width:84px; height:84px; font-size:30px;}
+  .member-hero-nums{flex:1; min-width:0;}
+  .member-streak b{font-family:var(--font-num); font-size:40px; font-weight:700; color:var(--accent); line-height:1;}
+  .member-streak span{display:block; font-size:12px; color:var(--text-dim); margin-top:3px;}
+  .member-today{margin-top:6px; font-family:var(--font-mono); font-size:11px;
+    letter-spacing:0.08em; text-transform:uppercase;}
+  .member-today.yes{color:var(--accent);}
+  .member-today.no{color:var(--text-faint);}
+
+  /* Today: name, what they have done against what they owe, and a tick. Every
+     number on this screen belongs to the exercise on its own line. */
+  .crew-days{margin-bottom:18px;}
+  .crew-day{display:flex; align-items:center; gap:10px; padding:11px 2px; border-bottom:1px solid var(--border);}
+  .crew-day-name{flex:1; min-width:0; font-size:14.5px; font-weight:600; color:var(--text);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .crew-day-num{font-family:var(--font-mono); font-size:13px; color:var(--text-dim); white-space:nowrap;}
+  .crew-day-num i{font-style:normal; color:var(--text-faint); margin-left:4px;}
+  .crew-day-tick{flex:0 0 auto; display:flex; align-items:center; color:var(--text-faint);}
+  .crew-day.met .crew-day-num{color:var(--accent);}
+  .crew-day.met .crew-day-tick{color:var(--accent);}
   .member-life{margin-bottom:14px;}
+
+  /* reactions: small, countable, and visible to the whole crew */
+  .react-chips{display:inline-flex; align-items:center; gap:4px; flex-wrap:wrap; margin-top:8px;}
+  .react-chips.small{margin:0 8px 0 0;}
+  .react-chip{
+    display:inline-flex; align-items:center; gap:3px; padding:2px 7px; border-radius:999px;
+    background:var(--bg-elevated); border:1px solid var(--border); font-size:12px; line-height:1.6;
+  }
+  .react-chip b{font-family:var(--font-mono); font-size:10px; font-weight:700; color:var(--text-dim);}
+  .react-chip.mine{border-color:var(--accent); background:rgba(62,224,127,0.1);}
+
+  .react-bar{display:flex; gap:8px; margin-top:18px;}
+  .react-btn{
+    flex:1; min-height:48px; border:1px solid var(--border-strong); background:var(--bg-card);
+    color:var(--text); font-size:14px; font-weight:700;
+  }
+  .react-btn.emoji{flex:0 0 64px; font-size:20px;}
+  .react-btn.respect{border-color:rgba(62,224,127,0.5); color:var(--accent);}
+  .react-btn.nudge{border-color:rgba(228,164,46,0.5); color:#E8B54A;}
+  .react-btn:active{transform:scale(0.97);}
+  .emoji-row{display:flex; gap:6px; margin-top:8px; flex-wrap:wrap;}
+  .emoji-pick{
+    flex:1 0 44px; min-height:48px; font-size:22px; background:var(--bg-card);
+    border:1px solid var(--border-strong);
+  }
+  .emoji-pick:active{border-color:var(--accent);}
+  .react-hint{margin-top:10px;}
+
+  /* the count on the tab: a number, because "something happened" is not news */
+  .nav-dot{
+    position:absolute; top:2px; right:calc(50% - 22px); min-width:16px; height:16px; padding:0 4px;
+    border-radius:999px; background:var(--accent); color:var(--accent-ink);
+    font-family:var(--font-mono); font-size:9px; font-weight:700; font-style:normal;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .nav-btn.active .nav-dot{background:var(--accent-ink); color:var(--accent);}
   .member-ex-row{display:flex; align-items:center; gap:10px; padding:9px 2px; border-bottom:1px solid var(--border);}
   .member-ex-name{flex:1; min-width:0; font-size:14px; color:var(--text);
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}

@@ -471,7 +471,7 @@ export function formatCount(n) {
  * no weight, no BMI. A crew can see that you trained today and how long your
  * run is; it cannot reconstruct your week.
  */
-export function buildCrewCard(profile, exercises, statsById, todayTotals, dayStreak) {
+export function buildCrewCard(profile, exercises, statsById, todayTotals, dayStreak, dueToday, targets) {
   const active = (exercises || []).filter((e) => e.active && !e.archived);
   const cards = active.map((ex) => {
     const s = (statsById && statsById[ex.id]) || {};
@@ -482,6 +482,11 @@ export function buildCrewCard(profile, exercises, statsById, todayTotals, dayStr
       streak: s.currentStreak || 0,
       total: s.totalReps || 0,
       today: (todayTotals && todayTotals[ex.id]) || 0,
+      // The day, not just the lifetime: a crew watching each other needs to see
+      // what someone is down to do and whether they have done it. A total with
+      // no target beside it says nothing about being on track.
+      target: (targets && targets[ex.id]) || 0,
+      due: !!(dueToday && dueToday[ex.id]),
     };
   });
   return {

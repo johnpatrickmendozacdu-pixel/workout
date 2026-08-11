@@ -84,7 +84,7 @@ async function crewsFor(env, userId) {
     const reactions = await env.DB.prepare(
       `SELECT from_id, to_id, kind, emoji, day, seen FROM reactions WHERE crew_id = ? AND day >= ?`
     ).bind(crew.id, isoDaysAgo(14)).all();
-    out.push(buildRoster(crew, members.results || [], reactions.results || []));
+    out.push(buildRoster(crew, members.results || [], reactions.results || [], userId));
   }
   return out;
 }

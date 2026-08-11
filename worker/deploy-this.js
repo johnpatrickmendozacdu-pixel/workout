@@ -153,6 +153,11 @@ function sanitiseCard(card) {
         streak: int(e && e.streak),
         total: num(e && e.total),
         today: num(e && e.today),
+        // What they are down to do today, so a crew screen can show the day
+        // rather than a lifetime — a total with no target beside it says
+        // nothing about whether someone is on track.
+        target: num(e && e.target),
+        due: !!(e && e.due),
       })).filter((e) => e.name)
       : [],
   };
@@ -205,7 +210,7 @@ function ownerAfterLeaving(crew, members, leavingId) {
  * then by streak, then by name. Ordering here rather than in the client means
  * every device agrees, and a stale cached roster still sorts the same way.
  */
-function buildRoster(crew, memberRows, reactionRows) {
+function buildRoster(crew, memberRows, reactionRows, meId) {
   const reactions = reactionRows || [];
   const members = memberRows.map((m) => {
     let card = null;
@@ -221,8 +226,13 @@ function buildRoster(crew, memberRows, reactionRows) {
       exercises: (card && card.exercises) || [],
       updatedAt: m.updated_at || 0,
       isOwner: crew.owner === m.user_id,
+      // Marked here rather than guessed by the client: the app knows the email
+      // it signed in with, not the id Google gave the Worker, and matching on
+      // email meant nobody was ever recognised as themselves — which quietly
+      // hid every owner-only control.
+      isMe: !!meId && m.user_id === meId,
       received: reactions.filter((r) => r.to_id === m.user_id)
-        .map((r) => ({ from: r.from_id, kind: r.kind, emoji: r.emoji, day: r.day })),
+        .map((r) => ({ from: r.from_id, kind: r.kind, emoji: r.emoji, day: r.day, seen: !!r.seen, mine: r.from_id === meId })),
     };
   });
   members.sort((a, b) => (Number(b.trainedToday) - Number(a.trainedToday))
@@ -332,7 +342,7 @@ async function crewsFor(env, userId) {
     const reactions = await env.DB.prepare(
       `SELECT from_id, to_id, kind, emoji, day, seen FROM reactions WHERE crew_id = ? AND day >= ?`
     ).bind(crew.id, isoDaysAgo(14)).all();
-    out.push(buildRoster(crew, members.results || [], reactions.results || []));
+    out.push(buildRoster(crew, members.results || [], reactions.results || [], userId));
   }
   return out;
 }

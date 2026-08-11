@@ -33,14 +33,14 @@ one Cloudflare variable — never a code change.
 - `src/sync/googleSync.js` — self-contained Google auth + Drive (no test coverage)
 - `worker/` — the Cloudflare token-broker (deployed separately, see below)
 
-**277 tests, all passing** (`npm test`). They cover the pure domain layer and the
+**322 tests, all passing** (`npm test`). They cover the pure domain layer and the
 Worker's pure helpers only — **not `main.js`, not `googleSync.js`**.
 
 ## State right now
 
-- `main` = **`9791a9d`**, live on Vercel, byte-verified. Working tree clean apart
+- `main` = **`4cfd40a`**, live on Vercel, byte-verified. Working tree clean apart
   from `.DS_Store`.
-- **277 tests pass.** Byte-verify every deploy against a build of the *pushed*
+- **322 tests pass.** Byte-verify every deploy against a build of the *pushed*
   commit — `__BUILD_ID__` is the commit SHA, so a build made before committing
   can never match. That mistake has cost a round of false-alarm polling twice.
 - Migration finished and verified 2026-08-05: the old Pages address serves a
@@ -81,6 +81,34 @@ not remove Drive — it only keeps the *login* alive.
 **Privacy is already sufficient.** Everyone uses their own phone, so each Gmail's data
 is isolated by device + their own Drive folder. Server-enforced privacy (Supabase RLS)
 would add nothing real and breaks the free/always-on rule.
+
+## Crews — the social layer (new 2026-08-11)
+
+A fifth tab, **Social**. Crews live in **Cloudflare D1 on the same Worker** as the
+token broker, because Drive cannot do it: `appdata` is private per user, and
+`drive.file` only reaches files the app itself created, so a shared folder is
+invisible to everyone but its author. The scope that would fix that
+(`drive.readonly`) is **sensitive** — verification, and possibly a paid annual
+security assessment. D1's free tier does not pause when idle, which is the exact
+reason Supabase was rejected.
+
+- **Identity costs no new scope.** The app sends the Google access token it
+  already holds; the Worker asks Google's userinfo whose it is — the same trick
+  `exchange()` uses. No re-consent, no Console change. The user id is the `sub`,
+  never the email.
+- **What leaves the phone** is a card the phone builds (`buildCrewCard`): name,
+  photo, streaks, lifetime totals, per-exercise streaks. Never the log, never
+  weight. `sanitiseCard` in `worker/crew.js` re-derives every field rather than
+  trusting the client, so a modified app cannot widen what a crew sees.
+- `worker/deploy-this.js` is **generated** — `node tools/bundle-worker.mjs`.
+  Editing it by hand is how it drifts from the tested source.
+- Setup done 2026-08-11: D1 database `sets-crew`, bound as `DB`. Verified live by
+  curl — `/crew/sync` answers 401 to a bad token (503 would mean the binding is
+  missing), the broker is unaffected, a foreign origin still gets 403.
+- **Phase ② (QR invite card) and ③ (Nudge / Respect / emoji) are not built.** The
+  Worker already carries `/crew/react` and `/crew/seen`, so ③ is app-side only.
+- Reactions dedupe on the primary key `(crew, from, to, kind, emoji, day)` — the
+  schema is the rate limit, not application code.
 
 ## The token-broker (new this session)
 
@@ -195,6 +223,7 @@ asking.
 | Timed exercises | Plan → How you measure it → **Time** (number + min/hr). No keypad on Today: a dormant clock with Start, then the usual Pause / Resume / Give up / Complete. Nothing auto-completes — reaching the target pauses and asks *Take the win / Keep going* the next tick you are looking at it. Progress swaps in Longest session, First day, Average session, Lifetime, all as durations. |
 | Share image | "Save image" on an opened exercise card draws a 1080² card on a canvas — name, category, streak, the climb, all seven figures, and a `Sets · sets-workout.vercel.app` watermark. A **finished exercise on Today** has its own button drawing the same frame with the day's figures instead: total / target, the clock, sets, streak — reachable from the Done row's share glyph without opening the exercise. A third card, **Share this day**, hangs off the All-done block: every exercise finished today as a list, then exercises / time / streak. All three go to `navigator.share`, which is the whole Instagram/Facebook story — the sheet is the integration. Direct posting needs a server, a Business account and Meta app review; ruled out, and the button says **Share**, not Save, because the sheet is what opens. Canvas → blob → `navigator.share` (the only route to the photo library) with a download fallback. Nothing is uploaded. No dependency: `html2canvas` was rejected on those grounds. |
 | One-time | A real exercise carrying `oneTimeDate` — same clock, target and keypad as any other. `isScheduledOn` returns true only on that date, so every view and the streak maths follow for free. Hidden after its day, never deleted. |
+| Social | Crew roster ordered by who trained today, then streak. Tap a member for their streaks, totals and per-exercise list. Invite by link or code; owner can rename and remove, anyone can leave, the owner leaving hands it to whoever joined first. Renders from a cached roster before any request and says so when offline — the only screen in Sets that needs the network, and nothing else can be taken down by it. |
 | Sync | Per-Google-account namespaced data; Drive appdata backup; token-broker keeps it alive. Failures queue quietly — no red alarms. |
 
 ## How this user works

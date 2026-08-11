@@ -1496,7 +1496,7 @@ function exerciseHistory(ex, s) {
 
   // Chart above the day list: the list IS the table view the chart needs, so the
   // exact numbers are always a glance below the shape they make.
-  const share = `<button class="share-btn" data-action="share-exercise" data-id="${ex.id}">${ICONS.share}Save image</button>`;
+  const share = `<button class="share-btn" data-action="share-exercise" data-id="${ex.id}">${ICONS.share}Share image</button>`;
   return `<div class="ex-history">${numbers}${chart}<div class="exday-list">${rows}</div>${more}${share}</div>`;
 }
 
@@ -1777,8 +1777,129 @@ async function buildSessionImage(ex, session) {
   return new Promise((resolve) => c.toBlob(resolve, 'image/png'));
 }
 
-/** Canvas → blob → share sheet, with a download fallback. Shared by both cards
- *  so there is one answer to "where does the picture go". */
+/**
+ * The whole day on one card: what you finished, and what it added up to.
+ *
+ * It lists rather than headlines, because a day has no single number worth
+ * 168px — the list IS the achievement. Long days are cut off with a count
+ * rather than shrunk to fit, so the card never becomes a spreadsheet.
+ */
+const DAY_CARD_ROWS = 7;
+
+async function buildDayImage(day) {
+  const S = SHARE_SIZE;
+  const c = document.createElement('canvas');
+  c.width = S; c.height = S;
+  const g = c.getContext('2d');
+  if (document.fonts && document.fonts.ready) { try { await document.fonts.ready; } catch (e) { /* draw anyway */ } }
+
+  const INK = '#0A0C0B', TEXT = '#EEF2EF', DIM = '#9AA5A0', FAINT = '#6E7975', ACCENT = '#3EE07F';
+  g.fillStyle = INK; g.fillRect(0, 0, S, S);
+  g.textBaseline = 'alphabetic';
+
+  const pad = 76;
+  g.fillStyle = ACCENT; g.font = "800 30px 'JetBrains Mono', ui-monospace, monospace";
+  g.fillText('ALL DONE', pad, pad + 30);
+  g.fillStyle = TEXT; g.font = "700 62px Manrope, system-ui, sans-serif";
+  g.fillText(day.dateLabel, pad, pad + 104);
+  g.fillStyle = FAINT; g.font = "600 24px 'JetBrains Mono', ui-monospace, monospace";
+  g.fillText(day.subtitle.toUpperCase(), pad, pad + 146);
+
+  // One line per exercise: icon, name, what it came to. The icons are already
+  // loaded for the cards, so this costs nothing new.
+  const rows = day.rows.slice(0, DAY_CARD_ROWS);
+  const icons = await Promise.all(rows.map((r) => shareLoadIcon(r.ex)));
+  // The list is given the whole band between the header and the figures, so a
+  // three-exercise day fills the card the same way a seven-exercise one does
+  // instead of leaving a hole under it.
+  let y = 320;
+  const rowH = Math.max(64, Math.min(110, Math.floor(500 / Math.max(1, rows.length))));
+  rows.forEach((r, i) => {
+    const icon = icons[i];
+    if (icon) g.drawImage(icon, pad, y - 34, 44, 44);
+    g.fillStyle = r.short ? DIM : TEXT;
+    g.font = "700 34px Manrope, system-ui, sans-serif";
+    let name = r.ex.name;
+    while (g.measureText(name).width > S - pad * 2 - 300 && name.length > 4) name = name.slice(0, -1);
+    if (name !== r.ex.name) name += '…';
+    g.fillText(name, pad + 62, y);
+
+    g.textAlign = 'right';
+    g.fillStyle = r.short ? DIM : ACCENT;
+    g.font = "700 34px 'Martian Mono', ui-monospace, monospace";
+    g.fillText(r.value, S - pad, y);
+    g.textAlign = 'left';
+
+    g.strokeStyle = '#1E2522'; g.lineWidth = 2;
+    g.beginPath(); g.moveTo(pad, y + 22); g.lineTo(S - pad, y + 22); g.stroke();
+    y += rowH;
+  });
+
+  if (day.rows.length > DAY_CARD_ROWS) {
+    g.fillStyle = FAINT; g.font = "600 24px 'JetBrains Mono', ui-monospace, monospace";
+    g.fillText(`+${day.rows.length - DAY_CARD_ROWS} more`, pad, y + 6);
+  }
+
+  const tiles = [
+    ['EXERCISES', String(day.rows.length)],
+    ['TIME', day.totalTime],
+    ['STREAK', day.streak ? `${day.streak}d` : null],
+  ].filter(([, v]) => v != null && v !== '' && v !== '—');
+  const colW = (S - pad * 2) / (tiles.length || 1);
+  tiles.forEach(([label, value], i) => {
+    const x = pad + i * colW;
+    g.fillStyle = FAINT; g.font = "600 22px 'JetBrains Mono', ui-monospace, monospace";
+    g.fillText(label, x, 878);
+    g.fillStyle = TEXT; g.font = "700 52px 'Martian Mono', ui-monospace, monospace";
+    g.fillText(value, x, 940);
+  });
+
+  g.fillStyle = ACCENT; g.font = "800 34px Manrope, system-ui, sans-serif";
+  g.fillText('Sets', pad, S - pad + 8);
+  g.fillStyle = FAINT; g.font = "500 24px 'JetBrains Mono', ui-monospace, monospace";
+  g.fillText('sets-workout.vercel.app', pad + 82, S - pad + 8);
+
+  return new Promise((resolve) => c.toBlob(resolve, 'image/png'));
+}
+
+/** Today's finished work, as one card. Rest days are not on it — there is
+ *  nothing to show — but they do not stop the rest of the day being shared. */
+async function shareDayImage() {
+  const d = todayISO();
+  const rows = state.exercises
+    .filter((ex) => ex.active && isScheduledOn(ex, d) && !isBreakDay(state.streakOverrides, d, ex.id))
+    .sort((a, b) => a.order - b.order)
+    .map((ex) => {
+      const total = calcTotal(getSetsFor(ex.id, d));
+      const target = getEffectiveTarget(ex, d);
+      const timer = getTimerPure(state.timersLog, d, ex.id);
+      return {
+        ex, total, ms: timerElapsedMs(timer, Date.now()),
+        short: !!(target > 0 && total < target),
+        value: isTimeMode(ex) ? formatMinutes(total) : `${formatCount(total)} ${ex.unit}`,
+      };
+    })
+    .filter((r) => r.total > 0);
+
+  if (!rows.length) { showToast('Nothing logged today yet.'); return; }
+
+  const totalMs = rows.reduce((a, r) => a + r.ms, 0);
+  showToast('Building image…');
+  let blob;
+  try {
+    blob = await buildDayImage({
+      rows,
+      dateLabel: formatDisplayDate(d, { weekday: 'long', day: 'numeric', month: 'long' }),
+      subtitle: `${rows.length} exercise${rows.length === 1 ? '' : 's'} · every target met`,
+      totalTime: formatTotalDuration(totalMs) === '—' ? formatDuration(totalMs) : formatTotalDuration(totalMs),
+      streak: calcStreakInfo(state.exercises, state.setsLog, d, state.streakOverrides).current,
+    });
+  } catch (e) { blob = null; }
+  await offerImage(blob, { name: 'day' }, `-${d}`);
+}
+
+/** Canvas → blob → share sheet, with a download fallback. Shared by all three
+ *  cards so there is one answer to "where does the picture go". */
 async function offerImage(blob, ex, suffix) {
   if (!blob) { showToast("Couldn't build the image."); return; }
   const file = new File([blob], `sets-${ex.name.toLowerCase().replace(/[^a-z0-9]+/g, '-')}${suffix}.png`, { type: 'image/png' });
@@ -2078,7 +2199,8 @@ function modalGuide() {
       has.length && ['End early', 'Give up keeps your reps and stops the clock.'],
       anyTarget && ['Once it is done', 'Hitting the target locks the card. Train again to reopen it.'],
       anyTarget && ['Rest a day', 'Open the exercise, Take a break. Streak holds.'],
-      has.length && ['Share a session', 'Once it is finished: Save image.'],
+      has.length && ['Share a session', 'Share image on a finished exercise — Instagram, Messages, or save to Photos.'],
+      has.length && ['Share the day', 'Once everything is done: Share this day.'],
       !has.length && ['Start', 'Add an exercise.'],
       ['Daily weigh-in', 'A health habit, not an exercise. It never touches a streak, and it disappears once today is logged.'],
     ],
@@ -2256,11 +2378,17 @@ function viewToday() {
     // Ended early is closed out, not won: it keeps the quiet row but takes a
     // flag instead of the tick, and shows the shortfall honestly.
     const short = r.endedEarly && r.hasTarget && r.total < r.target;
-    return `<button class="done-row${short ? ' ended-early' : ''}" data-action="open-logger" data-id="${r.ex.id}">
-      <span class="done-tick">${r.rest ? '🌙' : (short ? ICONS.flag : ICONS.check)}</span>
-      <span class="done-name">${escapeHtml(r.ex.name)}</span>
-      <span class="done-num">${r.rest ? 'Rest' : (short ? `${r.total} of ${r.target}` : `${r.total} ${escapeHtml(r.ex.unit)}`)}</span>
-    </button>`;
+    // The row is a container rather than one button, because it now carries two
+    // actions — open it, or share it. A rest day has nothing to put on a card,
+    // so it keeps the row it always had and no share.
+    return `<div class="done-row${short ? ' ended-early' : ''}">
+      <button class="done-open" data-action="open-logger" data-id="${r.ex.id}">
+        <span class="done-tick">${r.rest ? '🌙' : (short ? ICONS.flag : ICONS.check)}</span>
+        <span class="done-name">${escapeHtml(r.ex.name)}</span>
+        <span class="done-num">${r.rest ? 'Rest' : (short ? `${r.total} of ${r.target}` : `${r.total} ${escapeHtml(r.ex.unit)}`)}</span>
+      </button>
+      ${r.rest ? '' : `<button class="done-share" data-action="share-session" data-id="${r.ex.id}" aria-label="Share ${escapeHtml(r.ex.name)}">${ICONS.share}</button>`}
+    </div>`;
   };
 
   let html = tipHtml('open-ex', 'Tap an exercise to log reps.');
@@ -2269,7 +2397,10 @@ function viewToday() {
     html += `<div class="section-label">To do${todo.length > 1 ? ` · ${todo.length}` : ''}</div>`;
     html += todo.map(todoCard).join('');
   } else if (scheduled.length) {
-    html += `<div class="all-clear"><b>All done today</b><span>Every target met. Rest up.</span></div>`;
+    // The day's own card hangs off the moment the day is declared over, so it
+    // needs no row of its own on a screen whose whole job is what is left.
+    html += `<div class="all-clear"><b>All done today</b><span>Every target met. Rest up.</span>
+      ${done.some((r) => !r.rest) ? `<button class="all-clear-share" data-action="share-day">${ICONS.share}Share this day</button>` : ''}</div>`;
   }
 
   if (done.length) {
@@ -2822,7 +2953,7 @@ function modalLogger(exId) {
           <em>${sealed ? 'Today is already closed.' : (resting ? 'Your streak is safe. Tap to undo.' : 'Counts as rest — your streak keeps going.')}</em>
         </button>`;
       })()}
-      ${sealed ? `<button class="share-btn logger-share" data-action="share-session" data-id="${exId}">${ICONS.share}Save image</button>` : ''}
+      ${sealed ? `<button class="share-btn logger-share" data-action="share-session" data-id="${exId}">${ICONS.share}Share image</button>` : ''}
       ${setListBlock}
     </div>
   </div>`;
@@ -3373,6 +3504,9 @@ document.addEventListener('click', async (e) => {
       break;
     case 'share-session':
       await shareSessionImage(btn.dataset.id);
+      break;
+    case 'share-day':
+      await shareDayImage();
       break;
     case 'toggle-stat-help':
       state.statHelp[btn.dataset.key] = !state.statHelp[btn.dataset.key];

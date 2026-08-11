@@ -129,7 +129,7 @@ export const GUIDE_SECTIONS = [
       'No target? Tap Complete when you’re done — it banks the time the same way.',
       'Give up ends it early. Your reps still count, the time doesn’t.',
       'Reset clears the clock, never the reps.',
-      'Finished? Save image puts the session on a card you can share.',
+      'Finished? Share image opens your phone’s share sheet — Instagram, Messages, or save to Photos.',
     ],
   },
   {

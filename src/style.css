@@ -1335,11 +1335,23 @@
   }
 
   /* done: present, not loud */
+  /* Two actions on one line: open it, or put it on a card. The share is an
+     icon alone — a second label here would double the words on a row whose
+     whole point is being quiet. */
   .done-row{
-    display:flex; align-items:center; gap:11px; width:100%; text-align:left; min-height:52px;
-    background:transparent; border:none; border-bottom:2px solid #1E2522; padding:6px 2px;
-    color:var(--text-dim);
+    display:flex; align-items:center; width:100%;
+    border-bottom:2px solid #1E2522; color:var(--text-dim);
   }
+  .done-open{
+    display:flex; align-items:center; gap:11px; flex:1; min-width:0; text-align:left;
+    min-height:52px; background:transparent; border:none; padding:6px 2px; color:inherit;
+  }
+  .done-share{
+    flex:0 0 auto; width:44px; height:44px; display:flex; align-items:center; justify-content:center;
+    background:transparent; border:none; color:var(--text-faint);
+  }
+  .done-share svg{width:15px; height:15px;}
+  .done-share:active{color:var(--accent); transform:scale(0.9);}
   .done-tick{display:flex; color:var(--accent); flex-shrink:0;}
   .done-tick svg{width:17px; height:17px;}
   .done-name{flex:1; min-width:0; font-size:14.5px; font-weight:600;
@@ -1351,6 +1363,13 @@
   }
   .all-clear b{display:block; font-size:16px; color:var(--accent); font-weight:800;}
   .all-clear span{display:block; font-size:12.5px; color:var(--text-dim); margin-top:3px;}
+  .all-clear-share{
+    display:flex; align-items:center; justify-content:center; gap:8px;
+    width:100%; min-height:44px; margin-top:14px;
+    background:none; border:1px solid rgba(62,224,127,0.4); color:var(--accent);
+    font-family:var(--font-mono); font-size:11px; letter-spacing:0.06em; text-transform:uppercase;
+  }
+  .all-clear-share:active{background:rgba(62,224,127,0.12);}
 
   /* the note is signage, not a card competing with the cards */
   .tip{

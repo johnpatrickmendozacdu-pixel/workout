@@ -1354,12 +1354,12 @@ function exerciseCard(ex, s, opts = {}) {
 
   const head = opts.expandable
     ? `<button class="ex-stat-head" data-action="toggle-ex-history" data-id="${ex.id}" aria-expanded="${open}">
-        <span class="ex-stat-icon">${exIconHtml(ex, 26)}</span>
+        <span class="ex-stat-icon">${exIconHtml(ex, 38)}</span>
         <h3>${escapeHtml(ex.name)}${weightTag(ex)}${categoryLabel(ex) ? `<span class="ex-stat-cat">${catTagHtml(ex)}</span>` : ''}</h3>
         ${action}
       </button>`
     : `<header class="ex-stat-head static">
-        <span class="ex-stat-icon">${exIconHtml(ex, 26)}</span>
+        <span class="ex-stat-icon">${exIconHtml(ex, 38)}</span>
         <h3>${escapeHtml(ex.name)}${weightTag(ex)}${categoryLabel(ex) ? `<span class="ex-stat-cat">${catTagHtml(ex)}</span>` : ''}</h3>
         ${action}
       </header>`;
@@ -2563,7 +2563,7 @@ function viewToday() {
   const todoCard = (r) => {
     const running = r.timer && r.timer.status === 'running';
     return `<button class="today-card" data-action="open-logger" data-id="${r.ex.id}">
-      <span class="today-icon">${exIconHtml(r.ex, 30)}</span>
+      <span class="today-icon">${exIconHtml(r.ex, 46)}</span>
       <span class="today-body">
         <span class="today-name">${escapeHtml(r.ex.name)}${weightTag(r.ex)}</span>
         <span class="today-meter" aria-hidden="true"><i style="width:${Math.round(r.pct * 100)}%"></i></span>
@@ -2723,7 +2723,7 @@ function viewSocial() {
       ${memberFaceHtml(m, 44, true)}
       <button class="crew-open" data-action="open-member" data-id="${m.id}">
       <span class="crew-body">
-        <span class="crew-name">${escapeHtml(m.name || 'Someone')}${mine ? '<em>you</em>' : ''}${m.role && m.role !== 'member' ? `<img class="role-mark" src="${crewIconUrl('role', m.role)}" alt="${escapeHtml((roleInfo(m.role) || {}).label || '')}" width="16" height="16">` : ''}</span>
+        <span class="crew-name">${escapeHtml(m.name || 'Someone')}${mine ? '<em>you</em>' : ''}${m.role && m.role !== 'member' ? `<img class="role-mark" src="${crewIconUrl('role', m.role)}" alt="${escapeHtml((roleInfo(m.role) || {}).label || '')}" width="22" height="22">` : ''}</span>
         <span class="crew-sub">${m.streak ? `${m.streak} day streak` : 'no streak yet'}${m.best > m.streak ? ` · best ${m.best}` : ''}</span>
       </span>
       <span class="crew-state">${reactionChipsHtml(m, true)}${m.trainedToday ? ICONS.check : '<i class="crew-pending"></i>'}</span>
@@ -3039,7 +3039,7 @@ function viewPlan() {
         const targetSub = catBit + (target ? `${target} ${escapeHtml(ex.unit)}/day` : `no target · ${escapeHtml(ex.unit)}`) + wBit;
         html += `<div class="plan-row">
           <button class="plan-row-open" data-action="open-edit-exercise" data-id="${ex.id}" aria-label="Edit ${escapeHtml(ex.name)}">
-          <div class="ex-icon-badge">${exIconHtml(ex, 26)}</div>
+          <div class="ex-icon-badge">${exIconHtml(ex, 34)}</div>
           <div class="plan-row-body">
             <div class="plan-row-name">${escapeHtml(ex.name)}</div>
             <div class="plan-row-sub">${targetSub}</div>
@@ -3061,7 +3061,7 @@ function viewPlan() {
     if (state.showArchived) {
       archived.forEach((ex) => {
         html += `<div class="plan-row archived">
-          <div class="ex-icon-badge">${exIconHtml(ex, 26)}</div>
+          <div class="ex-icon-badge">${exIconHtml(ex, 34)}</div>
           <div class="plan-row-body">
             <div class="plan-row-name">${escapeHtml(ex.name)}</div>
             <div class="plan-row-sub">archived</div>
@@ -3279,7 +3279,7 @@ function modalComplete() {
   if (!ex) return '';
   return `<div class="modal-backdrop">
     <div class="modal-sheet center celebrate" data-stop>
-      <div class="celebrate-glyph">${exIconHtml(ex, 56)}</div>
+      <div class="celebrate-glyph">${exIconHtml(ex, 76)}</div>
       <h2>Target reached</h2>
       <div class="celebrate-line">${escapeHtml(ex.name)}</div>
       <div class="celebrate-stat">${m.total} ${escapeHtml(ex.unit)} <span>•</span> ${formatDuration(m.elapsedMs)}</div>
@@ -3314,7 +3314,7 @@ function modalGiveUp() {
   const done = target ? `${total} of ${target} ${escapeHtml(ex.unit)}` : `${total} ${escapeHtml(ex.unit)}`;
   return `<div class="modal-backdrop">
     <div class="modal-sheet center celebrate" data-stop>
-      <div class="celebrate-glyph">${exIconHtml(ex, 56)}</div>
+      <div class="celebrate-glyph">${exIconHtml(ex, 76)}</div>
       <h2>End here?</h2>
       <div class="celebrate-line">${escapeHtml(ex.name)}</div>
       <div class="celebrate-stat">${done} <span>•</span> ${formatDuration(timerElapsedMs(timer, Date.now()))}</div>
@@ -3525,7 +3525,7 @@ function modalLogger(exId) {
     <div class="modal-sheet" data-stop>
       <div class="sheet-handle"></div>
       <div class="sheet-head">
-        <h2>${exIconHtml(ex, 24)}${escapeHtml(ex.name)}</h2>
+        <h2>${exIconHtml(ex, 34)}${escapeHtml(ex.name)}</h2>
         ${sealed ? `<button class="sheet-share" data-action="share-session" data-id="${exId}" aria-label="Share this session">${ICONS.share}</button>` : ''}
         <button class="sheet-close" data-action="close-modal">${ICONS.close}</button>
       </div>
@@ -3643,7 +3643,7 @@ function modalExerciseForm(exId) {
         <label>Category</label>
         <div class="cat-grid">
           ${CATEGORIES.map((c) => `<button type="button" class="cat-chip ${c.key === chosenCat ? 'on' : ''}" data-action="pick-category" data-cat="${c.key}" aria-pressed="${c.key === chosenCat}">
-            <img src="${categoryIconUrl(c.key)}" alt="" width="30" height="30">
+            <img src="${categoryIconUrl(c.key)}" alt="" width="44" height="44">
             <span>${escapeHtml(c.label)}</span>
           </button>`).join('')}
         </div>
@@ -3837,7 +3837,7 @@ const crewIconUrl = (kind, key) => `${import.meta.env.BASE_URL}icons/crew/${kind
 function crewTagHtml(kind, key, size) {
   const info = kind === 'role' ? roleInfo(key) : classInfo(key);
   if (!info) return '';
-  return `<span class="crew-tag"><img src="${crewIconUrl(kind, key)}" alt="" width="${size || 18}" height="${size || 18}">${escapeHtml(info.label)}</span>`;
+  return `<span class="crew-tag"><img src="${crewIconUrl(kind, key)}" alt="" width="${size || 26}" height="${size || 26}">${escapeHtml(info.label)}</span>`;
 }
 
 const CREW_EMOJI = ['💪', '👏', '🐐', '😤', '🙌', '⚡'];
@@ -4005,12 +4005,12 @@ function modalCrewMember() {
         <div class="section-label">Role</div>
         <div class="rank-picks">
           ${CREW_ROLES.map((r) => `<button class="rank-pick ${m.role === r.key ? 'on' : ''}" data-action="set-role" data-id="${m.id}" data-role="${r.key}">
-            <img src="${crewIconUrl('role', r.key)}" alt="" width="22" height="22">${escapeHtml(r.label)}</button>`).join('')}
+            <img src="${crewIconUrl('role', r.key)}" alt="" width="30" height="30">${escapeHtml(r.label)}</button>`).join('')}
         </div>
         <div class="section-label">Class</div>
         <div class="rank-picks">
           ${CREW_CLASSES.map((c) => `<button class="rank-pick ${m.klass === c.key ? 'on' : ''}" data-action="set-class" data-id="${m.id}" data-class="${c.key}" title="${escapeHtml(c.note)}">
-            <img src="${crewIconUrl('class', c.key)}" alt="" width="22" height="22">${escapeHtml(c.label)}</button>`).join('')}
+            <img src="${crewIconUrl('class', c.key)}" alt="" width="30" height="30">${escapeHtml(c.label)}</button>`).join('')}
           ${m.klass ? `<button class="rank-pick clear" data-action="set-class" data-id="${m.id}" data-class="">Clear</button>` : ''}
         </div>
         <p class="hint">Titles, not permissions — only you can invite, rename or remove, whatever anyone is called.</p>

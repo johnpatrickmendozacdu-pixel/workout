@@ -361,16 +361,25 @@
   .cat-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:7px;}
   .cat-chip{
     background:var(--bg-card); border:1px solid var(--border-strong);
-    padding:9px 3px 7px; min-height:44px;
-    display:flex; flex-direction:column; align-items:center; gap:5px;
+    padding:10px 3px 8px; min-height:44px;
+    display:flex; flex-direction:column; align-items:center; gap:6px;
   }
   .cat-chip img{display:block;}
   .cat-chip span{font-size:10px; font-weight:600; color:var(--text-faint); line-height:1.2; text-align:center;}
   .cat-chip.on{border-color:var(--accent); background:rgba(62,224,127,0.09);}
   .cat-chip.on span{color:var(--accent);}
 
-  /* The artwork carries its own colour, so it is never tinted — only sized. */
-  .ex-icon{display:block; object-fit:contain;}
+  /* The artwork carries its own colour, so it is never tinted — only sized.
+     A faint glow underneath is the one exception: at phone size the white
+     linework was disappearing into a near-black tile, and this lifts it off
+     the background without touching the art itself. */
+  .ex-icon{
+    display:block; object-fit:contain;
+    filter:drop-shadow(0 0 6px rgba(62,224,127,0.18)) drop-shadow(0 1px 2px rgba(0,0,0,0.6));
+  }
+  .role-mark, .crew-tag img, .rank-pick img{
+    filter:drop-shadow(0 0 5px rgba(62,224,127,0.22));
+  }
 
   /* A label, not a score: mono and faint, so it never competes with the count. */
   .cat-tag{
@@ -392,7 +401,7 @@
 
   /* ---------- plan rows ---------- */
   .plan-row{display:flex; align-items:center; gap:12px; background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-md); padding:12px 12px; margin-bottom:8px;}
-  .plan-row .ex-icon-badge{width:38px; height:38px; border-radius:11px; background:var(--bg-elevated); display:flex; align-items:center; justify-content:center; flex-shrink:0;}
+  .plan-row .ex-icon-badge{width:48px; height:48px; border-radius:12px; background:var(--bg-elevated); display:flex; align-items:center; justify-content:center; flex-shrink:0;}
   .plan-row-body{flex:1; min-width:0;}
   /* One line each, always. The row carries a name, a category, a target and
      sometimes a weight, next to four buttons — left to wrap it turns a list
@@ -1473,12 +1482,12 @@
   .role-mark{margin-left:6px; vertical-align:-3px; opacity:.95;}
   .crew-tags{display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;}
   .crew-tag{
-    display:inline-flex; align-items:center; gap:5px; padding:3px 8px 3px 4px;
+    display:inline-flex; align-items:center; gap:6px; padding:4px 9px 4px 5px;
     background:var(--bg-elevated); border:1px solid var(--border);
     font-family:var(--font-mono); font-size:10px; font-weight:700; letter-spacing:0.06em;
     text-transform:uppercase; color:var(--text-dim); white-space:nowrap;
   }
-  .crew-tag img{display:block;}
+  .crew-tag img{display:block; flex:0 0 auto;}
 
   .crew-logo{
     width:44px; height:44px; flex:0 0 auto; object-fit:cover;

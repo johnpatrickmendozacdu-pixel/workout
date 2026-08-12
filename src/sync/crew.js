@@ -55,8 +55,8 @@ async function post(path, payload, timeoutMs) {
     }
     if (!res.ok) {
       const code = (data && data.error) || 'failed';
-      console.warn('[crew]', path, res.status, code);
-      return { ok: false, error: code };
+      console.warn('[crew]', path, res.status, code, (data && data.detail) || '');
+      return { ok: false, error: code, detail: (data && data.detail) || '' };
     }
     return { ok: true, crews: (data && data.crews) || [], joinedId: data && data.joinedId };
   } catch (e) {
@@ -149,11 +149,17 @@ export const CREW_ERRORS = {
   'story-gone': 'That story has expired.',
   'not-in-crew': 'You are not in that crew.',
   'not-yourself': 'That one is for other people.',
-  'crew-failed': 'The crew service hit an error. It has been logged — tell me what you were doing.',
+  'crew-failed': 'The crew service hit an error — the reason is in the console and the Worker log.',
   'no-rank': 'Only the crew leader can set ranks.',
+  'needs-rank-column': 'Ranks need one line of SQL adding to the database first.',
+  'needs-story-table': 'Stories need their tables adding to the database first.',
 };
 
-export function crewErrorText(code) {
+export function crewErrorText(code, detail) {
+  // A detail from the Worker is the actual SQLite or runtime message. Showing
+  // it is ugly and it is also the difference between a report I can act on and
+  // "it didn't work".
+  if (code === 'crew-failed' && detail) return `Crew error: ${detail}`;
   // Anything unmapped still names itself. "That did not work" tells a person
   // nothing and tells whoever is debugging it less.
   return CREW_ERRORS[code] || `That did not work (${code || 'no reason given'}).`;

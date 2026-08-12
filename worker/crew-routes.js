@@ -36,7 +36,7 @@ import { jsonResponse, GOOGLE_USERINFO } from './broker.js';
  */
 /** Bumped whenever this file gains something the app depends on, so a single
  *  curl says whether the dashboard paste actually landed. */
-export const CREW_BUILD = '2026-08-12.6';
+export const CREW_BUILD = '2026-08-12.7';
 export const CREW_FEATURES = ['peek', 'isMe', 'target-due', 'days-strip', 'photo-24k', 'stories', 'views', 'ranks'];
 
 const GOOGLE_DRIVE_ABOUT = 'https://www.googleapis.com/drive/v3/about?fields=user(emailAddress,permissionId)';
@@ -76,13 +76,25 @@ export async function identify(token) {
   return user;
 }
 
+/** Runs a query that is allowed not to work, because the table or column it
+ *  names may not exist on a database that has not had every migration. */
+async function maybe(promise, fallback) {
+  try { return await promise; } catch (e) { return fallback; }
+}
+
 /** Every crew this user belongs to, rosters included. The one response shape. */
 async function crewsFor(env, userId) {
   const now = Date.now();
-  // Expiry is enforced on the way past rather than by a scheduled job: a story
-  // nobody looks at costs nothing, and one that is over is gone the next time
-  // anybody opens the tab.
-  await env.DB.prepare(`DELETE FROM stories WHERE expires_at < ?`).bind(now).run();
+  /**
+   * Everything past the roster is optional.
+   *
+   * A table that a migration has not created yet, or a column an ALTER has not
+   * added, used to throw — and because one query lives inside the call that
+   * builds every crew, a missing story table took the whole Social tab down
+   * with it. Optional data is fetched behind `maybe`: absent means absent, not
+   * broken.
+   */
+  await maybe(env.DB.prepare(`DELETE FROM stories WHERE expires_at < ?`).bind(now).run(), null);
   const mine = await env.DB.prepare(
     `SELECT c.* FROM crews c JOIN members m ON m.crew_id = c.id WHERE m.user_id = ? ORDER BY c.created_at`
   ).bind(userId).all();
@@ -90,19 +102,19 @@ async function crewsFor(env, userId) {
   const out = [];
   for (const crew of crews) {
     const members = await env.DB.prepare(
-      `SELECT user_id, name, card, rank, joined_at, updated_at FROM members WHERE crew_id = ?`
+      `SELECT * FROM members WHERE crew_id = ?`
     ).bind(crew.id).all();
     const reactions = await env.DB.prepare(
       `SELECT from_id, to_id, kind, emoji, day, seen FROM reactions WHERE crew_id = ? AND day >= ?`
     ).bind(crew.id, isoDaysAgo(14)).all();
     // Metadata only — the picture itself is fetched when someone opens it, or a
     // ten-person crew would cost a megabyte on every refresh.
-    const stories = await env.DB.prepare(
+    const stories = await maybe(env.DB.prepare(
       `SELECT id, user_id, caption, created_at, expires_at FROM stories WHERE crew_id = ? AND expires_at > ?`
-    ).bind(crew.id, now).all();
-    const views = await env.DB.prepare(
+    ).bind(crew.id, now).all(), { results: [] });
+    const views = await maybe(env.DB.prepare(
       `SELECT subject, viewer, kind, ref FROM views WHERE crew_id = ? AND day = ?`
-    ).bind(crew.id, isoDaysAgo(0)).all();
+    ).bind(crew.id, isoDaysAgo(0)).all(), { results: [] });
 
     const roster = buildRoster(crew, members.results || [], reactions.results || [], userId);
     roster.members.forEach((m) => {
@@ -247,8 +259,12 @@ export async function crewRoute(path, body, env, cors) {
   if (path === '/crew/rank') {
     const crew = await env.DB.prepare(`SELECT * FROM crews WHERE id = ?`).bind(body.crewId).first();
     if (!isOwner(crew, user.id)) return jsonResponse({ error: 'no-rank' }, 403, cors);
-    await env.DB.prepare(`UPDATE members SET rank = ? WHERE crew_id = ? AND user_id = ?`)
-      .bind(cleanRank(body.rank), crew.id, body.userId).run();
+    try {
+      await env.DB.prepare(`UPDATE members SET rank = ? WHERE crew_id = ? AND user_id = ?`)
+        .bind(cleanRank(body.rank), crew.id, body.userId).run();
+    } catch (e) {
+      return jsonResponse({ error: 'needs-rank-column' }, 503, cors);
+    }
     return jsonResponse({ crews: await crewsFor(env, user.id) }, 200, cors);
   }
 
@@ -291,11 +307,15 @@ export async function crewRoute(path, body, env, cors) {
     ).bind(body.crewId, user.id).first();
     if (!inCrew) return jsonResponse({ error: 'not-in-crew' }, 403, cors);
     if (!storyImageOk(body.image)) return jsonResponse({ error: 'bad-image' }, 400, cors);
-    await env.DB.prepare(`DELETE FROM stories WHERE crew_id = ? AND user_id = ?`).bind(body.crewId, user.id).run();
-    await env.DB.prepare(
-      `INSERT INTO stories (id, crew_id, user_id, image, caption, created_at, expires_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
-    ).bind(crypto.randomUUID(), body.crewId, user.id, body.image, cleanCaption(body.caption), now, now + STORY_LIFE_MS).run();
+    try {
+      await env.DB.prepare(`DELETE FROM stories WHERE crew_id = ? AND user_id = ?`).bind(body.crewId, user.id).run();
+      await env.DB.prepare(
+        `INSERT INTO stories (id, crew_id, user_id, image, caption, created_at, expires_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`
+      ).bind(crypto.randomUUID(), body.crewId, user.id, body.image, cleanCaption(body.caption), now, now + STORY_LIFE_MS).run();
+    } catch (e) {
+      return jsonResponse({ error: 'needs-story-table' }, 503, cors);
+    }
     return jsonResponse({ crews: await crewsFor(env, user.id) }, 200, cors);
   }
 
@@ -311,10 +331,10 @@ export async function crewRoute(path, body, env, cors) {
     ).bind(row.crew_id, user.id).first();
     if (!inCrew) return jsonResponse({ error: 'not-in-crew' }, 403, cors);
     if (row.user_id !== user.id) {
-      await env.DB.prepare(
+      await maybe(env.DB.prepare(
         `INSERT OR IGNORE INTO views (crew_id, subject, viewer, kind, ref, day, viewed_at)
          VALUES (?, ?, ?, 'story', ?, ?, ?)`
-      ).bind(row.crew_id, row.user_id, user.id, row.id, isoDaysAgo(0), now).run();
+      ).bind(row.crew_id, row.user_id, user.id, row.id, isoDaysAgo(0), now).run(), null);
     }
     return jsonResponse({ image: row.image, caption: row.caption || '', createdAt: row.created_at }, 200, cors);
   }
@@ -323,10 +343,10 @@ export async function crewRoute(path, body, env, cors) {
    *  key, so a scroll past a name is not ten views. */
   if (path === '/crew/view') {
     if (body.subject && body.subject !== user.id) {
-      await env.DB.prepare(
+      await maybe(env.DB.prepare(
         `INSERT OR IGNORE INTO views (crew_id, subject, viewer, kind, ref, day, viewed_at)
          VALUES (?, ?, ?, 'profile', '', ?, ?)`
-      ).bind(body.crewId, body.subject, user.id, isoDaysAgo(0), now).run();
+      ).bind(body.crewId, body.subject, user.id, isoDaysAgo(0), now).run(), null);
     }
     return jsonResponse({ crews: await crewsFor(env, user.id) }, 200, cors);
   }

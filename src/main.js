@@ -2759,7 +2759,7 @@ function storyBarHtml(crew) {
 }
 
 function crewErrorLine() {
-  return crewApi.crewErrorText(state.crew.error);
+  return crewApi.crewErrorText(state.crew.error, state.crew.errorDetail);
 }
 
 /**
@@ -2917,7 +2917,8 @@ function applyCrewResult(res, opts) {
     db.setItem('crews-cache', { crews: state.crew.crews, at: state.crew.lastSync }).catch(() => {});
   } else {
     state.crew.error = res.error;
-    if (opts && opts.toast) showToast(crewApi.crewErrorText(res.error));
+    state.crew.errorDetail = res.detail || '';
+    if (opts && opts.toast) showToast(crewApi.crewErrorText(res.error, res.detail));
   }
   state.crew.loading = false;
   renderView();

@@ -168,6 +168,7 @@ export const GUIDE_SECTIONS = [
       'Nudge someone who has not trained, or send Respect to someone who has. The crew sees it.',
       'Tap a crew photo to see their stories — pictures and a line, gone after 24 hours.',
       'The leader gives everyone a role and a class. Both show on your profile.',
+      'Taking a rest day shows in your crew as a rest, not a miss — and nobody can nudge you for it.',
       'Leave any time. Your card goes with you.',
     ],
   },

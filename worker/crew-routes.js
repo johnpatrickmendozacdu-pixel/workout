@@ -36,8 +36,8 @@ import { jsonResponse, GOOGLE_USERINFO } from './broker.js';
  */
 /** Bumped whenever this file gains something the app depends on, so a single
  *  curl says whether the dashboard paste actually landed. */
-export const CREW_BUILD = '2026-08-12.8';
-export const CREW_FEATURES = ['peek', 'isMe', 'target-due', 'days-strip', 'photo-24k', 'stories', 'views', 'roles', 'classes', 'crew-logo', 'multi-story'];
+export const CREW_BUILD = '2026-08-12.9';
+export const CREW_FEATURES = ['peek', 'isMe', 'target-due', 'days-strip', 'photo-24k', 'stories', 'views', 'roles', 'classes', 'crew-logo', 'multi-story', 'rest-days'];
 
 const GOOGLE_DRIVE_ABOUT = 'https://www.googleapis.com/drive/v3/about?fields=user(emailAddress,permissionId)';
 const identityCache = new Map();

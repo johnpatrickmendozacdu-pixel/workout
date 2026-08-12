@@ -147,6 +147,7 @@ function sanitiseCard(card) {
     streak: int(card.streak),
     best: int(card.best),
     trainedToday: !!card.trainedToday,
+    restingToday: !!card.restingToday,
     lifetime: {
       reps: num(card.lifetime && card.lifetime.reps),
       timeMs: int(card.lifetime && card.lifetime.timeMs),
@@ -169,6 +170,7 @@ function sanitiseCard(card) {
         // makes it affordable to publish per exercise.
         days: typeof (e && e.days) === 'string' ? e.days.slice(0, 7).replace(/[^hbmrn]/g, 'n') : '',
         doneAt: int(e && e.doneAt),
+        rest: !!(e && e.rest),
         top: num(e && e.top),
         bestDay: num(e && e.bestDay),
         avgMs: int(e && e.avgMs),
@@ -265,6 +267,7 @@ function buildRoster(crew, memberRows, reactionRows, meId) {
       streak: (card && card.streak) || 0,
       best: (card && card.best) || 0,
       trainedToday: !!(card && card.trainedToday),
+      restingToday: !!(card && card.restingToday),
       lifetime: (card && card.lifetime) || { reps: 0, timeMs: 0 },
       exercises: (card && card.exercises) || [],
       updatedAt: m.updated_at || 0,
@@ -397,8 +400,8 @@ function viewersOf(viewRows, subjectId, kind, meId) {
  */
 /** Bumped whenever this file gains something the app depends on, so a single
  *  curl says whether the dashboard paste actually landed. */
-const CREW_BUILD = '2026-08-12.8';
-const CREW_FEATURES = ['peek', 'isMe', 'target-due', 'days-strip', 'photo-24k', 'stories', 'views', 'roles', 'classes', 'crew-logo', 'multi-story'];
+const CREW_BUILD = '2026-08-12.9';
+const CREW_FEATURES = ['peek', 'isMe', 'target-due', 'days-strip', 'photo-24k', 'stories', 'views', 'roles', 'classes', 'crew-logo', 'multi-story', 'rest-days'];
 
 const GOOGLE_DRIVE_ABOUT = 'https://www.googleapis.com/drive/v3/about?fields=user(emailAddress,permissionId)';
 const identityCache = new Map();

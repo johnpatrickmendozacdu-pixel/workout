@@ -2414,6 +2414,7 @@ function modalGuide() {
     ['Nudge and Good job', 'Open someone: nudge them if they have not trained, say good job if they have.'],
     ['Stories', 'Add photos through the day. Each lasts 24 hours, then deletes itself.'],
     ['Roles and classes', 'The leader assigns both. They show on your profile and beside your name.'],
+    ['Rest days', 'A rest you claim shows as 🌙 to the crew, and hides the nudge button on your card.'],
     ['Who looked', 'Your own card lists who opened it today, and your story lists who watched.'],
     ['Leaving', 'You can leave any time — your card goes with you.'],
   ];
@@ -2714,9 +2715,10 @@ function viewSocial() {
       <button class="crew-open" data-action="open-member" data-id="${m.id}">
       <span class="crew-body">
         <span class="crew-name">${escapeHtml(m.name || 'Someone')}${mine ? '<em>you</em>' : ''}${m.role && m.role !== 'member' ? `<img class="role-mark" src="${crewIconUrl('role', m.role)}" alt="${escapeHtml((roleInfo(m.role) || {}).label || '')}" width="22" height="22">` : ''}</span>
-        <span class="crew-sub">${m.streak ? `${m.streak} day streak` : 'no streak yet'}${m.best > m.streak ? ` · best ${m.best}` : ''}</span>
+        <span class="crew-sub">${m.restingToday && !m.trainedToday ? 'resting today · ' : ''}${m.streak ? `${m.streak} day streak` : 'no streak yet'}${m.best > m.streak ? ` · best ${m.best}` : ''}</span>
       </span>
-      <span class="crew-state">${reactionChipsHtml(m, true)}${m.trainedToday ? ICONS.check : '<i class="crew-pending"></i>'}</span>
+      <span class="crew-state">${reactionChipsHtml(m, true)}${m.trainedToday ? ICONS.check
+        : (m.restingToday ? '<span class="crew-rest" title="Resting today">🌙</span>' : '<i class="crew-pending"></i>')}</span>
       </button>
     </div>`;
   }).join('');
@@ -2943,18 +2945,19 @@ function myCrewCard() {
     dueToday[ex.id] = isScheduledOn(ex, today);
     targets[ex.id] = getEffectiveTarget(ex, today) || 0;
   });
-  const strips = {}, doneAt = {}, extra = {};
+  const strips = {}, doneAt = {}, extra = {}, rests = {};
   state.exercises.forEach((ex) => {
     strips[ex.id] = recentDayStates(ex, state.setsLog, state.streakOverrides, 7);
     const t = getTimerPure(state.timersLog, today, ex.id);
     doneAt[ex.id] = (t && t.finishedAt) || 0;
+    rests[ex.id] = isBreakDay(state.streakOverrides, today, ex.id);
     // The same figures their own Progress card shows, so a crew card can be as
     // descriptive as the one it mirrors rather than a summary of it.
     const st = stats[ex.id] || {};
     extra[ex.id] = { top: st.topSet || 0, bestDay: st.maxReps || 0, avgMs: st.avgTime || 0, totalMs: st.totalTime || 0 };
   });
   const dayStreak = calcStreakInfo(state.exercises, state.setsLog, today, state.streakOverrides);
-  const card = buildCrewCard(state.profile, state.exercises, stats, todayTotals, dayStreak, dueToday, targets, strips, doneAt, extra);
+  const card = buildCrewCard(state.profile, state.exercises, stats, todayTotals, dayStreak, dueToday, targets, strips, doneAt, extra, rests);
   return { ...card, photo: crewPhoto() };
 }
 
@@ -3915,6 +3918,13 @@ function modalCrewMember() {
   const marked = ex.filter((e) => e.due);
   const due = marked.length ? marked.filter((e) => true) : ex.filter((e) => e.target > 0 || e.today > 0);
   const dayRow = (e) => {
+    if (e.rest) {
+      return `<div class="crew-day resting">
+        <span class="crew-day-name">${escapeHtml(e.name)}<i class="crew-day-at">resting today — streak holds</i></span>
+        <span class="crew-day-num">🌙</span>
+        <span class="crew-day-tick"></span>
+      </div>`;
+    }
     const met = e.target > 0 ? e.today >= e.target : e.today > 0;
     const shown = e.unit === 'min' ? formatMinutes(e.today) : `${formatCount(e.today)} ${escapeHtml(e.unit || '')}`;
     const goal = e.target > 0 ? (e.unit === 'min' ? formatMinutes(e.target) : `${formatCount(e.target)}`) : null;
@@ -3947,15 +3957,19 @@ function modalCrewMember() {
     </div>`;
   };
 
+  // Nudging someone who has claimed a rest day is telling them off for a
+  // decision the app itself endorses, so the button is simply not offered.
   const reactRow = mine ? '' : `
     <div class="react-bar">
-      ${m.trainedToday
+      ${m.trainedToday || m.restingToday
         ? `<button class="react-btn respect" data-action="react" data-id="${m.id}" data-kind="respect">🔥 Good job</button>`
         : `<button class="react-btn nudge" data-action="react" data-id="${m.id}" data-kind="nudge">👊 Nudge</button>`}
       <button class="react-btn emoji" data-action="toggle-emoji" aria-expanded="${emojiOpen}">😀</button>
     </div>
     ${emojiOpen ? `<div class="emoji-row">${CREW_EMOJI.map((e) => `<button class="emoji-pick" data-action="react" data-id="${m.id}" data-kind="emoji" data-emoji="${e}">${e}</button>`).join('')}</div>` : ''}
-    <p class="hint react-hint">${m.trainedToday ? 'They trained today — say so.' : 'They have not trained yet. A nudge shows on their card.'} Everyone in the crew sees it.</p>`;
+    <p class="hint react-hint">${m.trainedToday ? 'They trained today — say so.'
+      : m.restingToday ? 'They are resting today. Their streak holds, so there is nothing to nudge.'
+      : 'They have not trained yet. A nudge shows on their card.'} Everyone in the crew sees it.</p>`;
 
   return `<div class="modal-backdrop" data-action="backdrop">
     <div class="modal-sheet" data-stop>
@@ -3969,7 +3983,7 @@ function modalCrewMember() {
         ${memberFaceHtml(m, 84)}
         <div class="member-hero-nums">
           <div class="member-streak"><b>${m.streak}</b><span>day streak${m.best > m.streak ? ` · best ${m.best}` : ''}</span></div>
-          <div class="member-today ${m.trainedToday ? 'yes' : 'no'}">${m.trainedToday ? 'trained today' : 'not yet today'}</div>
+          <div class="member-today ${m.trainedToday ? 'yes' : m.restingToday ? 'rest' : 'no'}">${m.trainedToday ? 'trained today' : m.restingToday ? '🌙 resting today' : 'not yet today'}</div>
           <div class="crew-tags">${crewTagHtml('role', m.role)}${crewTagHtml('class', m.klass)}</div>
         </div>
       </div>

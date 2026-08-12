@@ -473,7 +473,7 @@ export function formatCount(n) {
  */
 const DAY_CHAR = { hit: 'h', break: 'b', miss: 'm', rest: 'r', none: 'n' };
 
-export function buildCrewCard(profile, exercises, statsById, todayTotals, dayStreak, dueToday, targets, strips, doneAt, extra) {
+export function buildCrewCard(profile, exercises, statsById, todayTotals, dayStreak, dueToday, targets, strips, doneAt, extra, rests) {
   const active = (exercises || []).filter((e) => e.active && !e.archived);
   const cards = active.map((ex) => {
     const s = (statsById && statsById[ex.id]) || {};
@@ -495,6 +495,10 @@ export function buildCrewCard(profile, exercises, statsById, todayTotals, dayStr
       // When today's work was finished, and the figures that make a crew card
       // read like the Progress card it mirrors.
       doneAt: (doneAt && doneAt[ex.id]) || 0,
+      // A claimed rest day is a decision, not an absence. Without this a crew
+      // sees someone who chose to rest and someone who has not started as the
+      // same thing — and nudges the wrong one.
+      rest: !!(rests && rests[ex.id]),
       top: ((extra && extra[ex.id]) || {}).top || 0,
       bestDay: ((extra && extra[ex.id]) || {}).bestDay || 0,
       avgMs: ((extra && extra[ex.id]) || {}).avgMs || 0,
@@ -509,6 +513,8 @@ export function buildCrewCard(profile, exercises, statsById, todayTotals, dayStr
     // "Trained today" is any logged work at all, not a met target — a crew
     // should see that you turned up, which is the thing worth nudging about.
     trainedToday: cards.some((c) => c.today > 0),
+    // Resting is only the whole story when everything due today is a rest day.
+    restingToday: cards.some((c) => c.rest) && cards.filter((c) => c.due).every((c) => c.rest || c.today > 0),
     lifetime: {
       reps: cards.reduce((a, c) => a + c.total, 0),
       timeMs: active.reduce((a, ex) => a + (((statsById && statsById[ex.id]) || {}).totalTime || 0), 0),

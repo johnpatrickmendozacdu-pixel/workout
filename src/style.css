@@ -1479,6 +1479,10 @@
   .crew-day-num{font-family:var(--font-mono); font-size:13px; color:var(--text-dim); white-space:nowrap;}
   .crew-day-num i{font-style:normal; color:var(--text-faint); margin-left:4px;}
   .crew-day-tick{flex:0 0 auto; display:flex; align-items:center; color:var(--text-faint);}
+  .crew-day.resting{opacity:.72;}
+  .crew-day.resting .crew-day-num{font-size:16px;}
+  .crew-rest{font-size:15px; line-height:1;}
+  .member-today.rest{color:var(--text-dim);}
   .crew-day.met .crew-day-num{color:var(--accent);}
   .crew-day.met .crew-day-tick{color:var(--accent);}
   .member-life{margin-bottom:14px;}

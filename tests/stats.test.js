@@ -663,3 +663,30 @@ describe('buildCrewCard', () => {
     expect(card.exercises[0].streak).toBe(0);
   });
 });
+
+describe('buildCrewCard and rest days', () => {
+  const exercises = [
+    { id: 'a', name: 'Push Ups', unit: 'reps', active: true },
+    { id: 'b', name: 'Squats', unit: 'reps', active: true },
+  ];
+  const due = { a: true, b: true };
+
+  it('publishes which exercises are being rested', () => {
+    const card = buildCrewCard({}, exercises, {}, {}, { current: 3 }, due, {}, {}, {}, {}, { a: true });
+    expect(card.exercises.find((e) => e.name === 'Push Ups').rest).toBe(true);
+    expect(card.exercises.find((e) => e.name === 'Squats').rest).toBe(false);
+  });
+
+  it('only calls the day a rest day when nothing due is left undone', () => {
+    // one rested, one still owing — that is not "resting today"
+    expect(buildCrewCard({}, exercises, {}, {}, {}, due, {}, {}, {}, {}, { a: true }).restingToday).toBe(false);
+    // both rested
+    expect(buildCrewCard({}, exercises, {}, {}, {}, due, {}, {}, {}, {}, { a: true, b: true }).restingToday).toBe(true);
+    // one rested, the other actually trained
+    expect(buildCrewCard({}, exercises, {}, { b: 40 }, {}, due, {}, {}, {}, {}, { a: true }).restingToday).toBe(true);
+  });
+
+  it('is false when nobody is resting anything', () => {
+    expect(buildCrewCard({}, exercises, {}, {}, {}, due, {}, {}, {}, {}, {}).restingToday).toBe(false);
+  });
+});

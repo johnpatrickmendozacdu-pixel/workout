@@ -1576,69 +1576,90 @@ function shareLoadCrewIcon(kind, key) {
 }
 
 function drawShareFooter(g, S, pad, avatar, standing, roleIcon, classIcon) {
-  const y = SAFE_BOTTOM;
-  g.textAlign = 'left';
-  g.fillStyle = '#3EE07F'; g.font = "800 34px Manrope, system-ui, sans-serif";
-  g.fillText('Sets', pad, y);
-  g.fillStyle = '#6E7975'; g.font = "500 24px 'JetBrains Mono', ui-monospace, monospace";
-  g.fillText('sets-workout.vercel.app', pad + 82, y);
-
-  // Read at draw time, never stored on the card: change your name or photo in
-  // the profile and the very next image carries the new one.
   const name = (state.profile && state.profile.username || '').trim();
-  if (!name && !avatar) return;
+  const y = SAFE_BOTTOM;
+  const DIM = '#9AA5A0', FAINT = '#6E7975', ACCENT = '#3EE07F', TEXT = '#EEF2EF';
 
-  // The crew line sits above the watermark, right-aligned under the name, so
-  // the foot of the card reads: who made this, and who they run with.
-  if (standing) {
-    const lineY = y - 46;
-    g.textAlign = 'right';
-    let x = S - pad;
-    g.fillStyle = '#9AA5A0'; g.font = "700 26px 'JetBrains Mono', ui-monospace, monospace";
-    const parts = [standing.name.toUpperCase()];
-    if (standing.role) parts.push(((roleInfo(standing.role) || {}).label || '').toUpperCase());
-    if (standing.klass) parts.push(((classInfo(standing.klass) || {}).label || '').toUpperCase());
-    const text = parts.join('  ·  ');
-    g.fillText(text, x, lineY);
-    const textW = g.measureText(text).width;
+  /**
+   * The foot is a small grid, not a stack of lines.
+   *
+   * Who made it on the left, what they are in their crew on the right, the
+   * motto beneath, and the watermark last and smallest. Everything sits on two
+   * columns and four baselines, so the eye reads down one side and across once
+   * rather than hunting through a pile of centred text. A card with no crew
+   * loses the whole block and keeps only the signature.
+   */
+  const drawWatermark = (baseline) => {
     g.textAlign = 'left';
-    // The two marks lead the line, so the art is read before the words.
-    let iconX = x - textW - 12;
-    [classIcon, roleIcon].forEach((icon) => {
-      if (!icon) return;
-      iconX -= 40;
-      g.drawImage(icon, iconX, lineY - 30, 34, 34);
-    });
-    if (standing.motto) {
-      g.textAlign = 'right';
-      g.fillStyle = '#6E7975'; g.font = "500 24px Manrope, system-ui, sans-serif";
-      g.fillText(standing.motto, S - pad, lineY - 44);
-      g.textAlign = 'left';
-    }
-  }
+    g.fillStyle = ACCENT; g.font = "800 30px Manrope, system-ui, sans-serif";
+    g.fillText('Sets', pad, baseline);
+    g.fillStyle = FAINT; g.font = "500 22px 'JetBrains Mono', ui-monospace, monospace";
+    g.fillText('sets-workout.vercel.app', pad + 74, baseline);
+  };
 
-  const size = 56;
-  let right = S - pad;
-  if (avatar) {
-    const cx = right - size / 2, cy = y - 18;
+  const drawFace = (cx, cy, size) => {
+    if (!avatar) return;
     g.save();
     g.beginPath(); g.arc(cx, cy, size / 2, 0, Math.PI * 2); g.clip();
-    // Cover, not stretch: a rectangular photo keeps its proportions and loses
-    // its edges instead of being squashed into the circle.
     const scale = Math.max(size / avatar.width, size / avatar.height);
     const w = avatar.width * scale, h = avatar.height * scale;
     g.drawImage(avatar, cx - w / 2, cy - h / 2, w, h);
     g.restore();
     g.strokeStyle = 'rgba(62,224,127,0.5)'; g.lineWidth = 3;
     g.beginPath(); g.arc(cx, cy, size / 2, 0, Math.PI * 2); g.stroke();
-    right -= size + 16;
-  }
-  if (name) {
+  };
+
+  // No crew: one line, and nothing to divide.
+  if (!standing) {
+    drawWatermark(y);
+    if (!name && !avatar) return;
     g.textAlign = 'right';
-    g.fillStyle = '#9AA5A0'; g.font = "700 26px Manrope, system-ui, sans-serif";
-    g.fillText(name, right, y);
+    let right = S - pad;
+    if (avatar) { drawFace(right - 28, y - 18, 56); right -= 72; }
+    if (name) {
+      g.fillStyle = DIM; g.font = "700 26px Manrope, system-ui, sans-serif";
+      g.fillText(name, right, y);
+    }
     g.textAlign = 'left';
+    return;
   }
+
+  // Four baselines, no rule: the card already divides itself above this, and a
+  // second line here was one more edge than the foot of a card can carry.
+  const nameY = y - 150;
+  if (avatar) drawFace(pad + 26, nameY - 12, 52);
+  const textX = avatar ? pad + 68 : pad;
+  g.textAlign = 'left';
+  g.fillStyle = TEXT; g.font = "700 30px Manrope, system-ui, sans-serif";
+  g.fillText(name || 'Sets', textX, nameY);
+
+  g.fillStyle = ACCENT; g.font = "700 24px 'JetBrains Mono', ui-monospace, monospace";
+  g.fillText(standing.name.toUpperCase(), pad, nameY + 46);
+
+  if (standing.motto) {
+    g.fillStyle = FAINT; g.font = "600 20px 'JetBrains Mono', ui-monospace, monospace";
+    g.fillText('CREW MOTTO', pad, nameY + 94);
+    g.fillStyle = DIM; g.font = "500 24px Manrope, system-ui, sans-serif";
+    let motto = standing.motto;
+    while (g.measureText(motto).width > S - pad * 2 - 160 && motto.length > 6) motto = motto.slice(0, -1);
+    if (motto !== standing.motto) motto += '…';
+    g.fillText(motto, pad + 160, nameY + 94);
+  }
+
+  // Right column — role above class, art then word, both right-aligned.
+  const badge = (icon, label, baseline) => {
+    if (!label) return;
+    g.textAlign = 'right';
+    g.fillStyle = DIM; g.font = "700 22px 'JetBrains Mono', ui-monospace, monospace";
+    g.fillText(label.toUpperCase(), S - pad, baseline);
+    const w = g.measureText(label.toUpperCase()).width;
+    if (icon) g.drawImage(icon, S - pad - w - 44, baseline - 27, 34, 34);
+    g.textAlign = 'left';
+  };
+  badge(roleIcon, (roleInfo(standing.role) || {}).label, nameY);
+  badge(classIcon, (classInfo(standing.klass) || {}).label, nameY + 46);
+
+  drawWatermark(y);
 }
 
 /** The profile photo, decoded once per card. Missing or broken is not an error:
@@ -1779,7 +1800,7 @@ async function buildShareImage(ex, s) {
   const firstTotal = firstDate ? calcTotal(getSetsFor(ex.id, firstDate)) : null;
 
   g.strokeStyle = '#2A312D'; g.lineWidth = 2;
-  g.beginPath(); g.moveTo(pad, 1190); g.lineTo(S - pad, 1190); g.stroke();
+  g.beginPath(); g.moveTo(pad, 1115); g.lineTo(S - pad, 1115); g.stroke();
 
   // A time exercise's figures are the same four questions in minutes — the same
   // set the Progress card shows, so the picture and the screen agree.
@@ -1789,20 +1810,20 @@ async function buildShareImage(ex, s) {
       ['FIRST DAY', firstTotal != null ? formatMinutes(firstTotal) : null],
       ['AVERAGE', formatDuration(s.avgTime)],
       ['LIFETIME', s.totalReps > 0 ? formatMinutes(s.totalReps) : null],
-    ], 1260);
+    ], 1180);
   } else {
     drawRow([
       ['TOP SET', s.topSet != null ? formatCount(s.topSet) : null],
       ['FIRST DAY', firstTotal != null ? formatCount(firstTotal) : null],
       ['BEST DAY', s.maxReps != null ? formatCount(s.maxReps) : null],
       ['LIFETIME', s.totalReps > 0 ? formatCount(s.totalReps) : null],
-    ], 1260);
+    ], 1180);
 
     drawRow([
       ['BEST TIME', formatDuration(s.bestTime)],
       ['AVERAGE TIME', formatDuration(s.avgTime)],
       ['TOTAL TIME', formatTotalDuration(s.totalTime)],
-    ], 1450);
+    ], 1340);
   }
 
   // Watermark. Says where it came from without shouting over the numbers.
@@ -1883,7 +1904,7 @@ async function buildSessionImage(ex, session) {
   g.fillRect(pad, barY, Math.max(6, Math.round(barW * session.pct)), barH);
 
   g.strokeStyle = '#2A312D'; g.lineWidth = 2;
-  g.beginPath(); g.moveTo(pad, 1330); g.lineTo(S - pad, 1330); g.stroke();
+  g.beginPath(); g.moveTo(pad, 1270); g.lineTo(S - pad, 1270); g.stroke();
 
   // Today's figures only — the target is already beside the big number, so
   // repeating it here would be the same fact twice.
@@ -1896,7 +1917,7 @@ async function buildSessionImage(ex, session) {
   tiles.forEach(([label, value], i) => {
     const x = pad + i * colW;
     g.fillStyle = FAINT; g.font = "600 24px 'JetBrains Mono', ui-monospace, monospace";
-    g.fillText(label, x, 1410);
+    g.fillText(label, x, 1340);
     g.fillStyle = TEXT;
     let size = 62;
     g.font = `700 ${size}px 'Martian Mono', ui-monospace, monospace`;
@@ -1904,7 +1925,7 @@ async function buildSessionImage(ex, session) {
       size -= 2;
       g.font = `700 ${size}px 'Martian Mono', ui-monospace, monospace`;
     }
-    g.fillText(value, x, 1484);
+    g.fillText(value, x, 1414);
   });
 
   const standing = shareCrewStanding();
@@ -1956,7 +1977,7 @@ async function buildDayImage(day) {
    */
   const rows = day.rows.slice(0, DAY_CARD_ROWS);
   const icons = await Promise.all(rows.map((r) => shareLoadIcon(r.ex)));
-  const BAND_TOP = SAFE_TOP + 200, BAND_BOTTOM = 1380;
+  const BAND_TOP = SAFE_TOP + 200, BAND_BOTTOM = 1250;
   const rowH = (BAND_BOTTOM - BAND_TOP) / rows.length;
   // Past a certain height a row stops being a line and becomes a block: the
   // number moves onto its own line at headline size and takes a meter with it.
@@ -2054,12 +2075,12 @@ async function buildDayImage(day) {
     ['DAY STREAK', day.streak ? `${day.streak}d` : null],
   ].filter(([, v]) => v != null && v !== '' && v !== '—');
   g.strokeStyle = '#2A312D'; g.lineWidth = 2;
-  g.beginPath(); g.moveTo(pad, 1470); g.lineTo(S - pad, 1470); g.stroke();
+  g.beginPath(); g.moveTo(pad, 1330); g.lineTo(S - pad, 1330); g.stroke();
   const colW = (S - pad * 2) / (tiles.length || 1);
   tiles.forEach(([label, value], i) => {
     const x = pad + i * colW;
     g.fillStyle = FAINT; g.font = "600 22px 'JetBrains Mono', ui-monospace, monospace";
-    g.fillText(label, x, 1540);
+    g.fillText(label, x, 1400);
     g.fillStyle = TEXT;
     let size = 52;
     g.font = `700 ${size}px 'Martian Mono', ui-monospace, monospace`;
@@ -2067,7 +2088,7 @@ async function buildDayImage(day) {
       size -= 2;
       g.font = `700 ${size}px 'Martian Mono', ui-monospace, monospace`;
     }
-    g.fillText(value, x, 1606);
+    g.fillText(value, x, 1466);
   });
 
   const standing = shareCrewStanding();

@@ -193,6 +193,26 @@ function fitCard(card) {
   return { ...noPhoto, exercises: [] };
 }
 
+/**
+ * A rank is a label the leader hands out, not a permission.
+ *
+ * Nothing in the Worker reads it to decide anything — ownership is still the
+ * only thing that grants a right — so it can be free text without becoming a
+ * security surface. Capped and collapsed like every other name here.
+ */
+function cleanRank(raw) {
+  if (typeof raw !== 'string') return '';
+  return raw.replace(/\s+/g, ' ').trim().slice(0, 16);
+}
+
+/** What a member is called in the crew. Whoever made it is the leader unless
+ *  they have given themselves something else to be. */
+function rankOf(crew, member) {
+  const own = cleanRank(member && member.rank);
+  if (own) return own;
+  return crew && member && crew.owner === member.user_id ? 'Leader' : '';
+}
+
 /** Owner-only actions, in one place so no endpoint has to remember. */
 function isOwner(crew, userId) {
   return !!crew && !!userId && crew.owner === userId;
@@ -236,6 +256,7 @@ function buildRoster(crew, memberRows, reactionRows, meId) {
       exercises: (card && card.exercises) || [],
       updatedAt: m.updated_at || 0,
       isOwner: crew.owner === m.user_id,
+      rank: rankOf(crew, m),
       // Marked here rather than guessed by the client: the app knows the email
       // it signed in with, not the id Google gave the Worker, and matching on
       // email meant nobody was ever recognised as themselves — which quietly
@@ -411,7 +432,7 @@ async function crewsFor(env, userId) {
   const out = [];
   for (const crew of crews) {
     const members = await env.DB.prepare(
-      `SELECT user_id, name, card, joined_at, updated_at FROM members WHERE crew_id = ?`
+      `SELECT user_id, name, card, rank, joined_at, updated_at FROM members WHERE crew_id = ?`
     ).bind(crew.id).all();
     const reactions = await env.DB.prepare(
       `SELECT from_id, to_id, kind, emoji, day, seen FROM reactions WHERE crew_id = ? AND day >= ?`
@@ -551,6 +572,16 @@ async function crewRoute(path, body, env, cors) {
     return jsonResponse({ crews: await crewsFor(env, user.id) }, 200, cors);
   }
 
+  /** The leader names people. A label only — nothing here reads a rank to
+   *  decide what anyone may do, so handing one out cannot hand out power. */
+  if (path === '/crew/rank') {
+    const crew = await env.DB.prepare(`SELECT * FROM crews WHERE id = ?`).bind(body.crewId).first();
+    if (!isOwner(crew, user.id)) return jsonResponse({ error: 'no-rank' }, 403, cors);
+    await env.DB.prepare(`UPDATE members SET rank = ? WHERE crew_id = ? AND user_id = ?`)
+      .bind(cleanRank(body.rank), crew.id, body.userId).run();
+    return jsonResponse({ crews: await crewsFor(env, user.id) }, 200, cors);
+  }
+
   if (path === '/crew/remove') {
     const crew = await env.DB.prepare(`SELECT * FROM crews WHERE id = ?`).bind(body.crewId).first();
     if (!isOwner(crew, user.id)) return jsonResponse({ error: 'not-owner' }, 403, cors);
@@ -666,7 +697,18 @@ export default {
     // Worker deployed without a DB binding simply answers 503 to them while
     // token broking carries on — sync must never depend on the crew.
     if (url.pathname.startsWith('/crew/')) {
-      const res = await crewRoute(url.pathname, body, env, cors);
+      // An exception escaping here becomes Cloudflare's own error page, which
+      // carries no CORS headers — so the browser reports it as a network
+      // failure and the app tells you that you are offline. A thrown error is
+      // now an answer with a reason in it, which is the difference between a
+      // bug you can find and a bug you cannot.
+      let res;
+      try {
+        res = await crewRoute(url.pathname, body, env, cors);
+      } catch (err) {
+        console.log('crew route failed', url.pathname, err && err.message);
+        return jsonResponse({ error: 'crew-failed', detail: String((err && err.message) || err).slice(0, 200) }, 500, cors);
+      }
       if (res) return res;
     }
     return jsonResponse({ error: 'not-found' }, 404, cors);

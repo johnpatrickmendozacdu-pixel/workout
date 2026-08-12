@@ -17,6 +17,8 @@ import {
   storyMeta,
   viewersOf,
   MAX_STORY_BYTES,
+  cleanRank,
+  rankOf,
 } from '../worker/crew.js';
 
 const ints = (n) => Array.from({ length: 8 }, (_, i) => i * 7 + n);
@@ -240,5 +242,33 @@ describe('stories', () => {
     ];
     expect(viewersOf(views, 'u2', 'profile', 'u2').sort()).toEqual(['u1', 'u3']);
     expect(viewersOf(views, 'u2', 'profile', 'u1')).toEqual([]);   // asking about someone else
+  });
+});
+
+describe('ranks', () => {
+  const crew = { id: 'c1', owner: 'u1', name: 'Crew', invite_code: 'ABCDEFGH', created_at: 1 };
+
+  it('trims and caps a label', () => {
+    expect(cleanRank('  head   coach ')).toBe('head coach');
+    expect(cleanRank('x'.repeat(40))).toHaveLength(16);
+    expect(cleanRank(null)).toBe('');
+  });
+
+  it('makes whoever created the crew its leader by default', () => {
+    expect(rankOf(crew, { user_id: 'u1' })).toBe('Leader');
+    expect(rankOf(crew, { user_id: 'u2' })).toBe('');
+  });
+
+  it('lets an assigned rank win, including for the leader', () => {
+    expect(rankOf(crew, { user_id: 'u1', rank: 'Coach' })).toBe('Coach');
+    expect(rankOf(crew, { user_id: 'u2', rank: 'Rookie' })).toBe('Rookie');
+  });
+
+  it('reaches the roster', () => {
+    const rows = [{ user_id: 'u1', name: 'Ann', card: null, updated_at: 0, joined_at: 1 },
+      { user_id: 'u2', name: 'Bob', card: null, rank: 'Rookie', updated_at: 0, joined_at: 2 }];
+    const r = buildRoster(crew, rows, [], 'u1');
+    expect(r.members.find((m) => m.id === 'u1').rank).toBe('Leader');
+    expect(r.members.find((m) => m.id === 'u2').rank).toBe('Rookie');
   });
 });

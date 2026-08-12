@@ -7,7 +7,7 @@
 
 import {
   newInviteCode, normaliseCode, cleanCrewName, sanitiseCard, fitCard,
-  isOwner, ownerAfterLeaving, buildRoster, cleanReaction,
+  isOwner, ownerAfterLeaving, buildRoster, cleanReaction, cleanRank,
   cleanCaption, storyImageOk, storyMeta, viewersOf, STORY_LIFE_MS,
   MAX_CREWS_PER_USER, MAX_MEMBERS_PER_CREW,
 } from './crew.js';
@@ -85,7 +85,7 @@ async function crewsFor(env, userId) {
   const out = [];
   for (const crew of crews) {
     const members = await env.DB.prepare(
-      `SELECT user_id, name, card, joined_at, updated_at FROM members WHERE crew_id = ?`
+      `SELECT user_id, name, card, rank, joined_at, updated_at FROM members WHERE crew_id = ?`
     ).bind(crew.id).all();
     const reactions = await env.DB.prepare(
       `SELECT from_id, to_id, kind, emoji, day, seen FROM reactions WHERE crew_id = ? AND day >= ?`
@@ -222,6 +222,16 @@ export async function crewRoute(path, body, env, cors) {
     const crew = await env.DB.prepare(`SELECT * FROM crews WHERE id = ?`).bind(body.crewId).first();
     if (!isOwner(crew, user.id)) return jsonResponse({ error: 'not-owner' }, 403, cors);
     await env.DB.prepare(`UPDATE crews SET name = ? WHERE id = ?`).bind(name, crew.id).run();
+    return jsonResponse({ crews: await crewsFor(env, user.id) }, 200, cors);
+  }
+
+  /** The leader names people. A label only — nothing here reads a rank to
+   *  decide what anyone may do, so handing one out cannot hand out power. */
+  if (path === '/crew/rank') {
+    const crew = await env.DB.prepare(`SELECT * FROM crews WHERE id = ?`).bind(body.crewId).first();
+    if (!isOwner(crew, user.id)) return jsonResponse({ error: 'no-rank' }, 403, cors);
+    await env.DB.prepare(`UPDATE members SET rank = ? WHERE crew_id = ? AND user_id = ?`)
+      .bind(cleanRank(body.rank), crew.id, body.userId).run();
     return jsonResponse({ crews: await crewsFor(env, user.id) }, 200, cors);
   }
 

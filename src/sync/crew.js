@@ -15,8 +15,9 @@
 import * as gsync from './googleSync.js';
 
 const TIMEOUT_MS = 12000;
+const UPLOAD_TIMEOUT_MS = 45000;
 
-async function post(path, payload) {
+async function post(path, payload, timeoutMs) {
   const base = gsync.getBrokerUrl();
   if (!base) return { ok: false, error: 'no-broker' };
   let token = gsync.getAccessToken();
@@ -28,7 +29,7 @@ async function post(path, payload) {
   if (!token) return { ok: false, error: 'signed-out' };
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs || TIMEOUT_MS);
   try {
     const res = await fetch(base + path, {
       method: 'POST',
@@ -97,7 +98,12 @@ export function renameCrew(crewId, name) { return post('/crew/rename', { crewId,
 export function removeMember(crewId, userId) { return post('/crew/remove', { crewId, userId }); }
 export function react(crewId, toId, kind, emoji) { return post('/crew/react', { crewId, toId, kind, emoji }); }
 export function markSeen(crewId) { return post('/crew/seen', { crewId }); }
-export function postStory(crewId, image, caption) { return post('/crew/story', { crewId, image, caption }); }
+// A picture over a phone connection is not a roster fetch; it gets its own
+// patience rather than being called offline at twelve seconds.
+export function setRank(crewId, userId, rank) { return post('/crew/rank', { crewId, userId, rank }); }
+export function postStory(crewId, image, caption) {
+  return post('/crew/story', { crewId, image, caption }, UPLOAD_TIMEOUT_MS);
+}
 export function recordView(crewId, subject) { return post('/crew/view', { crewId, subject }); }
 
 /** The picture itself, fetched only when someone opens it — and the act of
@@ -143,6 +149,8 @@ export const CREW_ERRORS = {
   'story-gone': 'That story has expired.',
   'not-in-crew': 'You are not in that crew.',
   'not-yourself': 'That one is for other people.',
+  'crew-failed': 'The crew service hit an error. It has been logged — tell me what you were doing.',
+  'no-rank': 'Only the crew leader can set ranks.',
 };
 
 export function crewErrorText(code) {

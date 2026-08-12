@@ -25,7 +25,18 @@ export default {
     // Worker deployed without a DB binding simply answers 503 to them while
     // token broking carries on — sync must never depend on the crew.
     if (url.pathname.startsWith('/crew/')) {
-      const res = await crewRoute(url.pathname, body, env, cors);
+      // An exception escaping here becomes Cloudflare's own error page, which
+      // carries no CORS headers — so the browser reports it as a network
+      // failure and the app tells you that you are offline. A thrown error is
+      // now an answer with a reason in it, which is the difference between a
+      // bug you can find and a bug you cannot.
+      let res;
+      try {
+        res = await crewRoute(url.pathname, body, env, cors);
+      } catch (err) {
+        console.log('crew route failed', url.pathname, err && err.message);
+        return jsonResponse({ error: 'crew-failed', detail: String((err && err.message) || err).slice(0, 200) }, 500, cors);
+      }
       if (res) return res;
     }
     return jsonResponse({ error: 'not-found' }, 404, cors);

@@ -2712,7 +2712,7 @@ function viewSocial() {
       ${memberFaceHtml(m, 44, true)}
       <button class="crew-open" data-action="open-member" data-id="${m.id}">
       <span class="crew-body">
-        <span class="crew-name">${escapeHtml(m.name || 'Someone')}${mine ? '<em>you</em>' : ''}${m.isOwner ? '<i title="Made this crew">★</i>' : ''}</span>
+        <span class="crew-name">${escapeHtml(m.name || 'Someone')}${mine ? '<em>you</em>' : ''}${m.rank ? `<b class="rank-chip">${escapeHtml(m.rank)}</b>` : ''}</span>
         <span class="crew-sub">${m.streak ? `${m.streak} day streak` : 'no streak yet'}${m.best > m.streak ? ` · best ${m.best}` : ''}</span>
       </span>
       <span class="crew-state">${reactionChipsHtml(m, true)}${m.trainedToday ? ICONS.check : '<i class="crew-pending"></i>'}</span>
@@ -2783,7 +2783,8 @@ async function joinCrewByCode(raw) {
     return false;
   }
   showToast('Joining…');
-  const res = await crewApi.joinCrew(code, myCrewCard());
+  await primeCrewPhoto();
+      const res = await crewApi.joinCrew(code, myCrewCard());
   if (!applyCrewResult(res, { toast: true })) return false;
   state.crew.pendingCode = null;
   await db.setItem('crew-pending-code', null).catch(() => {});
@@ -2856,20 +2857,34 @@ function crewPhoto() {
   }
 }
 
-/** Warms the cache, since decoding is what the synchronous path cannot do. */
+/**
+ * Warms the cache, and is awaited rather than fired off.
+ *
+ * Decoding is asynchronous, so a sync build could only ever publish a photo it
+ * had already decoded on some earlier pass — meaning the first card after a
+ * launch went out without one, and a phone that syncs once and closes never
+ * sent a face at all. Waiting costs a few milliseconds and removes the race.
+ */
 function primeCrewPhoto() {
   const src = (state.profile && state.profile.avatar) || '';
-  if (!src || crewPhotoCache.from === src) return;
-  const img = new Image();
-  img.onload = () => {
-    try {
-      const c = document.createElement('canvas');
-      c.width = CREW_PHOTO_PX; c.height = CREW_PHOTO_PX;
-      c.getContext('2d').drawImage(img, 0, 0, CREW_PHOTO_PX, CREW_PHOTO_PX);
-      crewPhotoCache = { from: src, url: c.toDataURL('image/jpeg', 0.7) };
-    } catch (e) { /* the crew simply sees an initial */ }
-  };
-  img.src = src;
+  if (!src || crewPhotoCache.from === src) return Promise.resolve();
+  return new Promise((resolve) => {
+    const img = new Image();
+    const done = () => resolve();
+    img.onload = () => {
+      try {
+        const c = document.createElement('canvas');
+        c.width = CREW_PHOTO_PX; c.height = CREW_PHOTO_PX;
+        c.getContext('2d').drawImage(img, 0, 0, CREW_PHOTO_PX, CREW_PHOTO_PX);
+        crewPhotoCache = { from: src, url: c.toDataURL('image/jpeg', 0.7) };
+      } catch (e) { /* the crew simply sees an initial */ }
+      done();
+    };
+    img.onerror = done;
+    img.src = src;
+    // Never let a photo hold up a sync.
+    setTimeout(done, 3000);
+  });
 }
 
 function myCrewCard() {
@@ -2925,7 +2940,7 @@ function unseenReactions() {
 async function refreshCrews(opts) {
   // The call itself renews a stale token, so the account is the gate here too.
   if (!hasSyncAccount()) return;
-  primeCrewPhoto();
+  await primeCrewPhoto();
   if (state.crew.loading) return;
   state.crew.loading = true;
   const res = await crewApi.syncCrews(myCrewCard());
@@ -3731,6 +3746,10 @@ function modalCrewInviteAccept() {
  */
 // No 🔥 here: it is the face of Good job, and two identical-looking lines in
 // the "who sent what" list is the one thing that list must never do.
+/** Titles the leader can hand out. A short list beats a text field: everyone
+ *  ends up with the same words, and nobody has to name anything. */
+const CREW_RANKS = ['Leader', 'Coach', 'Veteran', 'Regular', 'Rookie'];
+
 const CREW_EMOJI = ['💪', '👏', '🐐', '😤', '🙌', '⚡'];
 const REACTION_FACE = { nudge: '👊', respect: '🔥', emoji: '' };
 const REACTION_WORD = { nudge: 'nudged them', respect: 'said good job', emoji: 'sent this' };
@@ -3849,7 +3868,7 @@ function modalCrewMember() {
     <div class="modal-sheet" data-stop>
       <div class="sheet-handle"></div>
       <div class="sheet-head member-head">
-        <h2>${escapeHtml(m.name || 'Someone')}${m.isOwner ? '<i title="Made this crew">★</i>' : ''}</h2>
+        <h2>${escapeHtml(m.name || 'Someone')}${m.rank ? `<b class="rank-chip">${escapeHtml(m.rank)}</b>` : ''}</h2>
         <button class="sheet-close" data-action="close-modal">${ICONS.close}</button>
       </div>
 
@@ -3881,6 +3900,14 @@ function modalCrewMember() {
       </div>` : ''}
       ${reactionDetailHtml(m, crew)}
       ${reactRow}
+      ${iOwn ? `<div class="rank-set">
+        <div class="section-label">Rank</div>
+        <div class="rank-picks">
+          ${CREW_RANKS.map((r) => `<button class="rank-pick ${m.rank === r ? 'on' : ''}" data-action="set-rank" data-id="${m.id}" data-rank="${escapeHtml(r)}">${escapeHtml(r)}</button>`).join('')}
+          ${m.rank ? `<button class="rank-pick clear" data-action="set-rank" data-id="${m.id}" data-rank="">Clear</button>` : ''}
+        </div>
+        <p class="hint">A title, not a permission — only you can invite, rename or remove, whatever anyone is called.</p>
+      </div>` : ''}
       ${iOwn && !mine ? `<button class="danger-btn" data-action="remove-member" data-id="${m.id}">Remove from crew</button>` : ''}
     </div>
   </div>`;
@@ -4254,7 +4281,7 @@ function fileToAvatarDataUrl(file) {
   });
 }
 
-const STORY_PX = 800;
+const STORY_PX = 720;
 function fileToStoryDataUrl(file) {
   return new Promise((resolve, reject) => {
     if (!file.type || !file.type.startsWith('image/')) { reject(new Error('not-an-image')); return; }
@@ -4267,7 +4294,7 @@ function fileToStoryDataUrl(file) {
         const canvas = document.createElement('canvas');
         canvas.width = w; canvas.height = h;
         canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-        resolve(canvas.toDataURL('image/jpeg', 0.72));
+        resolve(canvas.toDataURL('image/jpeg', 0.68));
       } catch (e) { reject(e); } finally { URL.revokeObjectURL(url); }
     };
     img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('decode-failed')); };
@@ -4443,6 +4470,7 @@ document.addEventListener('click', async (e) => {
       const name = el ? el.value.trim() : '';
       if (!name) { showToast('Give the crew a name.'); break; }
       showToast('Creating…');
+      await primeCrewPhoto();
       const res = await crewApi.createCrew(name, myCrewCard());
       if (applyCrewResult(res, { toast: true })) { closeModal(); showToast(`${name} is ready — invite someone`); }
       break;
@@ -4483,6 +4511,13 @@ document.addEventListener('click', async (e) => {
       showToast('Posting…');
       const res = await crewApi.postStory(crew.id, state.modal.image, capEl ? capEl.value : '');
       if (applyCrewResult(res, { toast: true })) { closeModal(); showToast('Posted — 24 hours'); }
+      break;
+    }
+    case 'set-rank': {
+      const crew = activeCrew();
+      if (!crew) break;
+      const res = await crewApi.setRank(crew.id, btn.dataset.id, btn.dataset.rank || '');
+      if (applyCrewResult(res, { toast: true })) { renderModal(); showToast(btn.dataset.rank ? `Set to ${btn.dataset.rank}` : 'Rank cleared'); }
       break;
     }
     case 'react': {

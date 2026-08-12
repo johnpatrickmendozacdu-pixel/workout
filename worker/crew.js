@@ -128,6 +128,26 @@ export function fitCard(card) {
   return { ...noPhoto, exercises: [] };
 }
 
+/**
+ * A rank is a label the leader hands out, not a permission.
+ *
+ * Nothing in the Worker reads it to decide anything — ownership is still the
+ * only thing that grants a right — so it can be free text without becoming a
+ * security surface. Capped and collapsed like every other name here.
+ */
+export function cleanRank(raw) {
+  if (typeof raw !== 'string') return '';
+  return raw.replace(/\s+/g, ' ').trim().slice(0, 16);
+}
+
+/** What a member is called in the crew. Whoever made it is the leader unless
+ *  they have given themselves something else to be. */
+export function rankOf(crew, member) {
+  const own = cleanRank(member && member.rank);
+  if (own) return own;
+  return crew && member && crew.owner === member.user_id ? 'Leader' : '';
+}
+
 /** Owner-only actions, in one place so no endpoint has to remember. */
 export function isOwner(crew, userId) {
   return !!crew && !!userId && crew.owner === userId;
@@ -171,6 +191,7 @@ export function buildRoster(crew, memberRows, reactionRows, meId) {
       exercises: (card && card.exercises) || [],
       updatedAt: m.updated_at || 0,
       isOwner: crew.owner === m.user_id,
+      rank: rankOf(crew, m),
       // Marked here rather than guessed by the client: the app knows the email
       // it signed in with, not the id Google gave the Worker, and matching on
       // email meant nobody was ever recognised as themselves — which quietly

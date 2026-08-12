@@ -94,7 +94,7 @@ const state = {
    * every call returns the whole picture and replaces this — so the screen can
    * never drift from what the crew actually is.
    */
-  crew: { crews: [], activeId: null, loading: false, error: null, lastSync: 0, pendingCode: null },
+  crew: { crews: [], activeId: null, loading: false, error: null, lastSync: 0, pendingCode: null, refreshing: false, refreshedAt: 0 },
   editingTopSet: null,
   editingDayTotal: null,
   openExercise: null,
@@ -2282,7 +2282,9 @@ function renderTopbar() {
       <div class="topbar-row">
         <div class="topbar-left">${LOGO_MARK}<div class="screen-title">Social</div></div>
         <div class="topbar-right">
-          <button class="icon-btn" data-action="refresh-crew" aria-label="Refresh crew">${ICONS.restore}</button>
+          <button class="icon-btn crew-refresh ${state.crew.refreshing ? 'spinning' : ''} ${state.crew.refreshedAt ? 'done' : ''}"
+            data-action="refresh-crew" aria-label="${state.crew.refreshedAt ? 'Crew up to date' : 'Refresh crew'}"
+            ${state.crew.refreshing ? 'disabled' : ''}>${state.crew.refreshedAt ? ICONS.check : ICONS.restore}</button>
           ${helpChipHtml()}
           ${versionChipHtml()}
           ${avatarChipHtml()}
@@ -2976,6 +2978,9 @@ function applyCrewResult(res, opts) {
   renderNav();
   return res.ok;
 }
+
+/** Holds the tick on the refresh button, then puts the arrow back. */
+let crewTickBack = null;
 
 /** Reactions aimed at me that I have not seen yet — the number on the tab. */
 function unseenReactions() {
@@ -4776,9 +4781,27 @@ document.addEventListener('click', async (e) => {
       if (applyCrewResult(res, { toast: true })) { closeModal(); showToast('Removed'); }
       break;
     }
-    case 'refresh-crew':
+    case 'refresh-crew': {
+      // A button that does its work invisibly reads as a button that does
+      // nothing: it turns while it works, then holds a tick long enough to be
+      // seen before going back to being a refresh button.
+      if (state.crew.refreshing) break;
+      state.crew.refreshing = true;
+      state.crew.refreshedAt = 0;
+      renderTopbar();
       await refreshCrews({ toast: true });
+      state.crew.refreshing = false;
+      if (!state.crew.error) {
+        state.crew.refreshedAt = Date.now();
+        renderTopbar();
+        showToast('Crew up to date');
+        clearTimeout(crewTickBack);
+        crewTickBack = setTimeout(() => { state.crew.refreshedAt = 0; renderTopbar(); }, 2200);
+      } else {
+        renderTopbar();
+      }
       break;
+    }
     case 'toggle-stat-help':
       state.statHelp[btn.dataset.key] = !state.statHelp[btn.dataset.key];
       renderView();

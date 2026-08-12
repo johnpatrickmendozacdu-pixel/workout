@@ -1483,6 +1483,15 @@
   .crew-day.met .crew-day-tick{color:var(--accent);}
   .member-life{margin-bottom:14px;}
 
+  /* the refresh button, which now answers back */
+  .crew-refresh{transition:color .18s ease, border-color .18s ease;}
+  .crew-refresh.spinning svg{animation:crew-spin .8s linear infinite;}
+  .crew-refresh.done{color:var(--accent); border-color:var(--accent);}
+  @keyframes crew-spin{to{transform:rotate(-360deg);}}
+  @media (prefers-reduced-motion: reduce){
+    .crew-refresh.spinning svg{animation:none; opacity:.5;}
+  }
+
   /* a title beside a name, not a badge shouting over it */
   .role-mark{margin-left:6px; vertical-align:-3px; opacity:.95;}
   .crew-tags{display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;}

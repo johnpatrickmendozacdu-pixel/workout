@@ -34,6 +34,11 @@ import { jsonResponse, GOOGLE_USERINFO } from './broker.js';
  * burst of calls from one phone is one round trip. Entries expire well inside
  * the token's own hour, so the cache can only ever shorten its usefulness.
  */
+/** Bumped whenever this file gains something the app depends on, so a single
+ *  curl says whether the dashboard paste actually landed. */
+export const CREW_BUILD = '2026-08-12.6';
+export const CREW_FEATURES = ['peek', 'isMe', 'target-due', 'days-strip', 'photo-24k', 'stories', 'views', 'ranks'];
+
 const GOOGLE_DRIVE_ABOUT = 'https://www.googleapis.com/drive/v3/about?fields=user(emailAddress,permissionId)';
 const identityCache = new Map();
 const IDENTITY_TTL_MS = 5 * 60 * 1000;
@@ -126,6 +131,18 @@ async function pushCard(env, user, card) {
 
 export async function crewRoute(path, body, env, cors) {
   if (!env || !env.DB) return jsonResponse({ error: 'no-db' }, 503, cors);
+
+  /**
+   * Which build is actually deployed.
+   *
+   * Everything else answers 401 before it looks at the path, so a probe with a
+   * bad token cannot tell an old Worker from a new one — which made "did the
+   * paste take?" unanswerable from outside. This one is pre-auth and says so
+   * plainly. It reveals nothing: a version string is not a secret.
+   */
+  if (path === '/crew/version') {
+    return jsonResponse({ version: CREW_BUILD, features: CREW_FEATURES }, 200, cors);
+  }
 
   /**
    * What an invite is for, before accepting it — the crew's name and how many

@@ -48,6 +48,13 @@ export function normaliseCode(raw) {
   return up;
 }
 
+/** A motto is one line, not a paragraph — it has to fit under a crew's name on
+ *  a phone and across the foot of a shared image. */
+export function cleanMotto(raw) {
+  if (typeof raw !== 'string') return '';
+  return raw.replace(/\s+/g, ' ').trim().slice(0, 60);
+}
+
 /** A crew name is a label, not a document. Trimmed, collapsed, capped, and
  *  never empty — an unnamed crew is unfindable in a list of crews. */
 export function cleanCrewName(raw) {
@@ -206,6 +213,9 @@ export function buildRoster(crew, memberRows, reactionRows, meId) {
       lifetime: (card && card.lifetime) || { reps: 0, timeMs: 0 },
       exercises: (card && card.exercises) || [],
       updatedAt: m.updated_at || 0,
+      // Already in the table since the first crew was made, so "member since"
+      // is true for everyone retrospectively rather than starting from today.
+      joinedAt: m.joined_at || 0,
       isOwner: crew.owner === m.user_id,
       role: roleOf(crew, m),
       klass: cleanClass(m.class),
@@ -224,6 +234,7 @@ export function buildRoster(crew, memberRows, reactionRows, meId) {
   return {
     id: crew.id,
     name: crew.name,
+    motto: crew.motto || '',
     owner: crew.owner,
     code: crew.invite_code,
     createdAt: crew.created_at,

@@ -94,7 +94,7 @@ export function syncCrews(card) { return post('/crew/sync', { card }); }
 export function createCrew(name, card) { return post('/crew/create', { name, card }); }
 export function joinCrew(code, card) { return post('/crew/join', { code, card }); }
 export function leaveCrew(crewId) { return post('/crew/leave', { crewId }); }
-export function renameCrew(crewId, name) { return post('/crew/rename', { crewId, name }); }
+export function renameCrew(crewId, what) { return post('/crew/rename', { crewId, ...what }); }
 export function removeMember(crewId, userId) { return post('/crew/remove', { crewId, userId }); }
 export function react(crewId, toId, kind, emoji) { return post('/crew/react', { crewId, toId, kind, emoji }); }
 export function markSeen(crewId) { return post('/crew/seen', { crewId }); }
@@ -154,6 +154,7 @@ export const CREW_ERRORS = {
   'no-rank': 'Only the crew leader can set ranks.',
   'needs-role-columns': 'Roles and classes need two lines of SQL adding to the database first.',
   'needs-logo-column': 'A crew logo needs one line of SQL adding to the database first.',
+  'needs-motto-column': 'A crew motto needs one line of SQL adding to the database first.',
   'needs-story-table': 'Stories need their tables adding to the database first.',
 };
 

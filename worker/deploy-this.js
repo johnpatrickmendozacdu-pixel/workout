@@ -113,6 +113,13 @@ function normaliseCode(raw) {
   return up;
 }
 
+/** A motto is one line, not a paragraph — it has to fit under a crew's name on
+ *  a phone and across the foot of a shared image. */
+function cleanMotto(raw) {
+  if (typeof raw !== 'string') return '';
+  return raw.replace(/\s+/g, ' ').trim().slice(0, 60);
+}
+
 /** A crew name is a label, not a document. Trimmed, collapsed, capped, and
  *  never empty — an unnamed crew is unfindable in a list of crews. */
 function cleanCrewName(raw) {
@@ -271,6 +278,9 @@ function buildRoster(crew, memberRows, reactionRows, meId) {
       lifetime: (card && card.lifetime) || { reps: 0, timeMs: 0 },
       exercises: (card && card.exercises) || [],
       updatedAt: m.updated_at || 0,
+      // Already in the table since the first crew was made, so "member since"
+      // is true for everyone retrospectively rather than starting from today.
+      joinedAt: m.joined_at || 0,
       isOwner: crew.owner === m.user_id,
       role: roleOf(crew, m),
       klass: cleanClass(m.class),
@@ -289,6 +299,7 @@ function buildRoster(crew, memberRows, reactionRows, meId) {
   return {
     id: crew.id,
     name: crew.name,
+    motto: crew.motto || '',
     owner: crew.owner,
     code: crew.invite_code,
     createdAt: crew.created_at,
@@ -400,8 +411,8 @@ function viewersOf(viewRows, subjectId, kind, meId) {
  */
 /** Bumped whenever this file gains something the app depends on, so a single
  *  curl says whether the dashboard paste actually landed. */
-const CREW_BUILD = '2026-08-12.9';
-const CREW_FEATURES = ['peek', 'isMe', 'target-due', 'days-strip', 'photo-24k', 'stories', 'views', 'roles', 'classes', 'crew-logo', 'multi-story', 'rest-days'];
+const CREW_BUILD = '2026-08-12.10';
+const CREW_FEATURES = ['peek', 'isMe', 'target-due', 'days-strip', 'photo-24k', 'stories', 'views', 'roles', 'classes', 'crew-logo', 'multi-story', 'rest-days', 'motto', 'member-since'];
 
 const GOOGLE_DRIVE_ABOUT = 'https://www.googleapis.com/drive/v3/about?fields=user(emailAddress,permissionId)';
 const identityCache = new Map();
@@ -615,12 +626,23 @@ async function crewRoute(path, body, env, cors) {
     return jsonResponse({ crews: await crewsFor(env, user.id) }, 200, cors);
   }
 
+  /** The crew's name and its motto — one route, because they are the same
+   *  decision made by the same person on the same screen. */
   if (path === '/crew/rename') {
-    const name = cleanCrewName(body.name);
-    if (!name) return jsonResponse({ error: 'bad-name' }, 400, cors);
     const crew = await env.DB.prepare(`SELECT * FROM crews WHERE id = ?`).bind(body.crewId).first();
     if (!isOwner(crew, user.id)) return jsonResponse({ error: 'not-owner' }, 403, cors);
-    await env.DB.prepare(`UPDATE crews SET name = ? WHERE id = ?`).bind(name, crew.id).run();
+    if (body.name !== undefined) {
+      const name = cleanCrewName(body.name);
+      if (!name) return jsonResponse({ error: 'bad-name' }, 400, cors);
+      await env.DB.prepare(`UPDATE crews SET name = ? WHERE id = ?`).bind(name, crew.id).run();
+    }
+    if (body.motto !== undefined) {
+      try {
+        await env.DB.prepare(`UPDATE crews SET motto = ? WHERE id = ?`).bind(cleanMotto(body.motto), crew.id).run();
+      } catch (e) {
+        return jsonResponse({ error: 'needs-motto-column' }, 503, cors);
+      }
+    }
     return jsonResponse({ crews: await crewsFor(env, user.id) }, 200, cors);
   }
 

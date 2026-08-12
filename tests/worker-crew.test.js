@@ -20,6 +20,7 @@ import {
   cleanRole,
   cleanClass,
   roleOf,
+  cleanMotto,
 } from '../worker/crew.js';
 
 const ints = (n) => Array.from({ length: 8 }, (_, i) => i * 7 + n);
@@ -275,5 +276,22 @@ describe('roles and classes', () => {
     expect(r.members.find((m) => m.id === 'u1').role).toBe('leader');
     expect(r.members.find((m) => m.id === 'u2').role).toBe('vice');
     expect(r.members.find((m) => m.id === 'u2').klass).toBe('tank');
+  });
+});
+
+describe('motto and member since', () => {
+  const crew = { id: 'c1', owner: 'u1', name: 'Crew', motto: 'Every day, or nearly', invite_code: 'ABCDEFGH', created_at: 1 };
+
+  it('keeps a motto to one line', () => {
+    expect(cleanMotto('  no   days   off ')).toBe('no days off');
+    expect(cleanMotto('x'.repeat(120))).toHaveLength(60);
+    expect(cleanMotto(null)).toBe('');
+  });
+
+  it('carries the motto and each member’s joining date to the app', () => {
+    const rows = [{ user_id: 'u1', name: 'Ann', card: null, joined_at: 1770000000000, updated_at: 0 }];
+    const r = buildRoster(crew, rows, [], 'u1');
+    expect(r.motto).toBe('Every day, or nearly');
+    expect(r.members[0].joinedAt).toBe(1770000000000);
   });
 });

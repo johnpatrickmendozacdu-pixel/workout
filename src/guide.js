@@ -169,6 +169,7 @@ export const GUIDE_SECTIONS = [
       'Tap a crew photo to see their stories — pictures and a line, gone after 24 hours.',
       'The leader gives everyone a role and a class. Both show on your profile.',
       'Taking a rest day shows in your crew as a rest, not a miss — and nobody can nudge you for it.',
+      'The crew name, its motto, your role and your class go on every image you share.',
       'Leave any time. Your card goes with you.',
     ],
   },

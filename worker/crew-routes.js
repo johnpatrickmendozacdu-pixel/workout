@@ -7,7 +7,7 @@
 
 import {
   newInviteCode, normaliseCode, cleanCrewName, sanitiseCard, fitCard,
-  isOwner, ownerAfterLeaving, buildRoster, cleanReaction, cleanRole, cleanClass,
+  isOwner, ownerAfterLeaving, buildRoster, cleanReaction, cleanRole, cleanClass, cleanMotto,
   cleanCaption, storyImageOk, storyMeta, viewersOf, STORY_LIFE_MS,
   MAX_CREWS_PER_USER, MAX_MEMBERS_PER_CREW,
 } from './crew.js';
@@ -36,8 +36,8 @@ import { jsonResponse, GOOGLE_USERINFO } from './broker.js';
  */
 /** Bumped whenever this file gains something the app depends on, so a single
  *  curl says whether the dashboard paste actually landed. */
-export const CREW_BUILD = '2026-08-12.9';
-export const CREW_FEATURES = ['peek', 'isMe', 'target-due', 'days-strip', 'photo-24k', 'stories', 'views', 'roles', 'classes', 'crew-logo', 'multi-story', 'rest-days'];
+export const CREW_BUILD = '2026-08-12.10';
+export const CREW_FEATURES = ['peek', 'isMe', 'target-due', 'days-strip', 'photo-24k', 'stories', 'views', 'roles', 'classes', 'crew-logo', 'multi-story', 'rest-days', 'motto', 'member-since'];
 
 const GOOGLE_DRIVE_ABOUT = 'https://www.googleapis.com/drive/v3/about?fields=user(emailAddress,permissionId)';
 const identityCache = new Map();
@@ -251,12 +251,23 @@ export async function crewRoute(path, body, env, cors) {
     return jsonResponse({ crews: await crewsFor(env, user.id) }, 200, cors);
   }
 
+  /** The crew's name and its motto — one route, because they are the same
+   *  decision made by the same person on the same screen. */
   if (path === '/crew/rename') {
-    const name = cleanCrewName(body.name);
-    if (!name) return jsonResponse({ error: 'bad-name' }, 400, cors);
     const crew = await env.DB.prepare(`SELECT * FROM crews WHERE id = ?`).bind(body.crewId).first();
     if (!isOwner(crew, user.id)) return jsonResponse({ error: 'not-owner' }, 403, cors);
-    await env.DB.prepare(`UPDATE crews SET name = ? WHERE id = ?`).bind(name, crew.id).run();
+    if (body.name !== undefined) {
+      const name = cleanCrewName(body.name);
+      if (!name) return jsonResponse({ error: 'bad-name' }, 400, cors);
+      await env.DB.prepare(`UPDATE crews SET name = ? WHERE id = ?`).bind(name, crew.id).run();
+    }
+    if (body.motto !== undefined) {
+      try {
+        await env.DB.prepare(`UPDATE crews SET motto = ? WHERE id = ?`).bind(cleanMotto(body.motto), crew.id).run();
+      } catch (e) {
+        return jsonResponse({ error: 'needs-motto-column' }, 503, cors);
+      }
+    }
     return jsonResponse({ crews: await crewsFor(env, user.id) }, 200, cors);
   }
 

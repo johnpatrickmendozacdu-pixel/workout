@@ -1548,7 +1548,34 @@ const SAFE_BOTTOM = 1680;
  * given a line of its own, so a card with no username loses nothing but the
  * name, and one with a username gains no height.
  */
-function drawShareFooter(g, S, pad, avatar) {
+/**
+ * Which crew a shared image speaks for, and what you are in it.
+ *
+ * The crew you are looking at when you share, falling back to your first — a
+ * card should say one thing, and asking "which crew is this for?" at the moment
+ * someone wants to post a picture is a question nobody wants.
+ */
+function shareCrewStanding() {
+  const crew = activeCrew();
+  if (!crew) return null;
+  const me = (crew.members || []).find((m) => m.isMe);
+  if (!me) return null;
+  return { name: crew.name, motto: crew.motto || '', role: me.role || '', klass: me.klass || '' };
+}
+
+/** Role and class art for the footer. Missing art is simply absent — a card
+ *  must never wait on a picture that will not load. */
+function shareLoadCrewIcon(kind, key) {
+  if (!key) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = crewIconUrl(kind, key);
+  });
+}
+
+function drawShareFooter(g, S, pad, avatar, standing, roleIcon, classIcon) {
   const y = SAFE_BOTTOM;
   g.textAlign = 'left';
   g.fillStyle = '#3EE07F'; g.font = "800 34px Manrope, system-ui, sans-serif";
@@ -1560,6 +1587,35 @@ function drawShareFooter(g, S, pad, avatar) {
   // the profile and the very next image carries the new one.
   const name = (state.profile && state.profile.username || '').trim();
   if (!name && !avatar) return;
+
+  // The crew line sits above the watermark, right-aligned under the name, so
+  // the foot of the card reads: who made this, and who they run with.
+  if (standing) {
+    const lineY = y - 46;
+    g.textAlign = 'right';
+    let x = S - pad;
+    g.fillStyle = '#9AA5A0'; g.font = "700 26px 'JetBrains Mono', ui-monospace, monospace";
+    const parts = [standing.name.toUpperCase()];
+    if (standing.role) parts.push(((roleInfo(standing.role) || {}).label || '').toUpperCase());
+    if (standing.klass) parts.push(((classInfo(standing.klass) || {}).label || '').toUpperCase());
+    const text = parts.join('  ·  ');
+    g.fillText(text, x, lineY);
+    const textW = g.measureText(text).width;
+    g.textAlign = 'left';
+    // The two marks lead the line, so the art is read before the words.
+    let iconX = x - textW - 12;
+    [classIcon, roleIcon].forEach((icon) => {
+      if (!icon) return;
+      iconX -= 40;
+      g.drawImage(icon, iconX, lineY - 30, 34, 34);
+    });
+    if (standing.motto) {
+      g.textAlign = 'right';
+      g.fillStyle = '#6E7975'; g.font = "500 24px Manrope, system-ui, sans-serif";
+      g.fillText(standing.motto, S - pad, lineY - 44);
+      g.textAlign = 'left';
+    }
+  }
 
   const size = 56;
   let right = S - pad;
@@ -1750,7 +1806,10 @@ async function buildShareImage(ex, s) {
   }
 
   // Watermark. Says where it came from without shouting over the numbers.
-  drawShareFooter(g, S, pad, await shareLoadAvatar());
+  const standing = shareCrewStanding();
+  drawShareFooter(g, S, pad, await shareLoadAvatar(), standing,
+    await shareLoadCrewIcon('role', standing && standing.role),
+    await shareLoadCrewIcon('class', standing && standing.klass));
 
   return new Promise((resolve) => c.toBlob(resolve, 'image/png'));
 }
@@ -1848,7 +1907,10 @@ async function buildSessionImage(ex, session) {
     g.fillText(value, x, 1484);
   });
 
-  drawShareFooter(g, S, pad, await shareLoadAvatar());
+  const standing = shareCrewStanding();
+  drawShareFooter(g, S, pad, await shareLoadAvatar(), standing,
+    await shareLoadCrewIcon('role', standing && standing.role),
+    await shareLoadCrewIcon('class', standing && standing.klass));
 
   return new Promise((resolve) => c.toBlob(resolve, 'image/png'));
 }
@@ -2008,7 +2070,10 @@ async function buildDayImage(day) {
     g.fillText(value, x, 1606);
   });
 
-  drawShareFooter(g, S, pad, await shareLoadAvatar());
+  const standing = shareCrewStanding();
+  drawShareFooter(g, S, pad, await shareLoadAvatar(), standing,
+    await shareLoadCrewIcon('role', standing && standing.role),
+    await shareLoadCrewIcon('class', standing && standing.klass));
 
   return new Promise((resolve) => c.toBlob(resolve, 'image/png'));
 }
@@ -2415,6 +2480,7 @@ function modalGuide() {
     ['Stories', 'Add photos through the day. Each lasts 24 hours, then deletes itself.'],
     ['Roles and classes', 'The leader assigns both. They show on your profile and beside your name.'],
     ['Rest days', 'A rest you claim shows as 🌙 to the crew, and hides the nudge button on your card.'],
+    ['Motto', 'The leader writes one line. It sits under the crew name and on shared images.'],
     ['Who looked', 'Your own card lists who opened it today, and your story lists who watched.'],
     ['Leaving', 'You can leave any time — your card goes with you.'],
   ];
@@ -2731,7 +2797,8 @@ function viewSocial() {
       ${crew.logo ? `<img class="crew-logo" src="${escapeHtml(crew.logo)}" alt="">` : ''}
       <div class="crew-title">
         <h2>${escapeHtml(crew.name)}</h2>
-        <span>${crew.members.length} member${crew.members.length === 1 ? '' : 's'} · ${trained} trained today</span>
+        ${crew.motto ? `<p class="crew-motto">${escapeHtml(crew.motto)}</p>` : ''}
+        <span>${crew.members.length} member${crew.members.length === 1 ? '' : 's'} · ${trained} trained today${crew.createdAt ? ` · since ${escapeHtml(sinceLabel(crew.createdAt))}` : ''}</span>
       </div>
       <button class="icon-btn" data-action="crew-menu" data-id="${crew.id}" aria-label="Crew settings">${ICONS.gear}</button>
     </div>
@@ -2775,7 +2842,10 @@ function crewStandingHtml() {
     const me = (c.members || []).find((m) => m.isMe);
     if (!me) return '';
     return `<div class="standing">
-      <div class="standing-crew">${c.logo ? `<img src="${escapeHtml(c.logo)}" alt="">` : '<i class="standing-dot"></i>'}<span>${escapeHtml(c.name)}</span></div>
+      <div class="standing-crew">
+        ${c.logo ? `<img src="${escapeHtml(c.logo)}" alt="">` : '<i class="standing-dot"></i>'}
+        <span>${escapeHtml(c.name)}${c.motto ? `<em>${escapeHtml(c.motto)}</em>` : ''}${me.joinedAt ? `<i>Member since ${escapeHtml(sinceLabel(me.joinedAt))}</i>` : ''}</span>
+      </div>
       <div class="standing-tags">${crewTagHtml('role', me.role)}${crewTagHtml('class', me.klass)}</div>
     </div>`;
   }).filter(Boolean).join('');
@@ -2785,6 +2855,13 @@ function crewStandingHtml() {
     ${rows}
     <div class="hint">Your crew sees this. The leader sets the role and the class.</div>
   </div>`;
+}
+
+/** "Aug 2026" — a month is the right resolution for how long someone has been
+ *  around. A day would invite counting; a year would flatten everyone. */
+function sinceLabel(ms) {
+  if (!ms) return '';
+  return new Date(ms).toLocaleDateString(undefined, { month: 'short', year: 'numeric' });
 }
 
 function crewErrorLine() {
@@ -3985,6 +4062,7 @@ function modalCrewMember() {
           <div class="member-streak"><b>${m.streak}</b><span>day streak${m.best > m.streak ? ` · best ${m.best}` : ''}</span></div>
           <div class="member-today ${m.trainedToday ? 'yes' : m.restingToday ? 'rest' : 'no'}">${m.trainedToday ? 'trained today' : m.restingToday ? '🌙 resting today' : 'not yet today'}</div>
           <div class="crew-tags">${crewTagHtml('role', m.role)}${crewTagHtml('class', m.klass)}</div>
+          ${m.joinedAt ? `<div class="member-since">In the crew since ${escapeHtml(sinceLabel(m.joinedAt))}</div>` : ''}
         </div>
       </div>
 
@@ -4116,12 +4194,15 @@ function modalCrewSettings() {
         ? `<div class="field">
             <label>Crew name</label>
             <input id="crew-rename" type="text" maxlength="40" value="${escapeHtml(crew.name)}" autocomplete="off">
+            <label style="margin-top:12px">Motto</label>
+            <input id="crew-motto" type="text" maxlength="60" placeholder="Every day, or nearly" value="${escapeHtml(crew.motto || '')}" autocomplete="off">
+            <div class="hint">Shows under the crew's name, on everyone's profile, and on the images they share.</div>
             <div class="form-actions">
               <button class="secondary-btn" data-action="cancel-rename-crew">Cancel</button>
-              <button class="primary-btn" data-action="rename-crew" data-id="${crew.id}">Save name</button>
+              <button class="primary-btn" data-action="rename-crew" data-id="${crew.id}">Save</button>
             </div>
           </div>`
-        : `<button class="secondary-btn wide" data-action="start-rename-crew">Rename crew</button>`) : ''}
+        : `<button class="secondary-btn wide" data-action="start-rename-crew">Name and motto</button>`) : ''}
       <button class="secondary-btn wide" data-action="open-invite" data-id="${crew.id}">Invite someone</button>
       <button class="secondary-btn wide" data-action="open-create-crew">Create another crew</button>
       <button class="secondary-btn wide" data-action="open-join-crew">Join another crew</button>
@@ -4773,10 +4854,11 @@ document.addEventListener('click', async (e) => {
       break;
     case 'rename-crew': {
       const el = document.getElementById('crew-rename');
+      const mo = document.getElementById('crew-motto');
       const name = el ? el.value.trim() : '';
       if (!name) { showToast('Give the crew a name.'); break; }
-      const res = await crewApi.renameCrew(btn.dataset.id, name);
-      if (applyCrewResult(res, { toast: true })) { closeModal(); showToast('Crew renamed'); }
+      const res = await crewApi.renameCrew(btn.dataset.id, { name, motto: mo ? mo.value : '' });
+      if (applyCrewResult(res, { toast: true })) { closeModal(); showToast('Crew saved'); }
       break;
     }
     case 'leave-crew': {

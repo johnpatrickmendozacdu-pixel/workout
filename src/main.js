@@ -31,6 +31,7 @@ import {
   isTimeMode,
   minutesFromMs,
   bankTimeSession as bankTimeSessionPure,
+  stampFinished as stampFinishedPure,
   getTimer as getTimerPure,
   timerPhase,
   sessionSealed,
@@ -707,6 +708,9 @@ async function logSet(exId, value) {
   const crossed = targetNow && prevTotal < targetNow && total >= targetNow;
   if (crossed) {
     state.timersLog = pauseTimerPure(state.timersLog, d, exId, now);
+    // The clock stopping is also the day being finished, and that time is what
+    // Today, Progress and your crew all show.
+    state.timersLog = stampFinishedPure(state.timersLog, d, exId, now);
   }
 
   await Promise.all([persistSets(), persistTimers(), newPR ? persistExercises() : Promise.resolve()]);
@@ -1489,7 +1493,13 @@ function exerciseHistory(ex, s) {
   const rows = history.map((r) => {
     const editing = state.editingDayTotal === `${r.date}|${ex.id}`;
     return `<div class="exday ${r.rest ? 'rest' : r.hit ? 'hit' : 'miss'}">
-      <span class="exday-when">${r.isToday ? 'Today' : escapeHtml(formatDisplayDate(r.date, { weekday: 'short', day: 'numeric', month: 'short' }))}</span>
+      <span class="exday-when">${r.isToday ? 'Today' : escapeHtml(formatDisplayDate(r.date, { weekday: 'short', day: 'numeric', month: 'short' }))}${(() => {
+        // Only today carries a time. A stamp on every past row would be a
+        // column of numbers nobody reads, and older days predate the stamp.
+        if (!r.isToday) return '';
+        const t = getTimerPure(state.timersLog, r.date, ex.id);
+        return t && t.finishedAt ? `<i class="exday-at">${escapeHtml(formatClock(t.finishedAt))}</i>` : '';
+      })()}</span>
       ${editing
         ? `<span class="inline-target-edit" data-stop>
             <input type="number" min="0" step="any" id="day-total-input-${ex.id}" class="target-edit-input" value="${r.total || ''}" placeholder="0">
@@ -2412,7 +2422,8 @@ function modalGuide() {
     ['What they see', 'Your name, photo, streaks and totals. Never your individual sets, weight or notes.'],
     ['Invite', 'Send the link or read out the code. Anyone with it can join, so send it to people, not places.'],
     ['Nudge and Good job', 'Open someone: nudge them if they have not trained, say good job if they have.'],
-    ['Stories', 'Add a photo and a caption. Your crew sees it for 24 hours, then it deletes itself.'],
+    ['Stories', 'Add photos through the day. Each lasts 24 hours, then deletes itself.'],
+    ['Roles and classes', 'The leader assigns both. They show on your profile and beside your name.'],
     ['Who looked', 'Your own card lists who opened it today, and your story lists who watched.'],
     ['Leaving', 'You can leave any time — your card goes with you.'],
   ];
@@ -2581,7 +2592,7 @@ function viewToday() {
       <button class="done-open" data-action="open-logger" data-id="${r.ex.id}">
         <span class="done-tick">${r.rest ? '🌙' : (short ? ICONS.flag : ICONS.check)}</span>
         <span class="done-name">${escapeHtml(r.ex.name)}</span>
-        <span class="done-num">${r.rest ? 'Rest' : (short ? `${r.total} of ${r.target}` : `${r.total} ${escapeHtml(r.ex.unit)}`)}</span>
+        <span class="done-num">${r.rest ? 'Rest' : (short ? `${r.total} of ${r.target}` : `${r.total} ${escapeHtml(r.ex.unit)}`)}${r.timer && r.timer.finishedAt ? `<i class="done-at">${escapeHtml(formatClock(r.timer.finishedAt))}</i>` : ''}</span>
       </button>
       ${r.rest ? '' : `<button class="done-share" data-action="share-session" data-id="${r.ex.id}" aria-label="Share ${escapeHtml(r.ex.name)}">${ICONS.share}</button>`}
     </div>`;
@@ -2712,7 +2723,7 @@ function viewSocial() {
       ${memberFaceHtml(m, 44, true)}
       <button class="crew-open" data-action="open-member" data-id="${m.id}">
       <span class="crew-body">
-        <span class="crew-name">${escapeHtml(m.name || 'Someone')}${mine ? '<em>you</em>' : ''}${m.rank ? `<b class="rank-chip">${escapeHtml(m.rank)}</b>` : ''}</span>
+        <span class="crew-name">${escapeHtml(m.name || 'Someone')}${mine ? '<em>you</em>' : ''}${m.role && m.role !== 'member' ? `<img class="role-mark" src="${crewIconUrl('role', m.role)}" alt="${escapeHtml((roleInfo(m.role) || {}).label || '')}" width="16" height="16">` : ''}</span>
         <span class="crew-sub">${m.streak ? `${m.streak} day streak` : 'no streak yet'}${m.best > m.streak ? ` · best ${m.best}` : ''}</span>
       </span>
       <span class="crew-state">${reactionChipsHtml(m, true)}${m.trainedToday ? ICONS.check : '<i class="crew-pending"></i>'}</span>
@@ -2725,6 +2736,7 @@ function viewSocial() {
   return `${notice}
     ${switcher}
     <div class="crew-head">
+      ${crew.logo ? `<img class="crew-logo" src="${escapeHtml(crew.logo)}" alt="">` : ''}
       <div class="crew-title">
         <h2>${escapeHtml(crew.name)}</h2>
         <span>${crew.members.length} member${crew.members.length === 1 ? '' : 's'} · ${trained} trained today</span>
@@ -2755,6 +2767,31 @@ function storyBarHtml(crew) {
   return `<div class="story-bar">
     ${me ? tile(me, me.story ? 'Your story' : 'Add story') : ''}
     ${others.map((m) => tile(m, m.name || 'Someone')).join('')}
+  </div>`;
+}
+
+/**
+ * Where you stand in your crew: role, class, and whose crew it is.
+ *
+ * Read from the roster the Worker last sent rather than kept locally, because
+ * the leader assigns both and this phone is not the one that decides. Absent
+ * until there is a crew to be in, so a solo profile gains no empty rows.
+ */
+function crewStandingHtml() {
+  const crews = state.crew.crews || [];
+  const rows = crews.map((c) => {
+    const me = (c.members || []).find((m) => m.isMe);
+    if (!me) return '';
+    return `<div class="standing">
+      <div class="standing-crew">${c.logo ? `<img src="${escapeHtml(c.logo)}" alt="">` : '<i class="standing-dot"></i>'}<span>${escapeHtml(c.name)}</span></div>
+      <div class="standing-tags">${crewTagHtml('role', me.role)}${crewTagHtml('class', me.klass)}</div>
+    </div>`;
+  }).filter(Boolean).join('');
+  if (!rows) return '';
+  return `<div class="field">
+    <label>Crew</label>
+    ${rows}
+    <div class="hint">Your crew sees this. The leader sets the role and the class.</div>
   </div>`;
 }
 
@@ -2795,6 +2832,26 @@ async function joinCrewByCode(raw) {
   const crew = activeCrew();
   showToast(crew ? `You're in ${crew.name}` : 'Joined');
   return true;
+}
+
+/** One story out of someone's day. Fetching the picture is what records the
+ *  view, so stepping to the next one marks that one seen too. */
+async function openStoryAt(memberId, index) {
+  const crew = activeCrew();
+  const m = crew && (crew.members || []).find((x) => x.id === memberId);
+  const list = (m && (m.stories || (m.story ? [m.story] : []))) || [];
+  const at = Math.max(0, Math.min(index, list.length - 1));
+  const story = list[at];
+  if (!story) return;
+  state.modal = { type: 'story', memberId, index: at, loading: true, image: null, caption: story.caption, error: null };
+  renderModal();
+  const res = await crewApi.openStory(story.id);
+  if (!state.modal || state.modal.type !== 'story') return;
+  state.modal.loading = false;
+  if (res.ok) { state.modal.image = res.image; state.modal.caption = res.caption || ''; }
+  else state.modal.error = res.error;
+  renderModal();
+  refreshCrews().catch(() => {});
 }
 
 /** Opens the Accept sheet for a code, fetching what the invite leads to. */
@@ -2896,12 +2953,18 @@ function myCrewCard() {
     dueToday[ex.id] = isScheduledOn(ex, today);
     targets[ex.id] = getEffectiveTarget(ex, today) || 0;
   });
-  const strips = {};
+  const strips = {}, doneAt = {}, extra = {};
   state.exercises.forEach((ex) => {
     strips[ex.id] = recentDayStates(ex, state.setsLog, state.streakOverrides, 7);
+    const t = getTimerPure(state.timersLog, today, ex.id);
+    doneAt[ex.id] = (t && t.finishedAt) || 0;
+    // The same figures their own Progress card shows, so a crew card can be as
+    // descriptive as the one it mirrors rather than a summary of it.
+    const st = stats[ex.id] || {};
+    extra[ex.id] = { top: st.topSet || 0, bestDay: st.maxReps || 0, avgMs: st.avgTime || 0, totalMs: st.totalTime || 0 };
   });
   const dayStreak = calcStreakInfo(state.exercises, state.setsLog, today, state.streakOverrides);
-  const card = buildCrewCard(state.profile, state.exercises, stats, todayTotals, dayStreak, dueToday, targets, strips);
+  const card = buildCrewCard(state.profile, state.exercises, stats, todayTotals, dayStreak, dueToday, targets, strips, doneAt, extra);
   return { ...card, photo: crewPhoto() };
 }
 
@@ -3747,9 +3810,35 @@ function modalCrewInviteAccept() {
  */
 // No 🔥 here: it is the face of Good job, and two identical-looking lines in
 // the "who sent what" list is the one thing that list must never do.
-/** Titles the leader can hand out. A short list beats a text field: everyone
- *  ends up with the same words, and nobody has to name anything. */
-const CREW_RANKS = ['Leader', 'Coach', 'Veteran', 'Regular', 'Rookie'];
+/**
+ * Roles and classes, each with drawn art.
+ *
+ * A closed list rather than a text field: every one has an icon, so an invented
+ * value would render as a hole. The descriptions stay understated on purpose —
+ * these are a bit of colour beside a name, not a character sheet.
+ */
+const CREW_ROLES = [
+  { key: 'leader', label: 'Leader', note: 'Runs the crew' },
+  { key: 'vice', label: 'Vice Leader', note: 'Second in line' },
+  { key: 'member', label: 'Member', note: 'One of the crew' },
+];
+const CREW_CLASSES = [
+  { key: 'fighter', label: 'Fighter', note: 'Gets stuck in' },
+  { key: 'artist', label: 'Artist', note: 'Does it their own way' },
+  { key: 'tank', label: 'Tank', note: 'Always there' },
+  { key: 'tech', label: 'Tech', note: 'Knows the numbers' },
+  { key: 'tycoon', label: 'Tycoon', note: 'Brings the resources' },
+];
+const roleInfo = (k) => CREW_ROLES.find((r) => r.key === k) || null;
+const classInfo = (k) => CREW_CLASSES.find((c) => c.key === k) || null;
+const crewIconUrl = (kind, key) => `${import.meta.env.BASE_URL}icons/crew/${kind}-${key}.png`;
+
+/** A role or class as a chip: art first, word second, nothing else. */
+function crewTagHtml(kind, key, size) {
+  const info = kind === 'role' ? roleInfo(key) : classInfo(key);
+  if (!info) return '';
+  return `<span class="crew-tag"><img src="${crewIconUrl(kind, key)}" alt="" width="${size || 18}" height="${size || 18}">${escapeHtml(info.label)}</span>`;
+}
 
 const CREW_EMOJI = ['💪', '👏', '🐐', '😤', '🙌', '⚡'];
 const REACTION_FACE = { nudge: '👊', respect: '🔥', emoji: '' };
@@ -3837,7 +3926,7 @@ function modalCrewMember() {
     const shown = e.unit === 'min' ? formatMinutes(e.today) : `${formatCount(e.today)} ${escapeHtml(e.unit || '')}`;
     const goal = e.target > 0 ? (e.unit === 'min' ? formatMinutes(e.target) : `${formatCount(e.target)}`) : null;
     return `<div class="crew-day ${met ? 'met' : ''}">
-      <span class="crew-day-name">${escapeHtml(e.name)}</span>
+      <span class="crew-day-name">${escapeHtml(e.name)}${e.doneAt ? `<i class="crew-day-at">finished ${escapeHtml(formatClock(e.doneAt))}</i>` : ''}</span>
       <span class="crew-day-num">${e.today > 0 ? shown : '—'}${goal ? `<i>/ ${goal}</i>` : ''}</span>
       <span class="crew-day-tick">${met ? ICONS.check : '<i class="crew-pending"></i>'}</span>
     </div>`;
@@ -3846,14 +3935,24 @@ function modalCrewMember() {
   // Their progress card, as a reader sees it: the week, the streak and the
   // total, all on the exercise they belong to. Nothing is tappable.
   const allTime = ex.slice().sort((a, b) => (b.streak - a.streak) || (b.total - a.total));
-  const progressRow = (e) => `<div class="crew-prog">
-    <div class="crew-prog-top">
-      <span class="crew-prog-name">${escapeHtml(e.name)}</span>
-      <span class="crew-prog-streak">${e.streak ? `${e.streak}d` : '—'}</span>
-    </div>
-    ${memberStripHtml(e.days)}
-    <div class="crew-prog-sub">${e.unit === 'min' ? formatMinutes(e.total) : `${formatCount(e.total)} ${escapeHtml(e.unit || '')}`} all time</div>
-  </div>`;
+  const progressRow = (e) => {
+    const timed = e.unit === 'min';
+    const fig = (label, value) => (value ? `<div><dt>${label}</dt><dd>${value}</dd></div>` : '');
+    return `<div class="crew-prog">
+      <div class="crew-prog-top">
+        <span class="crew-prog-name">${escapeHtml(e.name)}</span>
+        <span class="crew-prog-streak">${e.streak ? `${e.streak}d` : '—'}</span>
+      </div>
+      ${memberStripHtml(e.days)}
+      <dl class="crew-prog-figs">
+        ${fig(timed ? 'Longest' : 'Top set', timed ? formatMinutes(e.top) : (e.top ? formatCount(e.top) : ''))}
+        ${fig('Best day', timed ? formatMinutes(e.bestDay) : (e.bestDay ? formatCount(e.bestDay) : ''))}
+        ${fig('Average', e.avgMs ? formatDuration(e.avgMs) : '')}
+        ${fig('Lifetime', timed ? formatMinutes(e.total) : (e.total ? `${formatCount(e.total)} ${escapeHtml(e.unit || '')}` : ''))}
+        ${fig('Total time', e.totalMs ? formatTotalDuration(e.totalMs) : '')}
+      </dl>
+    </div>`;
+  };
 
   const reactRow = mine ? '' : `
     <div class="react-bar">
@@ -3869,7 +3968,7 @@ function modalCrewMember() {
     <div class="modal-sheet" data-stop>
       <div class="sheet-handle"></div>
       <div class="sheet-head member-head">
-        <h2>${escapeHtml(m.name || 'Someone')}${m.rank ? `<b class="rank-chip">${escapeHtml(m.rank)}</b>` : ''}</h2>
+        <h2>${escapeHtml(m.name || 'Someone')}</h2>
         <button class="sheet-close" data-action="close-modal">${ICONS.close}</button>
       </div>
 
@@ -3878,6 +3977,7 @@ function modalCrewMember() {
         <div class="member-hero-nums">
           <div class="member-streak"><b>${m.streak}</b><span>day streak${m.best > m.streak ? ` · best ${m.best}` : ''}</span></div>
           <div class="member-today ${m.trainedToday ? 'yes' : 'no'}">${m.trainedToday ? 'trained today' : 'not yet today'}</div>
+          <div class="crew-tags">${crewTagHtml('role', m.role)}${crewTagHtml('class', m.klass)}</div>
         </div>
       </div>
 
@@ -3902,12 +4002,18 @@ function modalCrewMember() {
       ${reactionDetailHtml(m, crew)}
       ${reactRow}
       ${iOwn ? `<div class="rank-set">
-        <div class="section-label">Rank</div>
+        <div class="section-label">Role</div>
         <div class="rank-picks">
-          ${CREW_RANKS.map((r) => `<button class="rank-pick ${m.rank === r ? 'on' : ''}" data-action="set-rank" data-id="${m.id}" data-rank="${escapeHtml(r)}">${escapeHtml(r)}</button>`).join('')}
-          ${m.rank ? `<button class="rank-pick clear" data-action="set-rank" data-id="${m.id}" data-rank="">Clear</button>` : ''}
+          ${CREW_ROLES.map((r) => `<button class="rank-pick ${m.role === r.key ? 'on' : ''}" data-action="set-role" data-id="${m.id}" data-role="${r.key}">
+            <img src="${crewIconUrl('role', r.key)}" alt="" width="22" height="22">${escapeHtml(r.label)}</button>`).join('')}
         </div>
-        <p class="hint">A title, not a permission — only you can invite, rename or remove, whatever anyone is called.</p>
+        <div class="section-label">Class</div>
+        <div class="rank-picks">
+          ${CREW_CLASSES.map((c) => `<button class="rank-pick ${m.klass === c.key ? 'on' : ''}" data-action="set-class" data-id="${m.id}" data-class="${c.key}" title="${escapeHtml(c.note)}">
+            <img src="${crewIconUrl('class', c.key)}" alt="" width="22" height="22">${escapeHtml(c.label)}</button>`).join('')}
+          ${m.klass ? `<button class="rank-pick clear" data-action="set-class" data-id="${m.id}" data-class="">Clear</button>` : ''}
+        </div>
+        <p class="hint">Titles, not permissions — only you can invite, rename or remove, whatever anyone is called.</p>
       </div>` : ''}
       ${iOwn && !mine ? `<button class="danger-btn" data-action="remove-member" data-id="${m.id}">Remove from crew</button>` : ''}
     </div>
@@ -3927,7 +4033,9 @@ function modalStory() {
   const crew = activeCrew();
   const author = crew && (crew.members || []).find((x) => x.id === m.memberId);
   if (!author) return '';
-  const story = author.story;
+  // Which one of theirs is on screen: a day can hold several now.
+  const list = author.stories || (author.story ? [author.story] : []);
+  const story = list[m.index || 0] || author.story;
   const left = story ? Math.max(0, story.expiresAt - Date.now()) : 0;
   const hours = Math.floor(left / 3600000);
   const mins = Math.floor((left % 3600000) / 60000);
@@ -3947,6 +4055,11 @@ function modalStory() {
         : m.error ? `<div class="story-frame loading">${escapeHtml(crewApi.crewErrorText(m.error))}</div>`
         : `<div class="story-frame"><img src="${escapeHtml(m.image || '')}" alt=""></div>`}
       ${m.caption ? `<p class="story-caption">${escapeHtml(m.caption)}</p>` : ''}
+      ${list.length > 1 ? `<div class="story-steps">
+        <button class="story-step" data-action="story-step" data-index="${(m.index || 0) - 1}" ${(m.index || 0) === 0 ? 'disabled' : ''} aria-label="Previous">‹</button>
+        <span class="story-dots">${list.map((_, i) => `<i class="${i === (m.index || 0) ? 'on' : ''}"></i>`).join('')}</span>
+        <button class="story-step" data-action="story-step" data-index="${(m.index || 0) + 1}" ${(m.index || 0) >= list.length - 1 ? 'disabled' : ''} aria-label="Next">›</button>
+      </div>` : ''}
       <div class="story-meta">${story ? `${hours ? `${hours}h ` : ''}${mins}m left` : ''}</div>
       ${story && story.mine ? `<div class="story-views">
         <div class="section-label">Seen by ${viewers.length}</div>
@@ -4183,6 +4296,8 @@ function modalProfile() {
         <div class="hint">Kept on this phone and synced to your own Drive. It is shrunk to a small square first, so it never bloats a sync.</div>
       </div>
 
+      ${crewStandingHtml()}
+
       <div class="field">
         <label>Google Drive sync</label>
         ${syncHtml}
@@ -4282,6 +4397,28 @@ function fileToAvatarDataUrl(file) {
   });
 }
 
+/** A crew logo is a small square, like an avatar rather than a photo. */
+const CREW_LOGO_PX = 192;
+function fileToCrewLogoDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    if (!file.type || !file.type.startsWith('image/')) { reject(new Error('not-an-image')); return; }
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const side = Math.min(img.naturalWidth, img.naturalHeight);
+        const canvas = document.createElement('canvas');
+        canvas.width = CREW_LOGO_PX; canvas.height = CREW_LOGO_PX;
+        canvas.getContext('2d').drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2,
+          side, side, 0, 0, CREW_LOGO_PX, CREW_LOGO_PX);
+        resolve(canvas.toDataURL('image/jpeg', 0.78));
+      } catch (e) { reject(e); } finally { URL.revokeObjectURL(url); }
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('decode-failed')); };
+    img.src = url;
+  });
+}
+
 const STORY_PX = 720;
 function fileToStoryDataUrl(file) {
   return new Promise((resolve, reject) => {
@@ -4332,6 +4469,23 @@ function bindModalEvents() {
       const file = e.target.files[0];
       if (file) setAvatarHandler(file);
       e.target.value = '';
+    };
+  }
+  const logoFile = document.getElementById('crew-logo-file');
+  if (logoFile) {
+    logoFile.onchange = async (e) => {
+      const file = e.target.files[0];
+      e.target.value = '';
+      const crew = activeCrew();
+      if (!file || !crew) return;
+      try {
+        const image = await fileToCrewLogoDataUrl(file);
+        showToast('Saving…');
+        const res = await crewApi.setCrewLogo(crew.id, image);
+        if (applyCrewResult(res, { toast: true })) { renderModal(); showToast('Crew logo set'); }
+      } catch (err) {
+        showToast("That photo couldn't be read.");
+      }
     };
   }
   const storyFile = document.getElementById('story-file');
@@ -4487,18 +4641,12 @@ document.addEventListener('click', async (e) => {
       const crew = activeCrew();
       const m = crew && (crew.members || []).find((x) => x.id === btn.dataset.id);
       if (!m) break;
+      const list = m.stories || (m.story ? [m.story] : []);
       // Your own face with no story is the way in to posting one.
-      if (!m.story) { state.modal = { type: 'storyCompose', image: null, caption: '' }; renderModal(); break; }
-      state.modal = { type: 'story', memberId: m.id, loading: true, image: null, caption: m.story.caption, error: null };
-      renderModal();
-      const res = await crewApi.openStory(m.story.id);
-      if (!state.modal || state.modal.type !== 'story') break;
-      state.modal.loading = false;
-      if (res.ok) { state.modal.image = res.image; state.modal.caption = res.caption || ''; }
-      else state.modal.error = res.error;
-      renderModal();
-      // Opening it is the view, so the roster's seen-state is now stale.
-      refreshCrews().catch(() => {});
+      if (!list.length) { state.modal = { type: 'storyCompose', image: null, caption: '' }; renderModal(); break; }
+      // Start at the first one you have not seen, or the newest if you have.
+      const firstUnseen = list.findIndex((st) => !st.seenByMe);
+      await openStoryAt(m.id, firstUnseen >= 0 ? firstUnseen : list.length - 1);
       break;
     }
     case 'add-story':
@@ -4514,11 +4662,29 @@ document.addEventListener('click', async (e) => {
       if (applyCrewResult(res, { toast: true })) { closeModal(); showToast('Posted — 24 hours'); }
       break;
     }
-    case 'set-rank': {
+    case 'set-role': {
       const crew = activeCrew();
       if (!crew) break;
-      const res = await crewApi.setRank(crew.id, btn.dataset.id, btn.dataset.rank || '');
-      if (applyCrewResult(res, { toast: true })) { renderModal(); showToast(btn.dataset.rank ? `Set to ${btn.dataset.rank}` : 'Rank cleared'); }
+      const res = await crewApi.setRole(crew.id, btn.dataset.id, { role: btn.dataset.role });
+      if (applyCrewResult(res, { toast: true })) { renderModal(); showToast(`Role: ${(roleInfo(btn.dataset.role) || {}).label || 'set'}`); }
+      break;
+    }
+    case 'set-class': {
+      const crew = activeCrew();
+      if (!crew) break;
+      const res = await crewApi.setRole(crew.id, btn.dataset.id, { klass: btn.dataset.class || '' });
+      if (applyCrewResult(res, { toast: true })) { renderModal(); showToast(btn.dataset.class ? `Class: ${(classInfo(btn.dataset.class) || {}).label}` : 'Class cleared'); }
+      break;
+    }
+    case 'pick-crew-logo': {
+      const input = document.getElementById('crew-logo-file');
+      if (input) input.click();
+      break;
+    }
+    case 'story-step': {
+      // Several stories in a day means stepping through them, oldest first.
+      if (!state.modal || state.modal.type !== 'story') break;
+      await openStoryAt(state.modal.memberId, parseInt(btn.dataset.index, 10));
       break;
     }
     case 'react': {

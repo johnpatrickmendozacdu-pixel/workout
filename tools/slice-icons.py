@@ -1,36 +1,60 @@
 #!/usr/bin/env python3
 """
-Cuts the category icons out of their source artwork.
+Cuts every icon the app ships out of its source artwork.
 
-Kept in the repo because the icons are derived art, not authored art: if the
-source image is ever redrawn, re-running this reproduces the set exactly rather
-than leaving someone to re-guess crop boxes and colour thresholds.
+Kept in the repo because the icons are derived art, not authored art: if a
+source image is redrawn, re-running this reproduces the whole set exactly
+rather than leaving someone to re-guess crop boxes and colour thresholds.
 
     python3 tools/slice-icons.py
 
-Writes public/icons/ex/*.png at 128px with transparent backgrounds.
+Writes:
+    public/icons/ex/*.png     the ten exercise categories, 128px
+    public/icons/crew/*.png   crew roles and classes, 128px
+    public/icons/icon-*.png   the app icon, from the Sets mark
+
+The three grids all share one layout idea — a card, art above, a label below —
+so one crop table drives the lot. Boxes are padded around the art and the alpha
+trim in write_icon finds the real edges, which is why a few pixels of drift in
+a hand-measured box costs nothing.
 """
 from PIL import Image
 from collections import deque
 import os
 
-SRC_PATH = 'icon-source.png'
 OUT_DIR = 'public/icons/ex'
-CELL_W = 384
-ROWS = {0: (72, 400), 1: (578, 872)}   # art only: above the label, inside the card
-INSET = 34                              # clears the card's rounded border stroke
+CREW_DIR = 'public/icons/crew'
 SIZE = 128
+ACCENT = (62, 224, 127)   # --accent, so the icons speak the app's one colour
 
-NAMES = [('chest', 0, 0), ('back', 1, 0), ('arms', 2, 0), ('legs', 3, 0),
-         ('abs', 0, 1), ('dip-bar', 1, 1), ('pull-up-bar', 2, 1), ('cardio', 3, 1)]
-
-# Categories added later arrive as their own single-tile image rather than a new
-# grid. Same pipeline, different crop — (name, file, box padded around the art so
-# the green accent marks survive; the alpha trim finds the real edges).
-SINGLES = [
-    ('skateboard', 'icon-source-skateboard.png', (520, 190, 965, 745)),
-    ('badminton', 'icon-source-badminton.png', (440, 250, 1000, 675)),
+# ---- the ten categories, one grid ----------------------------------------
+# Replaced the original three-source arrangement (a 4x2 grid plus two singles)
+# on 2026-08-12: one image, one table, no per-file special cases.
+CATEGORY_SRC = 'Updated Category Icons.png'
+CAT_COLS = [(32, 374), (388, 736), (749, 1113), (1126, 1497)]
+CAT_ART = {0: (30, 322), 1: (425, 668), 2: (762, 940)}   # row -> art band
+CATEGORIES = [
+    ('chest', 0, 0), ('back', 1, 0), ('arms', 2, 0), ('legs', 3, 0),
+    ('abs', 0, 1), ('dip-bar', 1, 1), ('pull-up-bar', 2, 1), ('cardio', 3, 1),
+    ('skateboard', 1, 2), ('badminton', 2, 2),
 ]
+
+# ---- crew roles and classes ----------------------------------------------
+CREW_SRC = 'Roles and Classes.png'
+CREW_ICONS = [
+    ('role-leader', (238, 115, 556, 385)),
+    ('role-vice', (651, 115, 904, 385)),
+    ('role-member', (1000, 115, 1280, 385)),
+    ('class-fighter', (49, 628, 282, 876)),
+    ('class-artist', (355, 628, 530, 876)),
+    ('class-tank', (630, 628, 878, 876)),
+    ('class-tech', (938, 628, 1172, 876)),
+    ('class-tycoon', (1230, 628, 1485, 876)),
+]
+
+# ---- the app mark ---------------------------------------------------------
+LOGO_SRC = 'Updated Sets Icon.png'
+LOGO_BOX = (360, 80, 1180, 900)
 
 # These two enclose card background inside a closed shape that a border flood can
 # never reach. Their outlines are green rather than black, so a blanket dark-key
@@ -40,8 +64,6 @@ ENCLOSED = {'dip-bar', 'pull-up-bar'}
 
 # Near-black bodies that vanish against a dark app tile. Lifted until they read.
 LIFT_BODY = {'dip-bar', 'pull-up-bar'}
-
-ACCENT = (62, 224, 127)   # --accent, so the icons speak the app's one colour
 
 
 def key_out(img, tol):
@@ -113,10 +135,9 @@ def emphasise(img, lift_body=False):
     return img
 
 
-def write_icon(cell, name, lift_body=False):
+def write_icon(cell, path, lift_body=False, size=SIZE):
     """Shared tail: emphasise, trim to the art, square it so every icon shares one
-    optical size, downscale, quantise. Both the grid and single tiles go through
-    this, so a late addition cannot drift from the original eight."""
+    optical size, downscale, quantise."""
     cell = emphasise(cell, lift_body=lift_body)
     bb = cell.getbbox()
     if bb:
@@ -124,37 +145,55 @@ def write_icon(cell, name, lift_body=False):
     side = max(cell.size)
     canvas = Image.new('RGBA', (side, side), (0, 0, 0, 0))
     canvas.paste(cell, ((side - cell.width)//2, (side - cell.height)//2))
-    canvas = canvas.resize((SIZE, SIZE), Image.LANCZOS)
+    canvas = canvas.resize((size, size), Image.LANCZOS)
     canvas = canvas.quantize(colors=128, method=Image.FASTOCTREE).convert('RGBA')
-    path = f'{OUT_DIR}/{name}.png'
     canvas.save(path, optimize=True)
     return os.path.getsize(path)
 
 
 def main():
-    src = Image.open(SRC_PATH).convert('RGBA')
     os.makedirs(OUT_DIR, exist_ok=True)
+    os.makedirs(CREW_DIR, exist_ok=True)
     total = 0
-    for name, col, row in NAMES:
-        y1, y2 = ROWS[row]
-        cell = src.crop((col*CELL_W + INSET, y1, col*CELL_W + CELL_W - INSET, y2))
-        cell = key_out(cell, 30)
+
+    src = Image.open(CATEGORY_SRC).convert('RGBA')
+    for name, col, row in CATEGORIES:
+        x0, x1 = CAT_COLS[col]
+        y0, y1 = CAT_ART[row]
+        cell = src.crop((x0 + 14, y0, x1 - 14, y1))
+        # 48, not 30: the new source's card panel is a lighter grey than the old
+        # one, and at 30 the flood stopped at the card edge and left every icon
+        # sitting on a dark rectangle. Interior black is unreachable from the
+        # border, so raising this cannot eat the linework.
+        cell = key_out(cell, 48)
         if name in ENCLOSED:
             cell = dark_key(cell, 34)
-        total += write_icon(cell, name, lift_body=name in LIFT_BODY)
-        size = os.path.getsize(f'{OUT_DIR}/{name}.png')
-        print(f'{name:14} {size/1024:5.1f} KB')
+        total += write_icon(cell, f'{OUT_DIR}/{name}.png', lift_body=name in LIFT_BODY)
+        print(f'{name:16} {os.path.getsize(f"{OUT_DIR}/{name}.png")/1024:5.1f} KB')
 
-    for name, path, box in SINGLES:
-        if not os.path.exists(path):
-            print(f'{name:14} SKIPPED (no {path})')
-            continue
-        cell = Image.open(path).convert('RGBA').crop(box)
-        cell = key_out(cell, 30)
-        total += write_icon(cell, name, lift_body=name in LIFT_BODY)
-        print(f'{name:14} {os.path.getsize(f"{OUT_DIR}/{name}.png")/1024:5.1f} KB')
+    crew = Image.open(CREW_SRC).convert('RGBA')
+    for name, box in CREW_ICONS:
+        cell = key_out(crew.crop(box), 48)
+        total += write_icon(cell, f'{CREW_DIR}/{name}.png')
+        print(f'{name:16} {os.path.getsize(f"{CREW_DIR}/{name}.png")/1024:5.1f} KB')
 
-    print(f'{"total":14} {total/1024:5.1f} KB')
+    # The app mark keeps its ring, so it is not keyed out — only trimmed and
+    # sized. A maskable icon needs its own padding, which is why it is drawn
+    # onto a square of the app's ink rather than left transparent.
+    logo = Image.open(LOGO_SRC).convert('RGBA').crop(LOGO_BOX)
+    for px, path in ((192, 'public/icons/icon-192.png'), (512, 'public/icons/icon-512.png')):
+        # Quantised like every other icon here: the mark is three colours and a
+        # texture, and a true-colour PNG of it was 400 KB in the precache.
+        out = logo.resize((px, px), Image.LANCZOS).quantize(colors=192, method=Image.FASTOCTREE).convert('RGBA')
+        out.save(path, optimize=True)
+        print(f'{os.path.basename(path):16} {os.path.getsize(path)/1024:5.1f} KB')
+    mask = Image.new('RGBA', (512, 512), (10, 12, 11, 255))
+    inner = logo.resize((360, 360), Image.LANCZOS)
+    mask.paste(inner, (76, 76), inner)
+    mask.save('public/icons/icon-maskable-512.png', optimize=True)
+    logo.resize((180, 180), Image.LANCZOS).save('public/favicon.png', optimize=True)
+
+    print(f'{"total":16} {total/1024:5.1f} KB')
 
 
 if __name__ == '__main__':

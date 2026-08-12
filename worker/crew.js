@@ -103,6 +103,11 @@ export function sanitiseCard(card) {
         // r rest, n not tracked. A whole strip in seven bytes, which is what
         // makes it affordable to publish per exercise.
         days: typeof (e && e.days) === 'string' ? e.days.slice(0, 7).replace(/[^hbmrn]/g, 'n') : '',
+        doneAt: int(e && e.doneAt),
+        top: num(e && e.top),
+        bestDay: num(e && e.bestDay),
+        avgMs: int(e && e.avgMs),
+        totalMs: int(e && e.totalMs),
       })).filter((e) => e.name)
       : [],
   };
@@ -129,23 +134,31 @@ export function fitCard(card) {
 }
 
 /**
- * A rank is a label the leader hands out, not a permission.
+ * Roles and classes are a closed set, not free text.
  *
- * Nothing in the Worker reads it to decide anything — ownership is still the
- * only thing that grants a right — so it can be free text without becoming a
- * security surface. Capped and collapsed like every other name here.
+ * Each one has a drawn icon shipped with the app, so a value outside the list
+ * would render as a hole. Validating here rather than trusting the client also
+ * means a role can never be invented — and none of them grants anything:
+ * ownership remains the only right in this Worker, so a title cannot become a
+ * permission by accident.
  */
-export function cleanRank(raw) {
-  if (typeof raw !== 'string') return '';
-  return raw.replace(/\s+/g, ' ').trim().slice(0, 16);
+export const ROLES = ['leader', 'vice', 'member'];
+export const CLASSES = ['fighter', 'artist', 'tank', 'tech', 'tycoon'];
+
+export function cleanRole(raw) {
+  return ROLES.includes(raw) ? raw : '';
 }
 
-/** What a member is called in the crew. Whoever made it is the leader unless
- *  they have given themselves something else to be. */
-export function rankOf(crew, member) {
-  const own = cleanRank(member && member.rank);
+export function cleanClass(raw) {
+  return CLASSES.includes(raw) ? raw : '';
+}
+
+/** What a member is in the crew. Whoever made it leads it unless the leader has
+ *  said otherwise — the creator never has to be given their own title. */
+export function roleOf(crew, member) {
+  const own = cleanRole(member && member.role);
   if (own) return own;
-  return crew && member && crew.owner === member.user_id ? 'Leader' : '';
+  return crew && member && crew.owner === member.user_id ? 'leader' : 'member';
 }
 
 /** Owner-only actions, in one place so no endpoint has to remember. */
@@ -191,7 +204,8 @@ export function buildRoster(crew, memberRows, reactionRows, meId) {
       exercises: (card && card.exercises) || [],
       updatedAt: m.updated_at || 0,
       isOwner: crew.owner === m.user_id,
-      rank: rankOf(crew, m),
+      role: roleOf(crew, m),
+      klass: cleanClass(m.class),
       // Marked here rather than guessed by the client: the app knows the email
       // it signed in with, not the id Google gave the Worker, and matching on
       // email meant nobody was ever recognised as themselves — which quietly

@@ -562,6 +562,20 @@ export function workoutSealed(timer, total, target) {
   return !(timer && timer.pushingOn);
 }
 
+/**
+ * Stamps the moment the day's work was finished, once.
+ *
+ * `finishTimer` already records this for a session you closed by hand, but most
+ * days end by simply reaching the number and putting the phone down — and those
+ * had no time at all. Written on the crossing, and never overwritten, so the
+ * stamp is when you first got there rather than when you last touched it.
+ */
+export function stampFinished(timersLog, dateStr, exId, nowMs) {
+  const t = getTimer(timersLog, dateStr, exId);
+  if (!t || t.finishedAt) return timersLog;
+  return setTimerRecord(timersLog, dateStr, exId, { ...t, finishedAt: nowMs });
+}
+
 /** Records the choice to carry on past the target. Sticky for the rest of the
  *  day, which is the whole point — see workoutSealed. */
 export function markPushingOn(timersLog, dateStr, exId) {

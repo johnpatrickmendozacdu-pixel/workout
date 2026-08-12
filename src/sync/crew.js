@@ -100,7 +100,8 @@ export function react(crewId, toId, kind, emoji) { return post('/crew/react', { 
 export function markSeen(crewId) { return post('/crew/seen', { crewId }); }
 // A picture over a phone connection is not a roster fetch; it gets its own
 // patience rather than being called offline at twelve seconds.
-export function setRank(crewId, userId, rank) { return post('/crew/rank', { crewId, userId, rank }); }
+export function setRole(crewId, userId, what) { return post('/crew/role', { crewId, userId, ...what }); }
+export function setCrewLogo(crewId, logo) { return post('/crew/logo', { crewId, logo }, UPLOAD_TIMEOUT_MS); }
 export function postStory(crewId, image, caption) {
   return post('/crew/story', { crewId, image, caption }, UPLOAD_TIMEOUT_MS);
 }
@@ -151,7 +152,8 @@ export const CREW_ERRORS = {
   'not-yourself': 'That one is for other people.',
   'crew-failed': 'The crew service hit an error — the reason is in the console and the Worker log.',
   'no-rank': 'Only the crew leader can set ranks.',
-  'needs-rank-column': 'Ranks need one line of SQL adding to the database first.',
+  'needs-role-columns': 'Roles and classes need two lines of SQL adding to the database first.',
+  'needs-logo-column': 'A crew logo needs one line of SQL adding to the database first.',
   'needs-story-table': 'Stories need their tables adding to the database first.',
 };
 

@@ -7,7 +7,7 @@
 
 import {
   newInviteCode, normaliseCode, cleanCrewName, sanitiseCard, fitCard,
-  isOwner, ownerAfterLeaving, buildRoster, cleanReaction, cleanRank,
+  isOwner, ownerAfterLeaving, buildRoster, cleanReaction, cleanRole, cleanClass,
   cleanCaption, storyImageOk, storyMeta, viewersOf, STORY_LIFE_MS,
   MAX_CREWS_PER_USER, MAX_MEMBERS_PER_CREW,
 } from './crew.js';
@@ -36,8 +36,8 @@ import { jsonResponse, GOOGLE_USERINFO } from './broker.js';
  */
 /** Bumped whenever this file gains something the app depends on, so a single
  *  curl says whether the dashboard paste actually landed. */
-export const CREW_BUILD = '2026-08-12.7';
-export const CREW_FEATURES = ['peek', 'isMe', 'target-due', 'days-strip', 'photo-24k', 'stories', 'views', 'ranks'];
+export const CREW_BUILD = '2026-08-12.8';
+export const CREW_FEATURES = ['peek', 'isMe', 'target-due', 'days-strip', 'photo-24k', 'stories', 'views', 'roles', 'classes', 'crew-logo', 'multi-story'];
 
 const GOOGLE_DRIVE_ABOUT = 'https://www.googleapis.com/drive/v3/about?fields=user(emailAddress,permissionId)';
 const identityCache = new Map();
@@ -117,9 +117,15 @@ async function crewsFor(env, userId) {
     ).bind(crew.id, isoDaysAgo(0)).all(), { results: [] });
 
     const roster = buildRoster(crew, members.results || [], reactions.results || [], userId);
+    roster.logo = crew.logo || '';
     roster.members.forEach((m) => {
-      const row = (stories.results || []).find((st) => st.user_id === m.id);
-      m.story = row ? storyMeta(row, now, userId, views.results || []) : null;
+      m.stories = (stories.results || [])
+        .filter((st) => st.user_id === m.id)
+        .sort((a, b) => a.created_at - b.created_at)
+        .map((st) => storyMeta(st, now, userId, views.results || []))
+        .filter(Boolean);
+      // The newest one is what the ring reflects; the rest are behind it.
+      m.story = m.stories.length ? m.stories[m.stories.length - 1] : null;
       m.profileViewers = viewersOf(views.results || [], m.id, 'profile', userId);
     });
     out.push(roster);
@@ -254,16 +260,39 @@ export async function crewRoute(path, body, env, cors) {
     return jsonResponse({ crews: await crewsFor(env, user.id) }, 200, cors);
   }
 
-  /** The leader names people. A label only — nothing here reads a rank to
-   *  decide what anyone may do, so handing one out cannot hand out power. */
-  if (path === '/crew/rank') {
+  /**
+   * The leader assigns a role and a class. Titles only — nothing in this Worker
+   * reads either one to decide what anybody may do, so handing one out cannot
+   * hand out power.
+   */
+  if (path === '/crew/role') {
     const crew = await env.DB.prepare(`SELECT * FROM crews WHERE id = ?`).bind(body.crewId).first();
     if (!isOwner(crew, user.id)) return jsonResponse({ error: 'no-rank' }, 403, cors);
     try {
-      await env.DB.prepare(`UPDATE members SET rank = ? WHERE crew_id = ? AND user_id = ?`)
-        .bind(cleanRank(body.rank), crew.id, body.userId).run();
+      if (body.role !== undefined) {
+        await env.DB.prepare(`UPDATE members SET role = ? WHERE crew_id = ? AND user_id = ?`)
+          .bind(cleanRole(body.role), crew.id, body.userId).run();
+      }
+      if (body.klass !== undefined) {
+        await env.DB.prepare(`UPDATE members SET class = ? WHERE crew_id = ? AND user_id = ?`)
+          .bind(cleanClass(body.klass), crew.id, body.userId).run();
+      }
     } catch (e) {
-      return jsonResponse({ error: 'needs-rank-column' }, 503, cors);
+      return jsonResponse({ error: 'needs-role-columns' }, 503, cors);
+    }
+    return jsonResponse({ crews: await crewsFor(env, user.id) }, 200, cors);
+  }
+
+  /** A crew's own picture, set by whoever leads it. Same budget as a member
+   *  card's photo, for the same reason. */
+  if (path === '/crew/logo') {
+    const crew = await env.DB.prepare(`SELECT * FROM crews WHERE id = ?`).bind(body.crewId).first();
+    if (!isOwner(crew, user.id)) return jsonResponse({ error: 'no-rank' }, 403, cors);
+    if (body.logo && !storyImageOk(body.logo)) return jsonResponse({ error: 'bad-image' }, 400, cors);
+    try {
+      await env.DB.prepare(`UPDATE crews SET logo = ? WHERE id = ?`).bind(body.logo || '', crew.id).run();
+    } catch (e) {
+      return jsonResponse({ error: 'needs-logo-column' }, 503, cors);
     }
     return jsonResponse({ crews: await crewsFor(env, user.id) }, 200, cors);
   }
@@ -308,7 +337,8 @@ export async function crewRoute(path, body, env, cors) {
     if (!inCrew) return jsonResponse({ error: 'not-in-crew' }, 403, cors);
     if (!storyImageOk(body.image)) return jsonResponse({ error: 'bad-image' }, 400, cors);
     try {
-      await env.DB.prepare(`DELETE FROM stories WHERE crew_id = ? AND user_id = ?`).bind(body.crewId, user.id).run();
+      // No delete: a day can hold as many as you post, the way a story rail
+      // works everywhere else. They expire on their own timestamps.
       await env.DB.prepare(
         `INSERT INTO stories (id, crew_id, user_id, image, caption, created_at, expires_at)
          VALUES (?, ?, ?, ?, ?, ?, ?)`

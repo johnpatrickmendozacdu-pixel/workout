@@ -473,7 +473,7 @@ export function formatCount(n) {
  */
 const DAY_CHAR = { hit: 'h', break: 'b', miss: 'm', rest: 'r', none: 'n' };
 
-export function buildCrewCard(profile, exercises, statsById, todayTotals, dayStreak, dueToday, targets, strips) {
+export function buildCrewCard(profile, exercises, statsById, todayTotals, dayStreak, dueToday, targets, strips, doneAt, extra) {
   const active = (exercises || []).filter((e) => e.active && !e.archived);
   const cards = active.map((ex) => {
     const s = (statsById && statsById[ex.id]) || {};
@@ -492,6 +492,13 @@ export function buildCrewCard(profile, exercises, statsById, todayTotals, dayStr
       // The same seven days the Progress card draws, as seven characters, so a
       // crew can see the shape of someone's week without being given the week.
       days: ((strips && strips[ex.id]) || []).map((d) => DAY_CHAR[d] || 'n').join(''),
+      // When today's work was finished, and the figures that make a crew card
+      // read like the Progress card it mirrors.
+      doneAt: (doneAt && doneAt[ex.id]) || 0,
+      top: ((extra && extra[ex.id]) || {}).top || 0,
+      bestDay: ((extra && extra[ex.id]) || {}).bestDay || 0,
+      avgMs: ((extra && extra[ex.id]) || {}).avgMs || 0,
+      totalMs: ((extra && extra[ex.id]) || {}).totalMs || 0,
     };
   });
   return {

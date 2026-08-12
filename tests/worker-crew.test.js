@@ -17,8 +17,9 @@ import {
   storyMeta,
   viewersOf,
   MAX_STORY_BYTES,
-  cleanRank,
-  rankOf,
+  cleanRole,
+  cleanClass,
+  roleOf,
 } from '../worker/crew.js';
 
 const ints = (n) => Array.from({ length: 8 }, (_, i) => i * 7 + n);
@@ -245,30 +246,34 @@ describe('stories', () => {
   });
 });
 
-describe('ranks', () => {
+describe('roles and classes', () => {
   const crew = { id: 'c1', owner: 'u1', name: 'Crew', invite_code: 'ABCDEFGH', created_at: 1 };
 
-  it('trims and caps a label', () => {
-    expect(cleanRank('  head   coach ')).toBe('head coach');
-    expect(cleanRank('x'.repeat(40))).toHaveLength(16);
-    expect(cleanRank(null)).toBe('');
+  it('accepts only the roles and classes the app has icons for', () => {
+    expect(cleanRole('leader')).toBe('leader');
+    expect(cleanRole('emperor')).toBe('');
+    expect(cleanClass('tycoon')).toBe('tycoon');
+    expect(cleanClass('wizard')).toBe('');
+    expect(cleanClass(null)).toBe('');
   });
 
-  it('makes whoever created the crew its leader by default', () => {
-    expect(rankOf(crew, { user_id: 'u1' })).toBe('Leader');
-    expect(rankOf(crew, { user_id: 'u2' })).toBe('');
+  it('makes whoever created the crew its leader without being told', () => {
+    expect(roleOf(crew, { user_id: 'u1' })).toBe('leader');
+    expect(roleOf(crew, { user_id: 'u2' })).toBe('member');
   });
 
-  it('lets an assigned rank win, including for the leader', () => {
-    expect(rankOf(crew, { user_id: 'u1', rank: 'Coach' })).toBe('Coach');
-    expect(rankOf(crew, { user_id: 'u2', rank: 'Rookie' })).toBe('Rookie');
+  it('lets an assigned role win, including for the creator', () => {
+    expect(roleOf(crew, { user_id: 'u1', role: 'vice' })).toBe('vice');
+    expect(roleOf(crew, { user_id: 'u2', role: 'vice' })).toBe('vice');
+    expect(roleOf(crew, { user_id: 'u2', role: 'nonsense' })).toBe('member');
   });
 
   it('reaches the roster', () => {
     const rows = [{ user_id: 'u1', name: 'Ann', card: null, updated_at: 0, joined_at: 1 },
-      { user_id: 'u2', name: 'Bob', card: null, rank: 'Rookie', updated_at: 0, joined_at: 2 }];
+      { user_id: 'u2', name: 'Bob', card: null, role: 'vice', class: 'tank', updated_at: 0, joined_at: 2 }];
     const r = buildRoster(crew, rows, [], 'u1');
-    expect(r.members.find((m) => m.id === 'u1').rank).toBe('Leader');
-    expect(r.members.find((m) => m.id === 'u2').rank).toBe('Rookie');
+    expect(r.members.find((m) => m.id === 'u1').role).toBe('leader');
+    expect(r.members.find((m) => m.id === 'u2').role).toBe('vice');
+    expect(r.members.find((m) => m.id === 'u2').klass).toBe('tank');
   });
 });

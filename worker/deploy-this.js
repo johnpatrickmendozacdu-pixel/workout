@@ -168,6 +168,11 @@ function sanitiseCard(card) {
         // r rest, n not tracked. A whole strip in seven bytes, which is what
         // makes it affordable to publish per exercise.
         days: typeof (e && e.days) === 'string' ? e.days.slice(0, 7).replace(/[^hbmrn]/g, 'n') : '',
+        doneAt: int(e && e.doneAt),
+        top: num(e && e.top),
+        bestDay: num(e && e.bestDay),
+        avgMs: int(e && e.avgMs),
+        totalMs: int(e && e.totalMs),
       })).filter((e) => e.name)
       : [],
   };
@@ -194,23 +199,31 @@ function fitCard(card) {
 }
 
 /**
- * A rank is a label the leader hands out, not a permission.
+ * Roles and classes are a closed set, not free text.
  *
- * Nothing in the Worker reads it to decide anything — ownership is still the
- * only thing that grants a right — so it can be free text without becoming a
- * security surface. Capped and collapsed like every other name here.
+ * Each one has a drawn icon shipped with the app, so a value outside the list
+ * would render as a hole. Validating here rather than trusting the client also
+ * means a role can never be invented — and none of them grants anything:
+ * ownership remains the only right in this Worker, so a title cannot become a
+ * permission by accident.
  */
-function cleanRank(raw) {
-  if (typeof raw !== 'string') return '';
-  return raw.replace(/\s+/g, ' ').trim().slice(0, 16);
+const ROLES = ['leader', 'vice', 'member'];
+const CLASSES = ['fighter', 'artist', 'tank', 'tech', 'tycoon'];
+
+function cleanRole(raw) {
+  return ROLES.includes(raw) ? raw : '';
 }
 
-/** What a member is called in the crew. Whoever made it is the leader unless
- *  they have given themselves something else to be. */
-function rankOf(crew, member) {
-  const own = cleanRank(member && member.rank);
+function cleanClass(raw) {
+  return CLASSES.includes(raw) ? raw : '';
+}
+
+/** What a member is in the crew. Whoever made it leads it unless the leader has
+ *  said otherwise — the creator never has to be given their own title. */
+function roleOf(crew, member) {
+  const own = cleanRole(member && member.role);
   if (own) return own;
-  return crew && member && crew.owner === member.user_id ? 'Leader' : '';
+  return crew && member && crew.owner === member.user_id ? 'leader' : 'member';
 }
 
 /** Owner-only actions, in one place so no endpoint has to remember. */
@@ -256,7 +269,8 @@ function buildRoster(crew, memberRows, reactionRows, meId) {
       exercises: (card && card.exercises) || [],
       updatedAt: m.updated_at || 0,
       isOwner: crew.owner === m.user_id,
-      rank: rankOf(crew, m),
+      role: roleOf(crew, m),
+      klass: cleanClass(m.class),
       // Marked here rather than guessed by the client: the app knows the email
       // it signed in with, not the id Google gave the Worker, and matching on
       // email meant nobody was ever recognised as themselves — which quietly
@@ -383,8 +397,8 @@ function viewersOf(viewRows, subjectId, kind, meId) {
  */
 /** Bumped whenever this file gains something the app depends on, so a single
  *  curl says whether the dashboard paste actually landed. */
-const CREW_BUILD = '2026-08-12.7';
-const CREW_FEATURES = ['peek', 'isMe', 'target-due', 'days-strip', 'photo-24k', 'stories', 'views', 'ranks'];
+const CREW_BUILD = '2026-08-12.8';
+const CREW_FEATURES = ['peek', 'isMe', 'target-due', 'days-strip', 'photo-24k', 'stories', 'views', 'roles', 'classes', 'crew-logo', 'multi-story'];
 
 const GOOGLE_DRIVE_ABOUT = 'https://www.googleapis.com/drive/v3/about?fields=user(emailAddress,permissionId)';
 const identityCache = new Map();
@@ -464,9 +478,15 @@ async function crewsFor(env, userId) {
     ).bind(crew.id, isoDaysAgo(0)).all(), { results: [] });
 
     const roster = buildRoster(crew, members.results || [], reactions.results || [], userId);
+    roster.logo = crew.logo || '';
     roster.members.forEach((m) => {
-      const row = (stories.results || []).find((st) => st.user_id === m.id);
-      m.story = row ? storyMeta(row, now, userId, views.results || []) : null;
+      m.stories = (stories.results || [])
+        .filter((st) => st.user_id === m.id)
+        .sort((a, b) => a.created_at - b.created_at)
+        .map((st) => storyMeta(st, now, userId, views.results || []))
+        .filter(Boolean);
+      // The newest one is what the ring reflects; the rest are behind it.
+      m.story = m.stories.length ? m.stories[m.stories.length - 1] : null;
       m.profileViewers = viewersOf(views.results || [], m.id, 'profile', userId);
     });
     out.push(roster);
@@ -601,16 +621,39 @@ async function crewRoute(path, body, env, cors) {
     return jsonResponse({ crews: await crewsFor(env, user.id) }, 200, cors);
   }
 
-  /** The leader names people. A label only — nothing here reads a rank to
-   *  decide what anyone may do, so handing one out cannot hand out power. */
-  if (path === '/crew/rank') {
+  /**
+   * The leader assigns a role and a class. Titles only — nothing in this Worker
+   * reads either one to decide what anybody may do, so handing one out cannot
+   * hand out power.
+   */
+  if (path === '/crew/role') {
     const crew = await env.DB.prepare(`SELECT * FROM crews WHERE id = ?`).bind(body.crewId).first();
     if (!isOwner(crew, user.id)) return jsonResponse({ error: 'no-rank' }, 403, cors);
     try {
-      await env.DB.prepare(`UPDATE members SET rank = ? WHERE crew_id = ? AND user_id = ?`)
-        .bind(cleanRank(body.rank), crew.id, body.userId).run();
+      if (body.role !== undefined) {
+        await env.DB.prepare(`UPDATE members SET role = ? WHERE crew_id = ? AND user_id = ?`)
+          .bind(cleanRole(body.role), crew.id, body.userId).run();
+      }
+      if (body.klass !== undefined) {
+        await env.DB.prepare(`UPDATE members SET class = ? WHERE crew_id = ? AND user_id = ?`)
+          .bind(cleanClass(body.klass), crew.id, body.userId).run();
+      }
     } catch (e) {
-      return jsonResponse({ error: 'needs-rank-column' }, 503, cors);
+      return jsonResponse({ error: 'needs-role-columns' }, 503, cors);
+    }
+    return jsonResponse({ crews: await crewsFor(env, user.id) }, 200, cors);
+  }
+
+  /** A crew's own picture, set by whoever leads it. Same budget as a member
+   *  card's photo, for the same reason. */
+  if (path === '/crew/logo') {
+    const crew = await env.DB.prepare(`SELECT * FROM crews WHERE id = ?`).bind(body.crewId).first();
+    if (!isOwner(crew, user.id)) return jsonResponse({ error: 'no-rank' }, 403, cors);
+    if (body.logo && !storyImageOk(body.logo)) return jsonResponse({ error: 'bad-image' }, 400, cors);
+    try {
+      await env.DB.prepare(`UPDATE crews SET logo = ? WHERE id = ?`).bind(body.logo || '', crew.id).run();
+    } catch (e) {
+      return jsonResponse({ error: 'needs-logo-column' }, 503, cors);
     }
     return jsonResponse({ crews: await crewsFor(env, user.id) }, 200, cors);
   }
@@ -655,7 +698,8 @@ async function crewRoute(path, body, env, cors) {
     if (!inCrew) return jsonResponse({ error: 'not-in-crew' }, 403, cors);
     if (!storyImageOk(body.image)) return jsonResponse({ error: 'bad-image' }, 400, cors);
     try {
-      await env.DB.prepare(`DELETE FROM stories WHERE crew_id = ? AND user_id = ?`).bind(body.crewId, user.id).run();
+      // No delete: a day can hold as many as you post, the way a story rail
+      // works everywhere else. They expire on their own timestamps.
       await env.DB.prepare(
         `INSERT INTO stories (id, crew_id, user_id, image, caption, created_at, expires_at)
          VALUES (?, ?, ?, ?, ?, ?, ?)`

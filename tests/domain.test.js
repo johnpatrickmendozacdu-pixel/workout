@@ -16,6 +16,7 @@ import {
   setDayTotal,
   splitIntoSets,
   bankTimeSession,
+  stampFinished,
   isTimeMode,
   minutesFromMs,
   getTimer,
@@ -1467,3 +1468,23 @@ describe('time exercises', () => {
   });
 });
 
+
+describe('stampFinished', () => {
+  const base = { '2026-08-12': { ex1: { status: 'paused', elapsedMs: 1000, runStartedAt: null } } };
+
+  it('records when the day was finished', () => {
+    const out = stampFinished(base, '2026-08-12', 'ex1', 1770000000000);
+    expect(out['2026-08-12'].ex1.finishedAt).toBe(1770000000000);
+  });
+
+  it('never overwrites, so the stamp is when you got there', () => {
+    const first = stampFinished(base, '2026-08-12', 'ex1', 100);
+    const again = stampFinished(first, '2026-08-12', 'ex1', 999);
+    expect(again['2026-08-12'].ex1.finishedAt).toBe(100);
+    expect(again).toBe(first);                       // unchanged, same reference
+  });
+
+  it('does nothing without a timer to stamp', () => {
+    expect(stampFinished({}, '2026-08-12', 'ex1', 100)).toEqual({});
+  });
+});

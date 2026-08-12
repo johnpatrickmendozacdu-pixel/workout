@@ -33,14 +33,14 @@ one Cloudflare variable — never a code change.
 - `src/sync/googleSync.js` — self-contained Google auth + Drive (no test coverage)
 - `worker/` — the Cloudflare token-broker (deployed separately, see below)
 
-**322 tests, all passing** (`npm test`). They cover the pure domain layer and the
+**321 tests, all passing** (`npm test`). They cover the pure domain layer and the
 Worker's pure helpers only — **not `main.js`, not `googleSync.js`**.
 
 ## State right now
 
-- `main` = **`4cfd40a`**, live on Vercel, byte-verified. Working tree clean apart
+- `main` = **`88a051f`**, live on Vercel, byte-verified. Working tree clean apart
   from `.DS_Store`.
-- **322 tests pass.** Byte-verify every deploy against a build of the *pushed*
+- **321 tests pass.** Byte-verify every deploy against a build of the *pushed*
   commit — `__BUILD_ID__` is the commit SHA, so a build made before committing
   can never match. That mistake has cost a round of false-alarm polling twice.
 - Migration finished and verified 2026-08-05: the old Pages address serves a
@@ -105,10 +105,35 @@ reason Supabase was rejected.
 - Setup done 2026-08-11: D1 database `sets-crew`, bound as `DB`. Verified live by
   curl — `/crew/sync` answers 401 to a bad token (503 would mean the binding is
   missing), the broker is unaffected, a foreign origin still gets 403.
-- **Phase ② (QR invite card) and ③ (Nudge / Respect / emoji) are not built.** The
-  Worker already carries `/crew/react` and `/crew/seen`, so ③ is app-side only.
 - Reactions dedupe on the primary key `(crew, from, to, kind, emoji, day)` — the
   schema is the rate limit, not application code.
+
+**Everything the crew now carries** (all shipped 2026-08-11/12): invite link with
+an Accept sheet and `/crew/peek`; stories (several a day, 24h, viewer list, the
+picture fetched on open, never in the roster); profile and story views, one row
+per viewer per day by primary key; Nudge / Good job / emoji with named senders;
+roles (leader, vice, member) and classes (fighter, artist, tank, tech, tycoon)
+assigned by the leader, each with drawn art; a crew logo; a crew motto; member
+since; and rest days shown as 🌙 with the nudge button withheld.
+
+**Worker deploys are a dashboard paste, and that has cost time twice.** Paste
+into the Worker's **entry file** — pasting as a new file leaves the entry point
+untouched and Deploy stays greyed out. `/crew/version` is pre-auth precisely so
+"did the paste land?" is answerable from outside: every other route answers 401
+before it looks at the path. The D1 console runs **one statement per Execute**;
+a multi-statement block silently does nothing, which is how the stories tables
+went missing and took the whole tab down.
+
+**Optional data must never be able to kill the roster.** Naming the `rank`
+column in the query that builds every crew meant one missing ALTER broke
+everything. Stories, views, roles and the logo are all fetched behind `maybe()`
+now: absent is absent, not fatal.
+
+**Identity is Drive, not userinfo.** The app holds only `drive.appdata`, and
+`userinfo` is not covered by it — a token that syncs perfectly gets a 401 there.
+`drive/v3/about` answers on the scope already granted and its `permissionId` is
+the stable per-user id. Asking for the email scope would have meant a fresh
+consent screen for every user.
 
 ## The token-broker (new this session)
 
@@ -221,6 +246,7 @@ asking.
 | Guide | **Two of them, deliberately.** The Guide tab (book icon, 4th slot) is the full 12-step walkthrough, collapsed on arrival, content as data in `src/guide.js`. The topbar **?** opens a short sheet about the screen you are standing on (`modalGuide`). The Guide screen carries no ? of its own. They were merged once and it was worse — the user asked for both back. |
 | Categories | Ten, in `src/categories.js`. The exercise stores the **category key, never the picture**, so artwork can be redrawn without touching a single saved exercise. Icons are cut from committed source art by `tools/slice-icons.py` — a grid (`icon-source.png`) plus per-category singles. Exercises saved before categories show no icon until edited; that blank is deliberate. |
 | Timed exercises | Plan → How you measure it → **Time** (number + min/hr). No keypad on Today: a dormant clock with Start, then the usual Pause / Resume / Give up / Complete. Nothing auto-completes — reaching the target pauses and asks *Take the win / Keep going* the next tick you are looking at it. Progress swaps in Longest session, First day, Average session, Lifetime, all as durations. |
+| Share image (foot) | Every card signs itself: the crew's name and motto, your role and class with their art, your profile name and photo. Drawn from the crew you are looking at; absent entirely when you are in none. |
 | Share image | "Save image" on an opened exercise card draws a 1080² card on a canvas — name, category, streak, the climb, all seven figures, and a `Sets · sets-workout.vercel.app` watermark. A **finished exercise on Today** has its own button drawing the same frame with the day's figures instead: total / target, the clock, sets, streak — reachable from the Done row's share glyph without opening the exercise. A third card, **Share this day**, hangs off the All-done block: every exercise finished today as a list, then exercises / time / streak. All three go to `navigator.share`, which is the whole Instagram/Facebook story — the sheet is the integration. Direct posting needs a server, a Business account and Meta app review; ruled out, and the button says **Share**, not Save, because the sheet is what opens. Canvas → blob → `navigator.share` (the only route to the photo library) with a download fallback. Nothing is uploaded. No dependency: `html2canvas` was rejected on those grounds. |
 | One-time | A real exercise carrying `oneTimeDate` — same clock, target and keypad as any other. `isScheduledOn` returns true only on that date, so every view and the streak maths follow for free. Hidden after its day, never deleted. |
 | Social | Crew roster ordered by who trained today, then streak. Tap a member for their streaks, totals and per-exercise list. Invite by link or code; owner can rename and remove, anyone can leave, the owner leaving hands it to whoever joined first. Renders from a cached roster before any request and says so when offline — the only screen in Sets that needs the network, and nothing else can be taken down by it. |

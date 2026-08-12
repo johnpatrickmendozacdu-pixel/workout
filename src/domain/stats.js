@@ -471,7 +471,9 @@ export function formatCount(n) {
  * no weight, no BMI. A crew can see that you trained today and how long your
  * run is; it cannot reconstruct your week.
  */
-export function buildCrewCard(profile, exercises, statsById, todayTotals, dayStreak, dueToday, targets) {
+const DAY_CHAR = { hit: 'h', break: 'b', miss: 'm', rest: 'r', none: 'n' };
+
+export function buildCrewCard(profile, exercises, statsById, todayTotals, dayStreak, dueToday, targets, strips) {
   const active = (exercises || []).filter((e) => e.active && !e.archived);
   const cards = active.map((ex) => {
     const s = (statsById && statsById[ex.id]) || {};
@@ -487,6 +489,9 @@ export function buildCrewCard(profile, exercises, statsById, todayTotals, dayStr
       // no target beside it says nothing about being on track.
       target: (targets && targets[ex.id]) || 0,
       due: !!(dueToday && dueToday[ex.id]),
+      // The same seven days the Progress card draws, as seven characters, so a
+      // crew can see the shape of someone's week without being given the week.
+      days: ((strips && strips[ex.id]) || []).map((d) => DAY_CHAR[d] || 'n').join(''),
     };
   });
   return {

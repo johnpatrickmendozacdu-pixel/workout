@@ -2786,6 +2786,54 @@ function readInviteFromUrl() {
 
 /** What this device publishes. Built fresh at the moment of sending, never
  *  stored, so it cannot go stale in a cache the way a snapshot would. */
+/**
+ * The photo the crew sees: 96px, not the 192px one in the profile.
+ *
+ * The full avatar is 12-25 KB of data URL, which blew the card budget and was
+ * dropped silently — every crew member appeared as a grey initial. Publishing a
+ * smaller copy is the fix, and it is cached against the avatar it came from so
+ * a sync every few minutes does not redraw a canvas each time.
+ */
+const CREW_PHOTO_PX = 96;
+let crewPhotoCache = { from: null, url: '' };
+
+function crewPhoto() {
+  const src = (state.profile && state.profile.avatar) || '';
+  if (!src) return '';
+  if (crewPhotoCache.from === src) return crewPhotoCache.url;
+  try {
+    const img = new Image();
+    img.src = src;
+    // A data URL is already decoded by the time it is assigned in every engine
+    // this app runs on; if it is not, we simply publish nothing this round and
+    // the next sync catches it.
+    if (!img.complete || !img.naturalWidth) return crewPhotoCache.from === src ? crewPhotoCache.url : '';
+    const c = document.createElement('canvas');
+    c.width = CREW_PHOTO_PX; c.height = CREW_PHOTO_PX;
+    c.getContext('2d').drawImage(img, 0, 0, CREW_PHOTO_PX, CREW_PHOTO_PX);
+    crewPhotoCache = { from: src, url: c.toDataURL('image/jpeg', 0.7) };
+    return crewPhotoCache.url;
+  } catch (e) {
+    return '';
+  }
+}
+
+/** Warms the cache, since decoding is what the synchronous path cannot do. */
+function primeCrewPhoto() {
+  const src = (state.profile && state.profile.avatar) || '';
+  if (!src || crewPhotoCache.from === src) return;
+  const img = new Image();
+  img.onload = () => {
+    try {
+      const c = document.createElement('canvas');
+      c.width = CREW_PHOTO_PX; c.height = CREW_PHOTO_PX;
+      c.getContext('2d').drawImage(img, 0, 0, CREW_PHOTO_PX, CREW_PHOTO_PX);
+      crewPhotoCache = { from: src, url: c.toDataURL('image/jpeg', 0.7) };
+    } catch (e) { /* the crew simply sees an initial */ }
+  };
+  img.src = src;
+}
+
 function myCrewCard() {
   const today = todayISO();
   const stats = allStats(state.exercises, state.setsLog, state.timersLog, null, state.streakOverrides);
@@ -2795,8 +2843,13 @@ function myCrewCard() {
     dueToday[ex.id] = isScheduledOn(ex, today);
     targets[ex.id] = getEffectiveTarget(ex, today) || 0;
   });
+  const strips = {};
+  state.exercises.forEach((ex) => {
+    strips[ex.id] = recentDayStates(ex, state.setsLog, state.streakOverrides, 7);
+  });
   const dayStreak = calcStreakInfo(state.exercises, state.setsLog, today, state.streakOverrides);
-  return buildCrewCard(state.profile, state.exercises, stats, todayTotals, dayStreak, dueToday, targets);
+  const card = buildCrewCard(state.profile, state.exercises, stats, todayTotals, dayStreak, dueToday, targets, strips);
+  return { ...card, photo: crewPhoto() };
 }
 
 function applyCrewResult(res, opts) {
@@ -2834,6 +2887,7 @@ function unseenReactions() {
 async function refreshCrews(opts) {
   // The call itself renews a stale token, so the account is the gate here too.
   if (!hasSyncAccount()) return;
+  primeCrewPhoto();
   if (state.crew.loading) return;
   state.crew.loading = true;
   const res = await crewApi.syncCrews(myCrewCard());
@@ -3635,8 +3689,11 @@ function modalCrewInviteAccept() {
  * contradicts the day is noise, and hiding the wrong one is cheaper to read
  * than explaining it.
  */
-const CREW_EMOJI = ['🔥', '💪', '👏', '🐐', '😤', '🙌'];
-const REACTION_FACE = { nudge: '👊', respect: '🔥' };
+// No 🔥 here: it is the face of Good job, and two identical-looking lines in
+// the "who sent what" list is the one thing that list must never do.
+const CREW_EMOJI = ['💪', '👏', '🐐', '😤', '🙌', '⚡'];
+const REACTION_FACE = { nudge: '👊', respect: '🔥', emoji: '' };
+const REACTION_WORD = { nudge: 'nudged them', respect: 'said good job', emoji: 'sent this' };
 
 /** Today's reactions for one member, folded into counts with the emoji kept. */
 function reactionCounts(member) {
@@ -3661,6 +3718,40 @@ function reactionChipsHtml(member, small) {
     .join('')}</span>`;
 }
 
+/** Their week, drawn from the seven characters the card carries — the same dots
+ *  as a Progress card, and read-only by construction: there is nothing here to
+ *  tap, because it is somebody else's record. */
+const DAY_STATE = { h: 'hit', b: 'break', m: 'miss', r: 'rest', n: 'none' };
+function memberStripHtml(days) {
+  if (!days) return '';
+  return `<span class="mini-strip" aria-label="Their last seven days">${Array.from(days)
+    .map((c) => `<i class="dot ${DAY_STATE[c] || 'none'}"></i>`).join('')}</span>`;
+}
+
+/** Who sent what, today — the Instagram-like list rather than a bare count. */
+function reactionDetailHtml(member, crew) {
+  const today = todayISO();
+  const mine = (member.received || []).filter((r) => r.day === today);
+  if (!mine.length) return '';
+  const nameOf = (id) => {
+    const m = (crew.members || []).find((x) => x.id === id);
+    if (!m) return 'Someone';
+    return m.isMe ? 'You' : (m.name || 'Someone');
+  };
+  const groups = new Map();
+  mine.forEach((r) => {
+    const key = r.kind === 'emoji' ? r.emoji : r.kind;
+    const g = groups.get(key) || { face: r.kind === 'emoji' ? r.emoji : REACTION_FACE[r.kind], label: REACTION_WORD[r.kind] || '', who: [] };
+    g.who.push(nameOf(r.from));
+    groups.set(key, g);
+  });
+  return `<div class="react-list">${[...groups.values()].map((g) => `
+    <div class="react-line">
+      <span class="react-face">${g.face}</span>
+      <span class="react-who"><b>${g.who.length}</b> ${escapeHtml(g.label)} · ${escapeHtml(g.who.join(', '))}</span>
+    </div>`).join('')}</div>`;
+}
+
 function modalCrewMember() {
   const crew = activeCrew();
   const m = crew && (crew.members || []).find((x) => x.id === state.modal.memberId);
@@ -3670,9 +3761,17 @@ function modalCrewMember() {
   const emojiOpen = !!(state.modal && state.modal.emojiOpen);
 
   const ex = m.exercises || [];
-  // Today first, because a crew is a thing you check today. Due-but-untouched
-  // is what a nudge is for, so it has to be visible rather than derived.
-  const due = ex.filter((e) => e.due || e.today > 0);
+  /**
+   * Everything they are down to do today.
+   *
+   * `due` comes from their phone, so an older client that never sent it would
+   * leave this empty — which is exactly how "workout of the day isn't
+   * reflecting" happens. When nothing is marked due, anything with a target or
+   * any work logged stands in, so the section is never blank when there is
+   * something to show.
+   */
+  const marked = ex.filter((e) => e.due);
+  const due = marked.length ? marked.filter((e) => true) : ex.filter((e) => e.target > 0 || e.today > 0);
   const dayRow = (e) => {
     const met = e.target > 0 ? e.today >= e.target : e.today > 0;
     const shown = e.unit === 'min' ? formatMinutes(e.today) : `${formatCount(e.today)} ${escapeHtml(e.unit || '')}`;
@@ -3684,18 +3783,22 @@ function modalCrewMember() {
     </div>`;
   };
 
-  // Every figure sits on the exercise it belongs to. A floating "lifetime
-  // 2,065" next to a list of exercises reads as a number about nothing.
+  // Their progress card, as a reader sees it: the week, the streak and the
+  // total, all on the exercise they belong to. Nothing is tappable.
   const allTime = ex.slice().sort((a, b) => (b.streak - a.streak) || (b.total - a.total));
-  const lifeRow = (e) => `<div class="member-ex-row">
-    <span class="member-ex-name">${escapeHtml(e.name)}</span>
-    <span class="member-ex-num">${e.streak ? `<b>${e.streak}d</b> streak · ` : ''}${e.unit === 'min' ? formatMinutes(e.total) : `${formatCount(e.total)} ${escapeHtml(e.unit || '')}`}</span>
+  const progressRow = (e) => `<div class="crew-prog">
+    <div class="crew-prog-top">
+      <span class="crew-prog-name">${escapeHtml(e.name)}</span>
+      <span class="crew-prog-streak">${e.streak ? `${e.streak}d` : '—'}</span>
+    </div>
+    ${memberStripHtml(e.days)}
+    <div class="crew-prog-sub">${e.unit === 'min' ? formatMinutes(e.total) : `${formatCount(e.total)} ${escapeHtml(e.unit || '')}`} all time</div>
   </div>`;
 
   const reactRow = mine ? '' : `
     <div class="react-bar">
       ${m.trainedToday
-        ? `<button class="react-btn respect" data-action="react" data-id="${m.id}" data-kind="respect">🔥 Respect</button>`
+        ? `<button class="react-btn respect" data-action="react" data-id="${m.id}" data-kind="respect">🔥 Good job</button>`
         : `<button class="react-btn nudge" data-action="react" data-id="${m.id}" data-kind="nudge">👊 Nudge</button>`}
       <button class="react-btn emoji" data-action="toggle-emoji" aria-expanded="${emojiOpen}">😀</button>
     </div>
@@ -3715,7 +3818,6 @@ function modalCrewMember() {
         <div class="member-hero-nums">
           <div class="member-streak"><b>${m.streak}</b><span>day streak${m.best > m.streak ? ` · best ${m.best}` : ''}</span></div>
           <div class="member-today ${m.trainedToday ? 'yes' : 'no'}">${m.trainedToday ? 'trained today' : 'not yet today'}</div>
-          ${reactionChipsHtml(m)}
         </div>
       </div>
 
@@ -3724,11 +3826,11 @@ function modalCrewMember() {
         ? `<div class="crew-days">${due.map(dayRow).join('')}</div>`
         : '<p class="hint">Nothing scheduled for them today.</p>'}
 
-      ${allTime.length ? `<div class="set-list member-ex">
-        <div class="set-list-head"><span>All time</span><span>${allTime.length} exercise${allTime.length === 1 ? '' : 's'}</span></div>
-        ${allTime.map(lifeRow).join('')}
-      </div>` : '<p class="hint">Nothing published yet — they have not opened Sets since joining.</p>'}
+      ${allTime.length ? `<div class="section-label">Their progress</div>
+        <div class="crew-progs">${allTime.map(progressRow).join('')}</div>`
+        : '<p class="hint">Nothing published yet — they have not opened Sets since joining.</p>'}
 
+      ${reactionDetailHtml(m, crew)}
       ${reactRow}
       ${iOwn && !mine ? `<button class="danger-btn" data-action="remove-member" data-id="${m.id}">Remove from crew</button>` : ''}
     </div>

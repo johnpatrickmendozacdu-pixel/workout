@@ -77,9 +77,15 @@ function jsonResponse(bodyObj, status, cors) {
 const MAX_CREWS_PER_USER = 10;
 const MAX_MEMBERS_PER_CREW = 30;
 
-/** 8 KB of card, photo included. A profile photo is already shrunk to a small
- *  square by the app; this is the backstop for one that is not. */
-const MAX_CARD_BYTES = 8192;
+/**
+ * 24 KB of card, photo included.
+ *
+ * It was 8 KB, which sounded generous and was not: the app's avatar is a 192px
+ * JPEG, so a real photo is 12-25 KB of data URL and EVERY card silently lost
+ * its picture to `fitCard`. The app now publishes a 96px copy for the crew, and
+ * this is the headroom that copy needs plus the exercises around it.
+ */
+const MAX_CARD_BYTES = 24576;
 
 /**
  * Invite codes are read off a screen and typed by hand when a scan fails, so
@@ -158,6 +164,10 @@ function sanitiseCard(card) {
         // nothing about whether someone is on track.
         target: num(e && e.target),
         due: !!(e && e.due),
+        // Last seven days as one character each — h hit, b break, m miss,
+        // r rest, n not tracked. A whole strip in seven bytes, which is what
+        // makes it affordable to publish per exercise.
+        days: typeof (e && e.days) === 'string' ? e.days.slice(0, 7).replace(/[^hbmrn]/g, 'n') : '',
       })).filter((e) => e.name)
       : [],
   };
@@ -482,6 +492,8 @@ async function crewRoute(path, body, env, cors) {
       `SELECT 1 AS x FROM members WHERE crew_id = ? AND user_id = ?`
     ).bind(body.crewId, body.toId).first();
     if (!mine || !theirs) return jsonResponse({ error: 'not-in-crew' }, 403, cors);
+    // Applauding yourself is not a feature.
+    if (body.toId === user.id) return jsonResponse({ error: 'not-yourself' }, 400, cors);
     // The primary key is the dedupe: the same reaction twice in a day is the
     // same row, so nobody can spam a crew by holding a button down.
     await env.DB.prepare(

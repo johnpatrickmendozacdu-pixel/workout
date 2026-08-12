@@ -224,6 +224,8 @@ export async function crewRoute(path, body, env, cors) {
       `SELECT 1 AS x FROM members WHERE crew_id = ? AND user_id = ?`
     ).bind(body.crewId, body.toId).first();
     if (!mine || !theirs) return jsonResponse({ error: 'not-in-crew' }, 403, cors);
+    // Applauding yourself is not a feature.
+    if (body.toId === user.id) return jsonResponse({ error: 'not-yourself' }, 400, cors);
     // The primary key is the dedupe: the same reaction twice in a day is the
     // same row, so nobody can spam a crew by holding a button down.
     await env.DB.prepare(

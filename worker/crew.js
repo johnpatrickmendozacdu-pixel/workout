@@ -12,9 +12,15 @@
 export const MAX_CREWS_PER_USER = 10;
 export const MAX_MEMBERS_PER_CREW = 30;
 
-/** 8 KB of card, photo included. A profile photo is already shrunk to a small
- *  square by the app; this is the backstop for one that is not. */
-export const MAX_CARD_BYTES = 8192;
+/**
+ * 24 KB of card, photo included.
+ *
+ * It was 8 KB, which sounded generous and was not: the app's avatar is a 192px
+ * JPEG, so a real photo is 12-25 KB of data URL and EVERY card silently lost
+ * its picture to `fitCard`. The app now publishes a 96px copy for the crew, and
+ * this is the headroom that copy needs plus the exercises around it.
+ */
+export const MAX_CARD_BYTES = 24576;
 
 /**
  * Invite codes are read off a screen and typed by hand when a scan fails, so
@@ -93,6 +99,10 @@ export function sanitiseCard(card) {
         // nothing about whether someone is on track.
         target: num(e && e.target),
         due: !!(e && e.due),
+        // Last seven days as one character each — h hit, b break, m miss,
+        // r rest, n not tracked. A whole strip in seven bytes, which is what
+        // makes it affordable to publish per exercise.
+        days: typeof (e && e.days) === 'string' ? e.days.slice(0, 7).replace(/[^hbmrn]/g, 'n') : '',
       })).filter((e) => e.name)
       : [],
   };

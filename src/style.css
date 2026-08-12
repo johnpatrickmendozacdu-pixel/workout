@@ -1443,6 +1443,17 @@
   }
   .crew-face img{width:100%; height:100%; object-fit:cover; display:block;}
   .crew-face.empty{font-weight:800; color:var(--text-dim); font-size:15px;}
+  /* the count of what you have not watched — small, on the ring, and gone the
+     moment it would say zero */
+  .crew-face{position:relative; overflow:visible;}
+  .crew-face img{border-radius:inherit;}
+  .story-count{
+    position:absolute; top:-3px; right:-3px; min-width:18px; height:18px; padding:0 4px;
+    border-radius:999px; background:var(--accent); color:var(--accent-ink);
+    font-family:var(--font-mono); font-size:10px; font-weight:700; font-style:normal;
+    display:flex; align-items:center; justify-content:center;
+    box-shadow:0 0 0 2px var(--bg);
+  }
   .crew-row.trained .crew-face{border-color:var(--accent);}
 
   .crew-invite-btn{
@@ -1581,11 +1592,15 @@
 
   /* ---------- stories ----------
      A rail of faces, and a ring that says there is something behind one. */
-  .story-bar{display:flex; gap:12px; overflow-x:auto; padding:2px 2px 12px; margin-bottom:6px;}
+  /* 6px of headroom, because the unwatched count sits proud of the ring and a
+     scrolling rail clips anything that pokes out of its top edge. */
+  .story-bar{display:flex; gap:12px; overflow-x:auto; overflow-y:visible; padding:8px 2px 12px; margin-bottom:6px;}
   .story-tile{
     position:relative; flex:0 0 auto; width:68px; background:none; border:none; padding:0;
-    display:flex; flex-direction:column; align-items:center; gap:5px;
+    display:flex; flex-direction:column; align-items:center; gap:5px; overflow:visible;
   }
+  /* On a 56px face the badge wants to be a touch larger, and clear of the ring. */
+  .story-tile .story-count{top:-2px; right:2px; min-width:20px; height:20px; font-size:11px;}
   .story-tile span{font-size:10.5px; color:var(--text-faint); max-width:68px;
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   .story-plus{

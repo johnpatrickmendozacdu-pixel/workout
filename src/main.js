@@ -2738,22 +2738,60 @@ function memberInitial(m) {
 }
 
 /**
- * Someone's face, and — when they have posted one — the ring that says there is
- * a story behind it. Bright until you have seen it, faint once you have, which
- * is the whole grammar people already know from elsewhere.
+ * Stories this device has opened.
+ *
+ * The Worker reports views recorded today, which is the right window for "who
+ * looked at your card" and the wrong one for this: a story watched at 23:55
+ * would count as unwatched again at midnight and put the badge back. Watching
+ * is a fact about this phone, so this phone remembers it — and prunes anything
+ * older than a story can live.
+ */
+let seenStories = {};
+
+function markStorySeen(id) {
+  if (!id || seenStories[id]) return;
+  seenStories[id] = Date.now();
+  const cutoff = Date.now() - 48 * 3600 * 1000;
+  Object.keys(seenStories).forEach((k) => { if (seenStories[k] < cutoff) delete seenStories[k]; });
+  db.setItem('stories-seen', seenStories).catch(() => {});
+}
+
+/**
+ * How many of someone's stories you have not watched yet.
+ *
+ * Your own never count: the Worker does not record you viewing your own story,
+ * so they would sit permanently unread and put a badge on your own face.
+ */
+function unseenStories(m) {
+  if (!m || m.isMe) return 0;
+  const list = m.stories || (m.story ? [m.story] : []);
+  return list.filter((st) => st && !st.seenByMe && !seenStories[st.id]).length;
+}
+
+/**
+ * Someone's face, the ring that says there is a story behind it, and the count
+ * of how many are still unwatched.
+ *
+ * Bright ring until you have seen them, faint once you have — the grammar
+ * everyone already knows. The number is only drawn while it is above zero, so a
+ * fully-watched crew is a screen with no numbers on it at all.
  */
 function memberFaceHtml(m, size, tappable) {
-  const ring = m.story ? (m.story.seenByMe ? ' seen-story' : ' has-story') : '';
+  const unseen = unseenStories(m);
+  const hasStory = !!(m.stories && m.stories.length) || !!m.story;
+  const ring = hasStory ? (unseen ? ' has-story' : ' seen-story') : '';
   const inner = m.photo
     ? `<img src="${escapeHtml(m.photo)}" alt="">`
     : `<span class="face-initial">${escapeHtml(memberInitial(m))}</span>`;
   const cls = `crew-face${m.photo ? '' : ' empty'}${ring}`;
   const style = `width:${size}px;height:${size}px`;
+  const badge = unseen ? `<i class="story-count">${unseen}</i>` : '';
   // Only a face with a story is a button — nothing else on the row would do
   // anything, and a control that does nothing is worse than no control.
-  return m.story && tappable
-    ? `<button class="${cls}" style="${style}" data-action="open-story" data-id="${m.id}" aria-label="Story from ${escapeHtml(m.name || 'them')}">${inner}</button>`
-    : `<span class="${cls}" style="${style}">${inner}</span>`;
+  return hasStory && tappable
+    ? `<button class="${cls}" style="${style}" data-action="open-story" data-id="${m.id}"
+        aria-label="${unseen ? `${unseen} unwatched ${unseen === 1 ? 'story' : 'stories'} from` : 'Stories from'} ${escapeHtml(m.name || 'them')}">${inner}${badge}</button>`
+    : `<span class="${cls}" style="${style}">${inner}${badge}</span>`;
 }
 
 function viewSocial() {
@@ -2839,7 +2877,7 @@ function storyBarHtml(crew) {
   const me = (crew.members || []).find((m) => m.isMe);
   const others = (crew.members || []).filter((m) => !m.isMe && m.story);
   if (!me && !others.length) return '';
-  const tile = (m, label) => `<button class="story-tile" data-action="${m.story ? 'open-story' : 'add-story'}" data-id="${m.id}">
+  const tile = (m, label) => `<button class="story-tile" data-action="${(m.stories && m.stories.length) || m.story ? 'open-story' : 'add-story'}" data-id="${m.id}">
       ${memberFaceHtml(m, 56)}
       <span>${escapeHtml(label)}</span>
       ${m.isMe && !m.story ? '<i class="story-plus">+</i>' : ''}
@@ -2936,6 +2974,13 @@ async function openStoryAt(memberId, index) {
   state.modal = { type: 'story', memberId, index: at, loading: true, image: null, caption: story.caption, error: null };
   renderModal();
   const res = await crewApi.openStory(story.id);
+  if (res.ok) {
+    // Marked here as well as on the server: the badge should drop as the
+    // picture appears, not when the next roster arrives.
+    story.seenByMe = true;
+    markStorySeen(story.id);
+    renderView();
+  }
   if (!state.modal || state.modal.type !== 'story') return;
   state.modal.loading = false;
   if (res.ok) { state.modal.image = res.image; state.modal.caption = res.caption || ''; }
@@ -5478,6 +5523,7 @@ async function init() {
       state.crew.lastSync = cached.at || 0;
     }
     state.crew.pendingCode = (await db.getItem('crew-pending-code')) || null;
+    seenStories = (await db.getItem('stories-seen')) || {};
   } catch (e) { /* an empty crew tab is not a broken app */ }
 
   const invite = readInviteFromUrl();

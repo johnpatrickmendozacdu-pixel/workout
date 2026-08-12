@@ -167,6 +167,7 @@ export const GUIDE_SECTIONS = [
       'Tap someone to see their day: what they have lined up, and what they have done.',
       'Nudge someone who has not trained, or send Respect to someone who has. The crew sees it.',
       'Tap a crew photo to see their stories — pictures and a line, gone after 24 hours.',
+      'The number on someone’s photo is how many you have not watched. It counts down as you go.',
       'The leader gives everyone a role and a class. Both show on your profile.',
       'Taking a rest day shows in your crew as a rest, not a miss — and nobody can nudge you for it.',
       'The crew name, its motto, your role and your class go on every image you share.',

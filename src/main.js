@@ -1089,26 +1089,14 @@ async function doImport(obj, mode) {
 
 /* ============================= ICONS ============================= */
 /**
- * The Sets mark: an S whose body is the dragon — head at the top terminal,
- * tail at the bottom — knocked into a disc. Original artwork, in the same
- * tradition as other hard-edged creature-in-a-disc emblems rather than derived
- * from any of them.
+ * The app's mark.
  *
- * The topbar takes the outlined cut, not the filled one. Neon is rationed to
- * marking what is live or achieved, and a solid neon disc sitting in the bar
- * all day would spend that signal on nothing. The filled cut lives in
- * `public/icon.svg`, where a home screen needs it to punch.
+ * Drawn art now, not a hand-built SVG: the same picture as the home-screen
+ * icon, so the thing in the bar and the thing you tapped to get here are one
+ * image. It carries its own two colours rather than taking `currentColor`,
+ * which is why it looks identical in both themes — an app icon should.
  */
-const LOGO_MARK = `<svg class="brand-mark" viewBox="0 0 100 100" aria-hidden="true" focusable="false">
-  <circle cx="50" cy="50" r="47" fill="none" stroke="currentColor" stroke-width="4"/>
-  <path fill="none" stroke="currentColor" stroke-width="15" stroke-linejoin="round"
-        d="M66 31 C48 21, 29 29, 33 42 C36 53, 59 52, 63 62 C67 74, 45 82, 29 73"/>
-  <polygon fill="currentColor" points="57,23 68,16 80,20 94,31 89,36 79,33 87,42 74,41 59,34"/>
-  <polygon fill="currentColor" points="67,17 54,11 64,21"/>
-  <polygon fill="currentColor" points="75,41 70,52 73,40"/>
-  <polygon fill="currentColor" points="34,68 27,78 15,79"/>
-  <polygon fill="var(--paper)" points="74,24 82,27 75,29"/>
-</svg>`;
+const LOGO_MARK = `<img class="brand-mark" src="${import.meta.env.BASE_URL}icons/icon-192.png" alt="Sets" width="30" height="30">`;
 
 const ICONS = {
   today: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M12 8v4l2.5 2.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="1.8"/></svg>`,

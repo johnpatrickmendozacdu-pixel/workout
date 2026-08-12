@@ -1269,7 +1269,12 @@
   .topbar-left{display:flex; align-items:center; gap:9px; min-width:0; flex:1 1 auto;}
   .topbar-titles{min-width:0;}
   .topbar-right{flex:none;}
-  .brand-mark{width:24px; height:24px; flex:none; color:var(--accent);}
+  .brand-mark{
+    width:30px; height:30px; flex:none; border-radius:8px; display:block;
+    /* The art has its own dark ground, so it reads as a small app tile rather
+       than a glyph — and the same tile in both themes. */
+    box-shadow:0 0 0 1px rgba(62,224,127,0.25);
+  }
   /* the mark now shares this row, so the date gives back the few pixels it
      needs — it is still far and away the largest thing in the bar */
   .date-heading{font-size:21px;}

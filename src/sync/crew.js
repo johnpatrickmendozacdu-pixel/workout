@@ -97,6 +97,29 @@ export function renameCrew(crewId, name) { return post('/crew/rename', { crewId,
 export function removeMember(crewId, userId) { return post('/crew/remove', { crewId, userId }); }
 export function react(crewId, toId, kind, emoji) { return post('/crew/react', { crewId, toId, kind, emoji }); }
 export function markSeen(crewId) { return post('/crew/seen', { crewId }); }
+export function postStory(crewId, image, caption) { return post('/crew/story', { crewId, image, caption }); }
+export function recordView(crewId, subject) { return post('/crew/view', { crewId, subject }); }
+
+/** The picture itself, fetched only when someone opens it — and the act of
+ *  fetching is the view. Returns the raw payload rather than a crew list,
+ *  because this is the one call that is not about the roster. */
+export async function openStory(storyId) {
+  const base = gsync.getBrokerUrl();
+  const token = gsync.getAccessToken() || (await gsync.ensureFreshToken().catch(() => false) ? gsync.getAccessToken() : null);
+  if (!base || !token) return { ok: false, error: 'signed-out' };
+  try {
+    const res = await fetch(base + '/crew/story/open', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ storyId, token }),
+    });
+    const data = await res.json().catch(() => null);
+    if (!res.ok) return { ok: false, error: (data && data.error) || 'failed' };
+    return { ok: true, ...data };
+  } catch (e) {
+    return { ok: false, error: 'offline' };
+  }
+}
 
 /** Human words for the errors a person can actually do something about. */
 export const CREW_ERRORS = {
@@ -116,6 +139,10 @@ export const CREW_ERRORS = {
   'too-many-crews': "You're in as many crews as Sets allows.",
   'not-owner': 'Only the person who made the crew can do that.',
   'bad-name': 'Give the crew a name.',
+  'bad-image': "That picture didn't work. Try another one.",
+  'story-gone': 'That story has expired.',
+  'not-in-crew': 'You are not in that crew.',
+  'not-yourself': 'That one is for other people.',
 };
 
 export function crewErrorText(code) {

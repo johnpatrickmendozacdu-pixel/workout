@@ -165,6 +165,7 @@ export const GUIDE_SECTIONS = [
       'Anyone with the link can join, so send it to people, not places.',
       'Tap someone to see their day: what they have lined up, and what they have done.',
       'Nudge someone who has not trained, or send Respect to someone who has. The crew sees it.',
+      'Tap a crew photo to see their story — a picture and a line, gone after 24 hours.',
       'Leave any time. Your card goes with you.',
     ],
   },

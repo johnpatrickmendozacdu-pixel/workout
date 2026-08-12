@@ -11,6 +11,12 @@ import {
   buildRoster,
   cleanReaction,
   MAX_CARD_BYTES,
+  cleanCaption,
+  storyImageOk,
+  storyLive,
+  storyMeta,
+  viewersOf,
+  MAX_STORY_BYTES,
 } from '../worker/crew.js';
 
 const ints = (n) => Array.from({ length: 8 }, (_, i) => i * 7 + n);
@@ -187,5 +193,52 @@ describe('reactions', () => {
   it('drops an unknown kind and an empty emoji', () => {
     expect(cleanReaction('shout', '')).toBeNull();
     expect(cleanReaction('emoji', '   ')).toBeNull();
+  });
+});
+
+describe('stories', () => {
+  const now = 1_800_000_000_000;
+  const live = { id: 's1', user_id: 'u2', caption: 'leg day', created_at: now - 1000, expires_at: now + 60_000 };
+  const dead = { ...live, id: 's0', expires_at: now - 1 };
+
+  it('caps a caption and collapses its whitespace', () => {
+    expect(cleanCaption('  post   session  ')).toBe('post session');
+    expect(cleanCaption('x'.repeat(300))).toHaveLength(140);
+    expect(cleanCaption(null)).toBe('');
+  });
+
+  it('only stores an image data URL under the cap', () => {
+    expect(storyImageOk('data:image/jpeg;base64,AAA')).toBe(true);
+    expect(storyImageOk('https://evil.example/x.jpg')).toBe(false);
+    expect(storyImageOk('data:text/html,<script>')).toBe(false);
+    expect(storyImageOk('data:image/jpeg;base64,' + 'A'.repeat(MAX_STORY_BYTES))).toBe(false);
+  });
+
+  it('is over when its time is up, with nothing scheduled to end it', () => {
+    expect(storyLive(live, now)).toBe(true);
+    expect(storyLive(dead, now)).toBe(false);
+    expect(storyMeta(dead, now, 'u1', [])).toBeNull();
+  });
+
+  it('never carries the image, and only its author sees who watched', () => {
+    const views = [{ ref: 's1', viewer: 'u1', subject: 'u2', kind: 'story' }];
+    const asAuthor = storyMeta(live, now, 'u2', views);
+    expect(asAuthor.image).toBeUndefined();
+    expect(asAuthor.mine).toBe(true);
+    expect(asAuthor.viewers).toEqual(['u1']);
+
+    const asViewer = storyMeta(live, now, 'u1', views);
+    expect(asViewer.viewers).toEqual([]);       // not your story, not your audience
+    expect(asViewer.seenByMe).toBe(true);
+  });
+
+  it('tells you who viewed your profile, and tells nobody else', () => {
+    const views = [
+      { subject: 'u2', viewer: 'u1', kind: 'profile', ref: '' },
+      { subject: 'u2', viewer: 'u3', kind: 'profile', ref: '' },
+      { subject: 'u1', viewer: 'u2', kind: 'profile', ref: '' },
+    ];
+    expect(viewersOf(views, 'u2', 'profile', 'u2').sort()).toEqual(['u1', 'u3']);
+    expect(viewersOf(views, 'u2', 'profile', 'u1')).toEqual([]);   // asking about someone else
   });
 });

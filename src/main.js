@@ -2411,7 +2411,9 @@ function modalGuide() {
     ['A crew', 'People you train with, each on their own phone and their own Google account.'],
     ['What they see', 'Your name, photo, streaks and totals. Never your individual sets, weight or notes.'],
     ['Invite', 'Send the link or read out the code. Anyone with it can join, so send it to people, not places.'],
-    ['Nudge and Respect', 'Open someone: nudge them if they have not trained, respect them if they have.'],
+    ['Nudge and Good job', 'Open someone: nudge them if they have not trained, say good job if they have.'],
+    ['Stories', 'Add a photo and a caption. Your crew sees it for 24 hours, then it deletes itself.'],
+    ['Who looked', 'Your own card lists who opened it today, and your story lists who watched.'],
     ['Leaving', 'You can leave any time — your card goes with you.'],
   ];
 
@@ -2646,10 +2648,23 @@ function memberInitial(m) {
   return ((m.name || '?').trim()[0] || '?').toUpperCase();
 }
 
-function memberFaceHtml(m, size) {
-  return m.photo
-    ? `<span class="crew-face" style="width:${size}px;height:${size}px"><img src="${escapeHtml(m.photo)}" alt=""></span>`
-    : `<span class="crew-face empty" style="width:${size}px;height:${size}px">${escapeHtml(memberInitial(m))}</span>`;
+/**
+ * Someone's face, and — when they have posted one — the ring that says there is
+ * a story behind it. Bright until you have seen it, faint once you have, which
+ * is the whole grammar people already know from elsewhere.
+ */
+function memberFaceHtml(m, size, tappable) {
+  const ring = m.story ? (m.story.seenByMe ? ' seen-story' : ' has-story') : '';
+  const inner = m.photo
+    ? `<img src="${escapeHtml(m.photo)}" alt="">`
+    : `<span class="face-initial">${escapeHtml(memberInitial(m))}</span>`;
+  const cls = `crew-face${m.photo ? '' : ' empty'}${ring}`;
+  const style = `width:${size}px;height:${size}px`;
+  // Only a face with a story is a button — nothing else on the row would do
+  // anything, and a control that does nothing is worse than no control.
+  return m.story && tappable
+    ? `<button class="${cls}" style="${style}" data-action="open-story" data-id="${m.id}" aria-label="Story from ${escapeHtml(m.name || 'them')}">${inner}</button>`
+    : `<span class="${cls}" style="${style}">${inner}</span>`;
 }
 
 function viewSocial() {
@@ -2693,14 +2708,16 @@ function viewSocial() {
 
   const rows = (crew.members || []).map((m) => {
     const mine = isMe(m);
-    return `<button class="crew-row ${m.trainedToday ? 'trained' : ''} ${mine ? 'me' : ''}" data-action="open-member" data-id="${m.id}">
-      ${memberFaceHtml(m, 40)}
+    return `<div class="crew-row ${m.trainedToday ? 'trained' : ''} ${mine ? 'me' : ''}">
+      ${memberFaceHtml(m, 44, true)}
+      <button class="crew-open" data-action="open-member" data-id="${m.id}">
       <span class="crew-body">
         <span class="crew-name">${escapeHtml(m.name || 'Someone')}${mine ? '<em>you</em>' : ''}${m.isOwner ? '<i title="Made this crew">★</i>' : ''}</span>
         <span class="crew-sub">${m.streak ? `${m.streak} day streak` : 'no streak yet'}${m.best > m.streak ? ` · best ${m.best}` : ''}</span>
       </span>
       <span class="crew-state">${reactionChipsHtml(m, true)}${m.trainedToday ? ICONS.check : '<i class="crew-pending"></i>'}</span>
-    </button>`;
+      </button>
+    </div>`;
   }).join('');
 
   const trained = (crew.members || []).filter((m) => m.trainedToday).length;
@@ -2714,10 +2731,31 @@ function viewSocial() {
       </div>
       <button class="icon-btn" data-action="crew-menu" data-id="${crew.id}" aria-label="Crew settings">${ICONS.gear}</button>
     </div>
+    ${storyBarHtml(crew)}
     <div class="crew-list">${rows}</div>
     <button class="crew-invite-btn" data-action="open-invite" data-id="${crew.id}">${ICONS.share}Invite someone</button>
     ${iOwn ? '' : ''}
     <p class="crew-foot">Everyone sees streaks and totals. Nobody sees your individual sets, your weight, or your notes.</p>`;
+}
+
+/**
+ * The row of faces at the top of a crew: yours first with a + to post, then
+ * anyone with a live story. It only appears when there is something to show or
+ * something you could add — an empty rail of grey circles is furniture.
+ */
+function storyBarHtml(crew) {
+  const me = (crew.members || []).find((m) => m.isMe);
+  const others = (crew.members || []).filter((m) => !m.isMe && m.story);
+  if (!me && !others.length) return '';
+  const tile = (m, label) => `<button class="story-tile" data-action="${m.story ? 'open-story' : 'add-story'}" data-id="${m.id}">
+      ${memberFaceHtml(m, 56)}
+      <span>${escapeHtml(label)}</span>
+      ${m.isMe && !m.story ? '<i class="story-plus">+</i>' : ''}
+    </button>`;
+  return `<div class="story-bar">
+    ${me ? tile(me, me.story ? 'Your story' : 'Add story') : ''}
+    ${others.map((m) => tile(m, m.name || 'Someone')).join('')}
+  </div>`;
 }
 
 function crewErrorLine() {
@@ -3281,6 +3319,8 @@ function renderModal() {
   else if (m.type === 'crewJoin') root.innerHTML = modalCrewJoin();
   else if (m.type === 'crewInvite') root.innerHTML = modalCrewInvite();
   else if (m.type === 'crewAccept') root.innerHTML = modalCrewInviteAccept();
+  else if (m.type === 'story') root.innerHTML = modalStory();
+  else if (m.type === 'storyCompose') root.innerHTML = modalStoryCompose();
   else if (m.type === 'crewMember') root.innerHTML = modalCrewMember();
   else if (m.type === 'crewSettings') root.innerHTML = modalCrewSettings();
   else if (m.type === 'importChoice') root.innerHTML = modalImportChoice();
@@ -3830,9 +3870,87 @@ function modalCrewMember() {
         <div class="crew-progs">${allTime.map(progressRow).join('')}</div>`
         : '<p class="hint">Nothing published yet — they have not opened Sets since joining.</p>'}
 
+      ${mine && (m.profileViewers || []).length ? `<div class="react-list">
+        <div class="react-line">
+          <span class="react-face">👀</span>
+          <span class="react-who"><b>${m.profileViewers.length}</b> looked at your card today · ${escapeHtml(m.profileViewers.map((id) => {
+            const x = (crew.members || []).find((y) => y.id === id);
+            return x ? (x.name || 'Someone') : 'Someone';
+          }).join(', '))}</span>
+        </div>
+      </div>` : ''}
       ${reactionDetailHtml(m, crew)}
       ${reactRow}
       ${iOwn && !mine ? `<button class="danger-btn" data-action="remove-member" data-id="${m.id}">Remove from crew</button>` : ''}
+    </div>
+  </div>`;
+}
+
+/**
+ * A story, full width, for as long as it lasts.
+ *
+ * The picture is fetched on open rather than carried in the roster, so this
+ * sheet has a loading state — and opening it is what records the view, because
+ * a separate "mark seen" for a thing you are looking at is a lie waiting to
+ * happen.
+ */
+function modalStory() {
+  const m = state.modal;
+  const crew = activeCrew();
+  const author = crew && (crew.members || []).find((x) => x.id === m.memberId);
+  if (!author) return '';
+  const story = author.story;
+  const left = story ? Math.max(0, story.expiresAt - Date.now()) : 0;
+  const hours = Math.floor(left / 3600000);
+  const mins = Math.floor((left % 3600000) / 60000);
+  const nameOf = (id) => {
+    const x = (crew.members || []).find((y) => y.id === id);
+    return x ? (x.isMe ? 'You' : x.name || 'Someone') : 'Someone';
+  };
+  const viewers = (story && story.mine && story.viewers) || [];
+
+  return `<div class="modal-backdrop" data-action="backdrop">
+    <div class="modal-sheet story-sheet" data-stop>
+      <div class="sheet-head">
+        <h2>${memberFaceHtml(author, 30)}${escapeHtml(author.name || 'Someone')}</h2>
+        <button class="sheet-close" data-action="close-modal">${ICONS.close}</button>
+      </div>
+      ${m.loading ? '<div class="story-frame loading">Loading…</div>'
+        : m.error ? `<div class="story-frame loading">${escapeHtml(crewApi.crewErrorText(m.error))}</div>`
+        : `<div class="story-frame"><img src="${escapeHtml(m.image || '')}" alt=""></div>`}
+      ${m.caption ? `<p class="story-caption">${escapeHtml(m.caption)}</p>` : ''}
+      <div class="story-meta">${story ? `${hours ? `${hours}h ` : ''}${mins}m left` : ''}</div>
+      ${story && story.mine ? `<div class="story-views">
+        <div class="section-label">Seen by ${viewers.length}</div>
+        ${viewers.length ? `<p class="hint">${escapeHtml(viewers.map(nameOf).join(', '))}</p>` : '<p class="hint">Nobody yet.</p>'}
+        <button class="secondary-btn wide" data-action="add-story" data-id="${author.id}">Replace it</button>
+      </div>` : ''}
+    </div>
+  </div>`;
+}
+
+/** Pick a picture, write a line, post it. Deliberately one screen. */
+function modalStoryCompose() {
+  const m = state.modal;
+  return `<div class="modal-backdrop" data-action="backdrop">
+    <div class="modal-sheet" data-stop>
+      <div class="sheet-handle"></div>
+      <div class="sheet-head"><h2>Add to your story</h2><button class="sheet-close" data-action="close-modal">${ICONS.close}</button></div>
+      ${m.image
+        ? `<div class="story-frame"><img src="${escapeHtml(m.image)}" alt=""></div>`
+        : `<label class="story-pick">
+             <input type="file" id="story-file" accept="image/*" style="display:none">
+             <span>Choose a photo</span>
+           </label>`}
+      <div class="field">
+        <label>Caption (optional)</label>
+        <input id="story-caption" type="text" maxlength="140" placeholder="Leg day" value="${escapeHtml(m.caption || '')}" autocomplete="off">
+      </div>
+      <p class="hint">Your crew can see it for 24 hours, then it deletes itself. You will see who watched.</p>
+      <div class="form-actions">
+        <button class="secondary-btn" data-action="close-modal">Cancel</button>
+        <button class="primary-btn" data-action="publish-story" ${m.image ? '' : 'disabled'}>Post</button>
+      </div>
     </div>
   </div>`;
 }
@@ -4136,6 +4254,27 @@ function fileToAvatarDataUrl(file) {
   });
 }
 
+const STORY_PX = 800;
+function fileToStoryDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    if (!file.type || !file.type.startsWith('image/')) { reject(new Error('not-an-image')); return; }
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      try {
+        const scale = Math.min(1, STORY_PX / Math.max(img.naturalWidth, img.naturalHeight));
+        const w = Math.round(img.naturalWidth * scale), h = Math.round(img.naturalHeight * scale);
+        const canvas = document.createElement('canvas');
+        canvas.width = w; canvas.height = h;
+        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+        resolve(canvas.toDataURL('image/jpeg', 0.72));
+      } catch (e) { reject(e); } finally { URL.revokeObjectURL(url); }
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('decode-failed')); };
+    img.src = url;
+  });
+}
+
 async function setAvatarHandler(file) {
   try {
     const dataUrl = await fileToAvatarDataUrl(file);
@@ -4165,6 +4304,22 @@ function bindModalEvents() {
       const file = e.target.files[0];
       if (file) setAvatarHandler(file);
       e.target.value = '';
+    };
+  }
+  const storyFile = document.getElementById('story-file');
+  if (storyFile) {
+    storyFile.onchange = async (e) => {
+      const file = e.target.files[0];
+      e.target.value = '';
+      if (!file) return;
+      try {
+        // 800px is the size at which a phone photo stops being a megabyte and
+        // starts being a story. The Worker's cap is the backstop, not the plan.
+        state.modal.image = await fileToStoryDataUrl(file);
+        renderModal();
+      } catch (err) {
+        showToast("That photo couldn't be read.");
+      }
     };
   }
   const fileInput = document.getElementById('import-file');
@@ -4299,6 +4454,37 @@ document.addEventListener('click', async (e) => {
       openInviteAccept(typed);
       break;
     }
+    case 'open-story': {
+      const crew = activeCrew();
+      const m = crew && (crew.members || []).find((x) => x.id === btn.dataset.id);
+      if (!m) break;
+      // Your own face with no story is the way in to posting one.
+      if (!m.story) { state.modal = { type: 'storyCompose', image: null, caption: '' }; renderModal(); break; }
+      state.modal = { type: 'story', memberId: m.id, loading: true, image: null, caption: m.story.caption, error: null };
+      renderModal();
+      const res = await crewApi.openStory(m.story.id);
+      if (!state.modal || state.modal.type !== 'story') break;
+      state.modal.loading = false;
+      if (res.ok) { state.modal.image = res.image; state.modal.caption = res.caption || ''; }
+      else state.modal.error = res.error;
+      renderModal();
+      // Opening it is the view, so the roster's seen-state is now stale.
+      refreshCrews().catch(() => {});
+      break;
+    }
+    case 'add-story':
+      state.modal = { type: 'storyCompose', image: null, caption: '' };
+      renderModal();
+      break;
+    case 'publish-story': {
+      const crew = activeCrew();
+      const capEl = document.getElementById('story-caption');
+      if (!crew || !state.modal || !state.modal.image) break;
+      showToast('Posting…');
+      const res = await crewApi.postStory(crew.id, state.modal.image, capEl ? capEl.value : '');
+      if (applyCrewResult(res, { toast: true })) { closeModal(); showToast('Posted — 24 hours'); }
+      break;
+    }
     case 'react': {
       const crew = activeCrew();
       if (!crew) break;
@@ -4358,10 +4544,15 @@ document.addEventListener('click', async (e) => {
       state.modal = { type: 'crewSettings' };
       renderModal();
       break;
-    case 'open-member':
+    case 'open-member': {
       state.modal = { type: 'crewMember', memberId: btn.dataset.id };
       renderModal();
+      // Looking at someone is the view. Fire and forget: a failed record must
+      // never stop the card opening.
+      const crew = activeCrew();
+      if (crew) crewApi.recordView(crew.id, btn.dataset.id).then((r) => { if (r.ok) applyCrewResult(r); }).catch(() => {});
       break;
+    }
     case 'start-rename-crew':
       if (state.modal) state.modal.renaming = true;
       renderModal();

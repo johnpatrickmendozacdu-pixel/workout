@@ -203,3 +203,62 @@ export function cleanReaction(kind, emoji) {
   }
   return null;
 }
+
+/* ---------------- stories ----------------
+ * A picture and a line of text that expire on their own. Kept in the same
+ * database as everything else, because a second store for something that dies
+ * in a day would be a second thing to keep alive forever.
+ */
+
+/** 240 KB of base64. The app publishes an 800px JPEG, which lands well inside
+ *  it; this is the wall for a client that does not. */
+export const MAX_STORY_BYTES = 240000;
+export const STORY_LIFE_MS = 24 * 60 * 60 * 1000;
+
+export function cleanCaption(raw) {
+  if (typeof raw !== 'string') return '';
+  return raw.replace(/\s+/g, ' ').trim().slice(0, 140);
+}
+
+/** An image the Worker is willing to store: a data URL, an image, small enough. */
+export function storyImageOk(image) {
+  return typeof image === 'string'
+    && image.startsWith('data:image/')
+    && image.length <= MAX_STORY_BYTES;
+}
+
+/** Whether a stored story is still alive. Expiry is a timestamp rather than a
+ *  job: nothing has to run on a schedule for a story to be over. */
+export function storyLive(row, nowMs) {
+  return !!row && row.expires_at > nowMs;
+}
+
+/**
+ * The story as the roster carries it — never the image.
+ *
+ * A crew of ten with pictures in every card would be a megabyte on every
+ * refresh, so the roster says only that a story exists, and the picture is
+ * fetched when someone actually opens it.
+ */
+export function storyMeta(row, nowMs, meId, viewRows) {
+  if (!storyLive(row, nowMs)) return null;
+  const views = (viewRows || []).filter((v) => v.ref === row.id);
+  return {
+    id: row.id,
+    caption: row.caption || '',
+    createdAt: row.created_at,
+    expiresAt: row.expires_at,
+    mine: row.user_id === meId,
+    seenByMe: views.some((v) => v.viewer === meId),
+    viewers: row.user_id === meId ? views.map((v) => v.viewer) : [],
+  };
+}
+
+/** Who looked at this member today, as ids the app turns into names. Only ever
+ *  returned to the person being looked at. */
+export function viewersOf(viewRows, subjectId, kind, meId) {
+  if (subjectId !== meId) return [];
+  return (viewRows || [])
+    .filter((v) => v.subject === subjectId && v.kind === kind && v.viewer !== meId)
+    .map((v) => v.viewer);
+}

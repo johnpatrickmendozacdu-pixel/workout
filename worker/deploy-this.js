@@ -269,6 +269,65 @@ function cleanReaction(kind, emoji) {
   return null;
 }
 
+/* ---------------- stories ----------------
+ * A picture and a line of text that expire on their own. Kept in the same
+ * database as everything else, because a second store for something that dies
+ * in a day would be a second thing to keep alive forever.
+ */
+
+/** 240 KB of base64. The app publishes an 800px JPEG, which lands well inside
+ *  it; this is the wall for a client that does not. */
+const MAX_STORY_BYTES = 240000;
+const STORY_LIFE_MS = 24 * 60 * 60 * 1000;
+
+function cleanCaption(raw) {
+  if (typeof raw !== 'string') return '';
+  return raw.replace(/\s+/g, ' ').trim().slice(0, 140);
+}
+
+/** An image the Worker is willing to store: a data URL, an image, small enough. */
+function storyImageOk(image) {
+  return typeof image === 'string'
+    && image.startsWith('data:image/')
+    && image.length <= MAX_STORY_BYTES;
+}
+
+/** Whether a stored story is still alive. Expiry is a timestamp rather than a
+ *  job: nothing has to run on a schedule for a story to be over. */
+function storyLive(row, nowMs) {
+  return !!row && row.expires_at > nowMs;
+}
+
+/**
+ * The story as the roster carries it — never the image.
+ *
+ * A crew of ten with pictures in every card would be a megabyte on every
+ * refresh, so the roster says only that a story exists, and the picture is
+ * fetched when someone actually opens it.
+ */
+function storyMeta(row, nowMs, meId, viewRows) {
+  if (!storyLive(row, nowMs)) return null;
+  const views = (viewRows || []).filter((v) => v.ref === row.id);
+  return {
+    id: row.id,
+    caption: row.caption || '',
+    createdAt: row.created_at,
+    expiresAt: row.expires_at,
+    mine: row.user_id === meId,
+    seenByMe: views.some((v) => v.viewer === meId),
+    viewers: row.user_id === meId ? views.map((v) => v.viewer) : [],
+  };
+}
+
+/** Who looked at this member today, as ids the app turns into names. Only ever
+ *  returned to the person being looked at. */
+function viewersOf(viewRows, subjectId, kind, meId) {
+  if (subjectId !== meId) return [];
+  return (viewRows || [])
+    .filter((v) => v.subject === subjectId && v.kind === kind && v.viewer !== meId)
+    .map((v) => v.viewer);
+}
+
 // ===== worker/crew-routes.js =====
 // The crew endpoints: D1 and Google live here, the rules live in crew.js.
 //
@@ -340,6 +399,11 @@ async function identify(token) {
 
 /** Every crew this user belongs to, rosters included. The one response shape. */
 async function crewsFor(env, userId) {
+  const now = Date.now();
+  // Expiry is enforced on the way past rather than by a scheduled job: a story
+  // nobody looks at costs nothing, and one that is over is gone the next time
+  // anybody opens the tab.
+  await env.DB.prepare(`DELETE FROM stories WHERE expires_at < ?`).bind(now).run();
   const mine = await env.DB.prepare(
     `SELECT c.* FROM crews c JOIN members m ON m.crew_id = c.id WHERE m.user_id = ? ORDER BY c.created_at`
   ).bind(userId).all();
@@ -352,7 +416,22 @@ async function crewsFor(env, userId) {
     const reactions = await env.DB.prepare(
       `SELECT from_id, to_id, kind, emoji, day, seen FROM reactions WHERE crew_id = ? AND day >= ?`
     ).bind(crew.id, isoDaysAgo(14)).all();
-    out.push(buildRoster(crew, members.results || [], reactions.results || [], userId));
+    // Metadata only — the picture itself is fetched when someone opens it, or a
+    // ten-person crew would cost a megabyte on every refresh.
+    const stories = await env.DB.prepare(
+      `SELECT id, user_id, caption, created_at, expires_at FROM stories WHERE crew_id = ? AND expires_at > ?`
+    ).bind(crew.id, now).all();
+    const views = await env.DB.prepare(
+      `SELECT subject, viewer, kind, ref FROM views WHERE crew_id = ? AND day = ?`
+    ).bind(crew.id, isoDaysAgo(0)).all();
+
+    const roster = buildRoster(crew, members.results || [], reactions.results || [], userId);
+    roster.members.forEach((m) => {
+      const row = (stories.results || []).find((st) => st.user_id === m.id);
+      m.story = row ? storyMeta(row, now, userId, views.results || []) : null;
+      m.profileViewers = viewersOf(views.results || [], m.id, 'profile', userId);
+    });
+    out.push(roster);
   }
   return out;
 }
@@ -500,6 +579,54 @@ async function crewRoute(path, body, env, cors) {
       `INSERT OR IGNORE INTO reactions (crew_id, from_id, to_id, kind, emoji, day, created_at, seen)
        VALUES (?, ?, ?, ?, ?, ?, ?, 0)`
     ).bind(body.crewId, user.id, body.toId, r.kind, r.emoji, isoDaysAgo(0), now).run();
+    return jsonResponse({ crews: await crewsFor(env, user.id) }, 200, cors);
+  }
+
+  /** Post a picture to one crew. One live story per person per crew: a new one
+   *  replaces the old, which is what "story" means and saves a delete button. */
+  if (path === '/crew/story') {
+    const inCrew = await env.DB.prepare(
+      `SELECT 1 AS x FROM members WHERE crew_id = ? AND user_id = ?`
+    ).bind(body.crewId, user.id).first();
+    if (!inCrew) return jsonResponse({ error: 'not-in-crew' }, 403, cors);
+    if (!storyImageOk(body.image)) return jsonResponse({ error: 'bad-image' }, 400, cors);
+    await env.DB.prepare(`DELETE FROM stories WHERE crew_id = ? AND user_id = ?`).bind(body.crewId, user.id).run();
+    await env.DB.prepare(
+      `INSERT INTO stories (id, crew_id, user_id, image, caption, created_at, expires_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    ).bind(crypto.randomUUID(), body.crewId, user.id, body.image, cleanCaption(body.caption), now, now + STORY_LIFE_MS).run();
+    return jsonResponse({ crews: await crewsFor(env, user.id) }, 200, cors);
+  }
+
+  /** The picture, plus the view it records. Opening IS the view — there is no
+   *  separate "mark as seen" for a thing you are looking at. */
+  if (path === '/crew/story/open') {
+    const row = await env.DB.prepare(
+      `SELECT * FROM stories WHERE id = ? AND expires_at > ?`
+    ).bind(body.storyId, now).first();
+    if (!row) return jsonResponse({ error: 'story-gone' }, 404, cors);
+    const inCrew = await env.DB.prepare(
+      `SELECT 1 AS x FROM members WHERE crew_id = ? AND user_id = ?`
+    ).bind(row.crew_id, user.id).first();
+    if (!inCrew) return jsonResponse({ error: 'not-in-crew' }, 403, cors);
+    if (row.user_id !== user.id) {
+      await env.DB.prepare(
+        `INSERT OR IGNORE INTO views (crew_id, subject, viewer, kind, ref, day, viewed_at)
+         VALUES (?, ?, ?, 'story', ?, ?, ?)`
+      ).bind(row.crew_id, row.user_id, user.id, row.id, isoDaysAgo(0), now).run();
+    }
+    return jsonResponse({ image: row.image, caption: row.caption || '', createdAt: row.created_at }, 200, cors);
+  }
+
+  /** Somebody opened somebody's card. One row per viewer per day, by primary
+   *  key, so a scroll past a name is not ten views. */
+  if (path === '/crew/view') {
+    if (body.subject && body.subject !== user.id) {
+      await env.DB.prepare(
+        `INSERT OR IGNORE INTO views (crew_id, subject, viewer, kind, ref, day, viewed_at)
+         VALUES (?, ?, ?, 'profile', '', ?, ?)`
+      ).bind(body.crewId, body.subject, user.id, isoDaysAgo(0), now).run();
+    }
     return jsonResponse({ crews: await crewsFor(env, user.id) }, 200, cors);
   }
 

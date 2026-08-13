@@ -38,7 +38,7 @@ Worker's pure helpers only — **not `main.js`, not `googleSync.js`**.
 
 ## State right now
 
-- `main` = **`88a051f`**, live on Vercel, byte-verified. Working tree clean apart
+- `main` = **`06428e1`**, live on Vercel, byte-verified. Working tree clean apart
   from `.DS_Store`.
 - **321 tests pass.** Byte-verify every deploy against a build of the *pushed*
   commit — `__BUILD_ID__` is the commit SHA, so a build made before committing
@@ -46,6 +46,11 @@ Worker's pure helpers only — **not `main.js`, not `googleSync.js`**.
 - Migration finished and verified 2026-08-05: the old Pages address serves a
   redirect, the old app's assets 404, and a browser following the old link lands
   on Vercel.
+- **Worker = build `2026-08-12.10`**, deployed and confirmed by
+  `curl -X POST -H 'Origin: https://sets-workout.vercel.app' .../crew/version`.
+  Every D1 migration has been run. If a crew feature misbehaves, check that
+  version FIRST — it is the only pre-auth route, and it is there because every
+  other one answers 401 before it looks at the path.
 - **Nothing is outstanding in the code.** One optional chore is the user's: the
   Google Console warns about a second, unused OAuth client secret. Check which one
   the Worker holds before deleting the other, and never paste either into chat.
@@ -60,6 +65,18 @@ Worker's pure helpers only — **not `main.js`, not `googleSync.js`**.
   which breaks "zero maintenance".
 - Badminton (2026-08-10) took the picker to ten, so `.cat-grid` is four across.
   Add an eleventh and check that row again.
+- **Crew personalisation, brainstormed 2026-08-12, three of five built.** Built:
+  the crew motto, member-since, and rest days showing to the crew. Not built, in
+  the user's order of interest: a **handle** (one self-set line under your own
+  name), **earned ink** (small marks derived from your own numbers — 100 days,
+  10k reps — needing no storage and impossible to grant), and a **composed crew
+  emblem** (pick a shape, a symbol and a letter; the app draws it in the graffiti
+  style like the share cards, stored as three numbers rather than an upload).
+  Explicitly parked: a shared wall (storage + moderation), a crew streak (real
+  pressure risk), anything bought or randomised.
+- **The QR invite card was designed and never built.** It needs a vendored MIT
+  QR encoder in `src/vendor/` — the one dependency the app would carry. The
+  invite is link-and-code only until then.
 
 ## Architecture decisions that are settled — do not re-litigate
 
@@ -107,6 +124,17 @@ reason Supabase was rejected.
   missing), the broker is unaffected, a foreign origin still gets 403.
 - Reactions dedupe on the primary key `(crew, from, to, kind, emoji, day)` — the
   schema is the rate limit, not application code.
+- **Unwatched stories are counted on the member's photo**, and "seen" is kept in
+  IndexedDB (`stories-seen`, pruned at 48h) rather than read back from the
+  Worker: views are recorded per *day*, which is right for "who looked at your
+  card" and wrong for a badge — a story watched at 23:55 came back unwatched at
+  midnight. Your own stories never count; the Worker does not record you viewing
+  them.
+
+**Migrations already applied** (D1 `sets-crew`): the four base tables, then
+`stories`, `views`, and `ALTER`s adding `members.rank`, `members.role`,
+`members.class`, `crews.logo`, `crews.motto`. Anything new needs its own ALTER,
+run **one statement per Execute**.
 
 **Everything the crew now carries** (all shipped 2026-08-11/12): invite link with
 an Accept sheet and `/crew/peek`; stories (several a day, 24h, viewer list, the
@@ -249,6 +277,7 @@ asking.
 | Share image (foot) | Every card signs itself: the crew's name and motto, your role and class with their art, your profile name and photo. Drawn from the crew you are looking at; absent entirely when you are in none. |
 | Share image | "Save image" on an opened exercise card draws a 1080² card on a canvas — name, category, streak, the climb, all seven figures, and a `Sets · sets-workout.vercel.app` watermark. A **finished exercise on Today** has its own button drawing the same frame with the day's figures instead: total / target, the clock, sets, streak — reachable from the Done row's share glyph without opening the exercise. A third card, **Share this day**, hangs off the All-done block: every exercise finished today as a list, then exercises / time / streak. All three go to `navigator.share`, which is the whole Instagram/Facebook story — the sheet is the integration. Direct posting needs a server, a Business account and Meta app review; ruled out, and the button says **Share**, not Save, because the sheet is what opens. Canvas → blob → `navigator.share` (the only route to the photo library) with a download fallback. Nothing is uploaded. No dependency: `html2canvas` was rejected on those grounds. |
 | One-time | A real exercise carrying `oneTimeDate` — same clock, target and keypad as any other. `isScheduledOn` returns true only on that date, so every view and the streak maths follow for free. Hidden after its day, never deleted. |
+| Timestamps | The moment a day's work finished, shown on Today's done row, on today's row in Progress (today only — older days predate the stamp), and on a crew member's day. `stampFinished` writes it on the target crossing and never overwrites; `finishTimer` already covered a session closed by hand. |
 | Social | Crew roster ordered by who trained today, then streak. Tap a member for their streaks, totals and per-exercise list. Invite by link or code; owner can rename and remove, anyone can leave, the owner leaving hands it to whoever joined first. Renders from a cached roster before any request and says so when offline — the only screen in Sets that needs the network, and nothing else can be taken down by it. |
 | Sync | Per-Google-account namespaced data; Drive appdata backup; token-broker keeps it alive. Failures queue quietly — no red alarms. |
 

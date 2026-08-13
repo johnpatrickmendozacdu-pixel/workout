@@ -897,6 +897,39 @@ function mergeExerciseLists(winner, loser) {
 }
 
 /**
+ * Day → habit → slot. mergeByDayKey cannot be reused here: it merges one level
+ * deep, so the winning phone's habit entry would replace the loser's entire slot
+ * set and silently bin meals logged on the other device — the same class of
+ * mistake that once destroyed an avatar.
+ *
+ * Because a logged slot can never be changed, this merge is conflict-free by
+ * construction: where both sides hold a value it is the same tap, and the
+ * earlier timestamp is the one that happened. Off plan is only possible on a day
+ * with nothing logged, so any real slot beats it and the invariant holds.
+ */
+export function mergeHabitLogs(winner, loser) {
+  const out = {};
+  const days = new Set([...Object.keys(loser || {}), ...Object.keys(winner || {})]);
+  days.forEach((d) => {
+    const w = (winner || {})[d] || {};
+    const l = (loser || {})[d] || {};
+    const dayMap = {};
+    new Set([...Object.keys(l), ...Object.keys(w)]).forEach((id) => {
+      const we = w[id] || {};
+      const le = l[id] || {};
+      const slots = { ...(le.slots || {}) };
+      Object.entries(we.slots || {}).forEach(([k, s]) => {
+        if (!slots[k] || s.at < slots[k].at) slots[k] = s;
+      });
+      if (Object.keys(slots).length) dayMap[id] = { slots };
+      else if (we.off || le.off) dayMap[id] = { off: true, slots: {} };
+    });
+    if (Object.keys(dayMap).length) out[d] = dayMap;
+  });
+  return out;
+}
+
+/**
  * A deletion has to outlive the union, or the copy still sitting in Drive
  * simply adds the exercise straight back — which it did, even on one device,
  * because Drive holds the version pushed before the delete. A tombstone is the
@@ -979,7 +1012,7 @@ export function deepEqual(a, b) {
 // key is what actually bins those entries: the merge was a union by id, so
 // clearing them locally would have let the next Drive sync hand them straight
 // back. Old snapshots still carry the field; nothing reads it.
-export const SNAPSHOT_DATA_KEYS = ['exercises', 'deletedExercises', 'setsLog', 'timersLog', 'profile', 'streakOverrides'];
+export const SNAPSHOT_DATA_KEYS = ['exercises', 'deletedExercises', 'setsLog', 'timersLog', 'profile', 'streakOverrides', 'habits', 'habitLog'];
 export function sameSnapshotData(a, b) {
   if (!a || !b) return false;
   return SNAPSHOT_DATA_KEYS.every((k) => deepEqual(a[k] ?? null, b[k] ?? null));
@@ -1005,6 +1038,10 @@ export function mergeSyncSnapshots(local, remote) {
     timersLog: mergeByDayKey(winner.timersLog, loser.timersLog),
     streakOverrides: mergeByDayKey(winner.streakOverrides, loser.streakOverrides),
     profile: mergeProfiles(winner.profile, loser.profile),
+    // Habits are archived, never deleted, so they need no tombstone key — the
+    // union by id is the whole story.
+    habits: mergeExerciseLists(winner.habits, loser.habits),
+    habitLog: mergeHabitLogs(winner.habitLog, loser.habitLog),
   };
 }
 

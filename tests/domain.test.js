@@ -47,6 +47,8 @@ import {
   mergeBackup,
   buildBackup,
   mergeSyncSnapshots,
+  mergeHabitLogs,
+  SNAPSHOT_DATA_KEYS,
   storedTokenUsable,
   bmiSummary,
   weightTrend,
@@ -1486,5 +1488,80 @@ describe('stampFinished', () => {
 
   it('does nothing without a timer to stamp', () => {
     expect(stampFinished({}, '2026-08-12', 'ex1', 100)).toEqual({});
+  });
+});
+
+describe('mergeHabitLogs', () => {
+  const slot = (v, at) => ({ v, at });
+
+  it('keeps slots logged on different phones on the same day', () => {
+    const a = { '2026-08-13': { h1: { slots: { breakfast: slot('kept', 100) } } } };
+    const b = { '2026-08-13': { h1: { slots: { dinner: slot('broke', 200) } } } };
+    const out = mergeHabitLogs(a, b);
+    expect(Object.keys(out['2026-08-13'].h1.slots).sort()).toEqual(['breakfast', 'dinner']);
+  });
+
+  it('takes the earlier tap when both sides hold the same slot', () => {
+    // Immutability makes this conflict-free: it is the same tap, so the earlier
+    // timestamp is the one that actually happened.
+    const a = { '2026-08-13': { h1: { slots: { lunch: slot('kept', 500) } } } };
+    const b = { '2026-08-13': { h1: { slots: { lunch: slot('broke', 200) } } } };
+    expect(mergeHabitLogs(a, b)['2026-08-13'].h1.slots.lunch).toEqual(slot('broke', 200));
+    expect(mergeHabitLogs(b, a)['2026-08-13'].h1.slots.lunch).toEqual(slot('broke', 200));
+  });
+
+  it('keeps two habits on the same day apart', () => {
+    const a = { '2026-08-13': { h1: { slots: { lunch: slot('kept', 100) } } } };
+    const b = { '2026-08-13': { h2: { slots: { lunch: slot('broke', 100) } } } };
+    const out = mergeHabitLogs(a, b);
+    expect(out['2026-08-13'].h1.slots.lunch.v).toBe('kept');
+    expect(out['2026-08-13'].h2.slots.lunch.v).toBe('broke');
+  });
+
+  it('lets a real log beat an off-plan day, so nothing logged is ever hidden', () => {
+    const a = { '2026-08-13': { h1: { off: true, slots: {} } } };
+    const b = { '2026-08-13': { h1: { slots: { lunch: slot('kept', 100) } } } };
+    const out = mergeHabitLogs(a, b);
+    expect(out['2026-08-13'].h1.off).toBeFalsy();
+    expect(out['2026-08-13'].h1.slots.lunch.v).toBe('kept');
+  });
+
+  it('keeps an off-plan day that nothing contradicts', () => {
+    const a = { '2026-08-13': { h1: { off: true, slots: {} } } };
+    expect(mergeHabitLogs(a, {})['2026-08-13'].h1.off).toBe(true);
+  });
+
+  it('survives either side being missing', () => {
+    expect(mergeHabitLogs(undefined, undefined)).toEqual({});
+  });
+});
+
+describe('habits in the sync snapshot', () => {
+  it('lists both new keys, so a habit change actually pushes', () => {
+    expect(SNAPSHOT_DATA_KEYS).toContain('habits');
+    expect(SNAPSHOT_DATA_KEYS).toContain('habitLog');
+  });
+
+  it('unions habits by id and merges their log', () => {
+    const local = {
+      updatedAt: 2, exercises: [], setsLog: {}, timersLog: {}, profile: {}, streakOverrides: {},
+      habits: [{ id: 'h1', name: 'Keto' }],
+      habitLog: { '2026-08-13': { h1: { slots: { lunch: { v: 'kept', at: 1 } } } } },
+    };
+    const remote = {
+      updatedAt: 1, exercises: [], setsLog: {}, timersLog: {}, profile: {}, streakOverrides: {},
+      habits: [{ id: 'h2', name: 'No alcohol' }],
+      habitLog: { '2026-08-13': { h1: { slots: { dinner: { v: 'broke', at: 2 } } } } },
+    };
+    const out = mergeSyncSnapshots(local, remote);
+    expect(out.habits.map((h) => h.id).sort()).toEqual(['h1', 'h2']);
+    expect(Object.keys(out.habitLog['2026-08-13'].h1.slots).sort()).toEqual(['dinner', 'lunch']);
+  });
+
+  it('reads an old snapshot that has neither key as empty, never fatal', () => {
+    const old = { updatedAt: 1, exercises: [], setsLog: {}, timersLog: {}, profile: {}, streakOverrides: {} };
+    const out = mergeSyncSnapshots(old, old);
+    expect(out.habits).toEqual([]);
+    expect(out.habitLog).toEqual({});
   });
 });

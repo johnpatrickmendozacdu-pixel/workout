@@ -77,7 +77,14 @@ what makes the other two hundred days mean anything.
 
 It follows that **a day you never logged stays unlogged forever**. There is no
 catch-up prompt, no retro-edit sheet, no edit path at all — which is also less
-code than the alternative.
+code than the alternative. Only the current habit day is writable; every
+function takes `nowMs` and refuses a write to any other day.
+
+**Off plan is a decision, not a record**, so it is the one thing that can be
+turned back off — but only while the day is still untouched. Once any slot holds
+a value, off plan is locked out in both directions. Without that guard you could
+break at lunch and then mark the day off plan to launder the streak, which would
+quietly make every streak in the app meaningless.
 
 Immutability has a second payoff, in sync: two devices can never disagree about
 a slot's value, only about whether it was set. The merge is therefore
@@ -171,8 +178,10 @@ split rather than growing either. Everything here is pure and tested.
 - `blockOf(slotKey)`, `isLive(slotKey, atMs)`.
 - `logSlot(habitLog, day, habitId, slotKey, value, nowMs)` — **returns the log
   unchanged if that slot already holds a value.** This one guard is where
-  immutability lives, so every caller gets it for free.
-- `setOffPlan(habitLog, day, habitId, on)`.
+  immutability lives, so every caller gets it for free. It also refuses when the
+  day is not the current habit day, and when the day is marked off plan.
+- `setOffPlan(habitLog, day, habitId, on, nowMs)` — refuses when the day is not
+  the current habit day, or when any slot on it already holds a value.
 - `habitDayState(habitLog, habit, day)` → `'clean' | 'broken' | 'neutral' | 'off'`.
 - `habitStats(habitLog, habit, today)` → `{ current, longest, cleanIn30,
   liveRate, breaksBySlot }`. Today is neutral until logged and must not break the
@@ -227,8 +236,9 @@ column once broke every crew.
 `tests/habits.test.js` covers the pure layer: the 5 AM boundary either side of
 midnight, live vs late at each block edge, the immutability guard rejecting a
 second write, day states including all-skipped and unscheduled, the streak
-across neutral and off-plan gaps, and a `mergeHabitLogs` case where two devices
-log different slots on the same day.
+across neutral and off-plan gaps, off plan refused once a slot is logged, writes
+refused on any day but the current one, and a `mergeHabitLogs` case where two
+devices log different slots on the same day.
 
 `main.js` has no test coverage and this does not change that, so the habit
 screens are verified by using them at 375px — not by calling handlers.

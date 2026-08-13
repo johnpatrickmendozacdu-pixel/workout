@@ -59,6 +59,12 @@ import {
   weeklyAverages,
   recordWeight,
 } from './domain/domain.js';
+import {
+  HABIT_SLOTS, HABIT_BLOCKS, HABIT_PRESETS,
+  slotsFor, habitDay, blockAt, isLive,
+  slotAt, hasAnySlot, isOffPlan, logSlot, setOffPlan,
+  habitDayState, habitStats, newHabit,
+} from './domain/habits.js';
 import { GUIDE_SECTIONS, GUIDE_INTRO } from './guide.js';
 import { CATEGORIES, categoryOf, categoryLabel, categoryIconUrl } from './categories.js';
 import * as gsync from './sync/googleSync.js';
@@ -80,6 +86,8 @@ const state = {
   profile: { username: '', weight: null, height: null, weightLog: [], weighInDay: 6 },
   sync: { status: 'signed-out', email: null, error: null, pending: false },
   streakOverrides: {},
+  habits: [],
+  habitLog: {},
   deletedExercises: {},
   storageError: false,
   updateAvailable: false,
@@ -181,7 +189,7 @@ async function restoreNamespace() {
 }
 
 async function loadAll() {
-  const [exercises, setsLog, meta, timersLog, profile, streakOverrides, deletedExercises] = await Promise.all([
+  const [exercises, setsLog, meta, timersLog, profile, streakOverrides, deletedExercises, habits, habitLog] = await Promise.all([
     db.getItem('exercises'),
     db.getItem('sets-log'),
     db.getItem('app-meta'),
@@ -189,6 +197,8 @@ async function loadAll() {
     db.getItem('profile'),
     db.getItem('streak-overrides'),
     db.getItem('deleted-exercises'),
+    db.getItem('habits'),
+    db.getItem('habit-log'),
   ]);
 
   state.exercises = exercises || [];
@@ -198,6 +208,9 @@ async function loadAll() {
   state.profile = profile || { username: '', weight: null, height: null, weightLog: [], weighInDay: 6 };
   state.streakOverrides = migrateOverrides(streakOverrides || {});
   state.deletedExercises = deletedExercises || {};
+  // Absent reads as empty. Optional data must never be able to kill a screen.
+  state.habits = habits || [];
+  state.habitLog = habitLog || {};
 
   // One-time: start Top set fresh from today for every existing exercise, and
   // drop old manual corrections. Old and stray sets before today stop counting
@@ -296,6 +309,24 @@ async function persistStreakOverrides() {
     return false;
   }
 }
+async function persistHabits() {
+  try {
+    await db.setItem('habits', state.habits);
+    markDirty();
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+async function persistHabitLog() {
+  try {
+    await db.setItem('habit-log', state.habitLog);
+    markDirty();
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
 
 /* ============================= GOOGLE DRIVE SYNC ============================= */
 let applyingRemote = false;
@@ -311,6 +342,8 @@ function buildSyncSnapshot() {
     timersLog: state.timersLog,
     profile: state.profile,
     streakOverrides: state.streakOverrides,
+    habits: state.habits,
+    habitLog: state.habitLog,
   };
 }
 
@@ -324,6 +357,8 @@ async function applyMergedSnapshot(merged) {
   state.timersLog = merged.timersLog || {};
   state.profile = merged.profile || { username: '', weight: null, height: null, weightLog: [], weighInDay: 6 };
   state.streakOverrides = merged.streakOverrides || {};
+  state.habits = merged.habits || [];
+  state.habitLog = merged.habitLog || {};
   state.meta.updatedAt = merged.updatedAt || Date.now();
   await Promise.all([
     db.setItem('exercises', state.exercises),
@@ -332,6 +367,8 @@ async function applyMergedSnapshot(merged) {
     db.setItem('timers-log', state.timersLog),
     db.setItem('profile', state.profile),
     db.setItem('streak-overrides', state.streakOverrides),
+    db.setItem('habits', state.habits),
+    db.setItem('habit-log', state.habitLog),
     db.setItem('app-meta', state.meta),
   ]);
   applyingRemote = false;
@@ -2357,7 +2394,7 @@ function renderTopbar() {
       <div class="topbar-row">
         <div class="topbar-left">${LOGO_MARK}<div class="screen-title">Plan</div></div>
         <div class="topbar-right">
-          <button class="add-btn" data-action="open-add-exercise">${ICONS.plus} Add</button>
+          <button class="add-btn" data-action="open-add">${ICONS.plus} Add</button>
           ${helpChipHtml()}
           ${versionChipHtml()}
           ${avatarChipHtml()}
@@ -2531,6 +2568,87 @@ function modalGuide() {
  * week's average is what Progress plots, so the value of logging is consistency,
  * not hitting a particular day.
  */
+const SLOT_MARK = { kept: '✓', skip: '–', broke: '✕' };
+
+function slotPillHtml(habit, day, slot) {
+  const rec = slotAt(state.habitLog, day, habit.id, slot.key);
+  if (rec) {
+    // Filled means logged inside its own window; hollow means caught up later.
+    // Derived from the clock, so it is the one mark that cannot be tapped into
+    // existence after the fact.
+    const live = isLive(slot.key, rec.at);
+    return `<div class="slot-done ${rec.v} ${live ? 'live' : 'late'}" title="${live ? 'Logged in the moment' : 'Logged later'}">
+      <span class="slot-mark">${SLOT_MARK[rec.v]}</span><span class="slot-name">${escapeHtml(slot.label)}</span>
+    </div>`;
+  }
+  return `<div class="slot-row">
+    <span class="slot-name">${escapeHtml(slot.label)}</span>
+    <span class="slot-btns">
+      <button class="slot-btn kept" data-action="log-slot" data-id="${habit.id}" data-slot="${slot.key}" data-v="kept">Kept</button>
+      <button class="slot-btn" data-action="log-slot" data-id="${habit.id}" data-slot="${slot.key}" data-v="skip">Skipped</button>
+      <button class="slot-btn broke" data-action="log-slot" data-id="${habit.id}" data-slot="${slot.key}" data-v="broke">Broke</button>
+    </span>
+  </div>`;
+}
+
+function habitCardHtml(habit, day, nowMs) {
+  const st = habitDayState(state.habitLog, habit, day);
+  const stats = habitStats(state.habitLog, habit, day);
+  const off = isOffPlan(state.habitLog, day, habit.id);
+  const untouched = !hasAnySlot(state.habitLog, day, habit.id);
+  const nowBlock = blockAt(nowMs);
+
+  let body;
+  if (off) {
+    body = `<div class="habit-note">🌙 Off plan today — the streak holds.</div>`;
+  } else if (habit.kind === 'meals') {
+    body = HABIT_BLOCKS.map((b) => {
+      const slots = HABIT_SLOTS.filter((sl) => sl.block === b.key);
+      const isNow = b.key === nowBlock.key;
+      const allDone = slots.every((sl) => slotAt(state.habitLog, day, habit.id, sl.key));
+      return `<div class="habit-block-row ${isNow ? 'now' : (allDone ? 'done' : 'other')}">
+        <div class="habit-block-name"><span>${b.label}</span><span>${b.window}</span></div>
+        <div class="habit-slots">${slots.map((sl) => slotPillHtml(habit, day, sl)).join('')}</div>
+      </div>`;
+    }).join('');
+  } else {
+    body = `<div class="habit-slots">${slotPillHtml(habit, day, slotsFor(habit)[0])}</div>`;
+  }
+
+  // Between midnight and 5 AM the habit day and the calendar day disagree. Say
+  // so, or the card looks broken.
+  const nightNote = day !== todayISO()
+    ? `<div class="habit-note">Still ${escapeHtml(formatDisplayDate(day, { weekday: 'long' }))} night — a habit day runs 5 AM to 5 AM.</div>`
+    : '';
+
+  const stateLabel = st === 'broken' ? 'Broken today'
+    : st === 'clean' ? 'Clean today'
+    : st === 'off' ? 'Off plan'
+    : 'Nothing logged yet';
+
+  return `<div class="habit-day-card state-${st}">
+    <div class="habit-head">
+      <span class="habit-emoji">${escapeHtml(habit.emoji || '✅')}</span>
+      <div class="habit-title"><b>${escapeHtml(habit.name)}</b><span>${stateLabel}</span></div>
+      <span class="habit-streak">🔥 ${stats.current}</span>
+    </div>
+    ${habit.rule ? `<div class="habit-note">${escapeHtml(habit.rule)}</div>` : ''}
+    ${nightNote}
+    ${body}
+    ${untouched && !off ? `<button class="habit-offbtn" data-action="habit-off-plan" data-id="${habit.id}" data-on="1">Take today off plan</button>` : ''}
+    ${off ? `<button class="habit-offbtn" data-action="habit-off-plan" data-id="${habit.id}" data-on="0">Actually, I'm on it</button>` : ''}
+  </div>`;
+}
+
+function habitsSectionHtml() {
+  const nowMs = Date.now();
+  const day = habitDay(nowMs);
+  const due = state.habits.filter((h) => h.active && isScheduledOn(h, day));
+  if (!due.length) return '';
+  return `<div class="section-label">Health habits</div>`
+    + due.map((h) => habitCardHtml(h, day, nowMs)).join('');
+}
+
 function weighInCardHtml() {
   const p = state.profile || {};
   const today = todayISO();
@@ -2578,6 +2696,29 @@ function weightChartHtml(weeks) {
   </svg>`;
 }
 
+function habitProgressHtml() {
+  const day = habitDay(Date.now());
+  return state.habits.filter((h) => h.active).map((h) => {
+    const s = habitStats(state.habitLog, h, day);
+    const strip = Array.from({ length: 30 }, (_, i) => {
+      const d = addDays(day, -(29 - i));
+      return `<span class="hstrip-cell ${habitDayState(state.habitLog, h, d)}" title="${d}"></span>`;
+    }).join('');
+    const worst = Object.entries(s.breaksBySlot).sort((a, b) => b[1] - a[1])[0];
+    const worstSlot = worst ? HABIT_SLOTS.find((x) => x.key === worst[0]) : null;
+    return `<div class="habit-block">
+      <div class="habit-block-head">
+        <span class="section-label">${escapeHtml(h.emoji || '✅')} ${escapeHtml(h.name)}</span>
+        <span class="habit-tag">health habit</span>
+      </div>
+      <div class="hstrip">${strip}</div>
+      <div class="bmi-line">🔥 ${s.current} day${s.current === 1 ? '' : 's'} · longest ${s.longest} · ${s.cleanIn30} clean in the last 30</div>
+      ${s.liveRate != null ? `<div class="bmi-line">Logged in the moment — ${s.liveRate}%</div>` : ''}
+      ${worstSlot && worst[1] > 1 ? `<div class="bmi-line">Breaks most at <b>${escapeHtml(worstSlot.label)}</b> — ${worst[1]} times.</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
 function weighInBlockHtml() {
   const p = state.profile || {};
   const weeks = weeklyAverages(p.weightLog, todayISO());
@@ -2599,7 +2740,9 @@ function viewToday() {
   const scheduled = all.filter((e) => isScheduledOn(e, today));
 
   if (all.length === 0) {
-    return `<div class="empty-card">
+    // Habits are not exercises, so an empty plan must not hide them — the same
+    // reason habitProgressHtml sits outside the groups on Progress.
+    return habitsSectionHtml() + `<div class="empty-card">
       <div class="glyph">🗓️</div>
       <h3>No exercises yet</h3>
       <p>Add your first exercise to start logging sets in seconds.</p>
@@ -2706,6 +2849,7 @@ function viewToday() {
     html += `<p class="break-nudge">Not training one today? Open it and take a break — the streak holds.</p>`;
   }
 
+  html += habitsSectionHtml();
   html += weighInCardHtml();
 
   return html;
@@ -3245,7 +3389,9 @@ function comboLineHtml(groupExercises) {
 }
 
 function viewProgress() {
-  const habit = weighInBlockHtml();
+  // Habits are not exercises, so an empty plan must not hide them — the same
+  // reason the weigh-in block sits outside the groups.
+  const habit = habitProgressHtml() + weighInBlockHtml();
   const activeEx = state.exercises.filter((e) => e.active && !e.archived && isCurrent(e)).sort((a, b) => a.order - b.order);
   // The habit is not an exercise, so an empty plan must not hide it.
   if (!activeEx.length) return habit || `<p class="rail-empty">Add an exercise to start a streak.</p>`;
@@ -3528,6 +3674,8 @@ function renderModal() {
   else if (m.type === 'weighin') root.innerHTML = modalWeighIn();
   else if (m.type === 'logger') root.innerHTML = modalLogger(m.exId);
   else if (m.type === 'exerciseForm') root.innerHTML = modalExerciseForm(m.exId);
+  else if (m.type === 'addChoice') root.innerHTML = modalAddChoice();
+  else if (m.type === 'habitForm') root.innerHTML = modalHabitForm();
   else if (m.type === 'confirmDeleteSet') root.innerHTML = modalConfirm(m);
   else if (m.type === 'confirmDeleteExercise') root.innerHTML = modalConfirmDeleteExercise(m);
   else if (m.type === 'data') root.innerHTML = modalData();
@@ -3699,6 +3847,99 @@ function modalLogger(exId) {
  * threw the name away. That was true of the schedule toggles long before the
  * Timer field existed; adding a third toggle just made it easier to hit.
  */
+function modalAddChoice() {
+  return `<div class="modal-backdrop" data-action="backdrop">
+    <div class="modal-sheet" data-stop>
+      <div class="sheet-handle"></div>
+      <div class="sheet-head">
+        <h2>Add</h2>
+        <button class="sheet-close" data-action="close-modal">${ICONS.close}</button>
+      </div>
+      <button class="add-kind" data-action="add-kind" data-kind="exercise">
+        <b>Exercise</b><span>Reps or time, with a target and a streak.</span>
+      </button>
+      <button class="add-kind" data-action="add-kind" data-kind="habit">
+        <b>Health habit</b><span>Every day, no target. Keep it clean, keep the streak.</span>
+      </button>
+    </div>
+  </div>`;
+}
+
+/** Reads the habit form's text inputs into modal state, so the re-renders the
+ *  chips cause do not wipe what has been typed. Same reason captureExerciseDraft
+ *  exists. */
+function captureHabitDraft() {
+  if (!state.modal) return;
+  const n = document.getElementById('f-habit-name');
+  const e = document.getElementById('f-habit-emoji');
+  if (n) state.modal.name = n.value;
+  if (e) state.modal.emoji = e.value;
+}
+
+function modalHabitForm() {
+  const m = state.modal || {};
+  const p = HABIT_PRESETS.find((x) => x.key === m.preset) || null;
+  const name = m.name !== undefined ? m.name : (p ? p.name : '');
+  const emoji = m.emoji !== undefined ? m.emoji : (p ? p.emoji : '✅');
+  const kind = m.kind === 'meals' ? 'meals' : 'plain';
+  const daily = !Array.isArray(m.days);
+  const days = Array.isArray(m.days) ? m.days : [];
+  return `<div class="modal-backdrop" data-action="backdrop">
+    <div class="modal-sheet" data-stop>
+      <div class="sheet-handle"></div>
+      <div class="sheet-head">
+        <h2>Add health habit</h2>
+        <button class="sheet-close" data-action="close-modal">${ICONS.close}</button>
+      </div>
+      <div class="field">
+        <label>Start from</label>
+        <div class="cat-grid">
+          ${HABIT_PRESETS.map((x) => `<button type="button" class="cat-chip ${x.key === m.preset ? 'on' : ''}" data-action="pick-habit-preset" data-preset="${x.key}" aria-pressed="${x.key === m.preset}">
+            <span class="preset-emoji">${x.emoji}</span><span>${escapeHtml(x.name)}</span>
+          </button>`).join('')}
+          <button type="button" class="cat-chip ${m.preset ? '' : 'on'}" data-action="pick-habit-preset" data-preset="" aria-pressed="${!m.preset}">
+            <span class="preset-emoji">✏️</span><span>Custom</span>
+          </button>
+        </div>
+        ${p ? `<div class="hint">${escapeHtml(p.rule)} Copied, not linked — edit any of it.</div>` : ''}
+      </div>
+      <div class="field">
+        <label>Name</label>
+        <input id="f-habit-name" type="text" placeholder="e.g. Keto" value="${escapeHtml(name)}" autocomplete="off">
+      </div>
+      <div class="field">
+        <label>Emoji</label>
+        <input id="f-habit-emoji" type="text" maxlength="4" value="${escapeHtml(emoji)}" autocomplete="off">
+      </div>
+      <div class="field">
+        <label>How you track it</label>
+        <div class="sched-modes">
+          <button type="button" class="sched-mode ${kind === 'plain' ? 'on' : ''}" data-action="habit-kind" data-kind="plain">One tap a day</button>
+          <button type="button" class="sched-mode ${kind === 'meals' ? 'on' : ''}" data-action="habit-kind" data-kind="meals">Meal by meal</button>
+        </div>
+        <div class="hint">${kind === 'meals'
+          ? 'Six slots — breakfast, lunch, dinner and the snacks between them. Any break, and the day is broken.'
+          : 'One decision for the whole day.'}</div>
+      </div>
+      <div class="field">
+        <label>Schedule</label>
+        <div class="sched-modes">
+          <button type="button" class="sched-mode ${daily ? 'on' : ''}" data-action="habit-sched-mode" data-mode="daily">Every day</button>
+          <button type="button" class="sched-mode ${daily ? '' : 'on'}" data-action="habit-sched-mode" data-mode="days">Chosen days</button>
+        </div>
+        <div class="sched-days ${daily ? 'disabled' : ''}">
+          ${['S','M','T','W','T','F','S'].map((d, i) => `<button type="button" class="sched-day ${(!daily && days.includes(i)) ? 'on' : ''}" data-action="habit-day" data-day="${i}" aria-label="${['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][i]}" aria-pressed="${!daily && days.includes(i)}">${d}</button>`).join('')}
+        </div>
+        <div class="hint">A day it isn't scheduled for is neutral — never a break.</div>
+      </div>
+      <div class="field">
+        <div class="hint">No target. A day is clean unless something breaks it, and once you tap a slot it's final.</div>
+      </div>
+      <button class="primary-btn wide" data-action="save-habit">Add habit</button>
+    </div>
+  </div>`;
+}
+
 function captureExerciseDraft() {
   if (!state.modal) return;
   const val = (id) => { const el = document.getElementById(id); return el ? el.value : undefined; };
@@ -4702,6 +4943,85 @@ document.addEventListener('click', async (e) => {
       renderNav(); renderTopbar(); renderView(); renderBanner();
       break;
 
+    case 'open-add': state.modal = { type: 'addChoice' }; renderModal(); break;
+    case 'add-kind':
+      state.modal = btn.dataset.kind === 'habit'
+        ? { type: 'habitForm', preset: 'keto', kind: 'meals' }
+        : { type: 'exerciseForm', exId: null };
+      renderModal();
+      break;
+    case 'pick-habit-preset': {
+      // Picking a preset refills the form. It is a starting form, not a link.
+      const key = btn.dataset.preset || null;
+      const preset = HABIT_PRESETS.find((x) => x.key === key) || null;
+      state.modal = {
+        type: 'habitForm', preset: key, days: state.modal.days,
+        kind: preset ? preset.kind : 'plain',
+        name: preset ? preset.name : '',
+        emoji: preset ? preset.emoji : '✅',
+      };
+      renderModal();
+      break;
+    }
+    case 'habit-kind':
+      captureHabitDraft();
+      state.modal.kind = btn.dataset.kind === 'meals' ? 'meals' : 'plain';
+      renderModal();
+      break;
+    case 'habit-sched-mode':
+      captureHabitDraft();
+      state.modal.days = btn.dataset.mode === 'daily' ? undefined : [];
+      renderModal();
+      break;
+    case 'habit-day': {
+      captureHabitDraft();
+      const d = Number(btn.dataset.day);
+      const cur = Array.isArray(state.modal.days) ? state.modal.days : [];
+      state.modal.days = cur.includes(d) ? cur.filter((x) => x !== d) : [...cur, d];
+      renderModal();
+      break;
+    }
+    case 'save-habit': {
+      captureHabitDraft();
+      const m = state.modal;
+      const name = (m.name || '').trim();
+      if (!name) return;
+      const chosen = Array.isArray(m.days) ? m.days.slice().sort((a, b) => a - b) : null;
+      const preset = HABIT_PRESETS.find((x) => x.key === m.preset) || null;
+      state.habits = [...state.habits, newHabit({
+        name,
+        emoji: (m.emoji || '').trim() || '✅',
+        kind: m.kind,
+        // The rule is the preset's own words, kept only while it is still the
+        // preset. Rename it and it is your habit, with your own terms.
+        rule: preset && preset.name === name ? preset.rule : '',
+        schedule: chosen && chosen.length ? chosen : 'daily',
+      }, todayISO())];
+      await persistHabits();
+      closeModal();
+      renderView();
+      break;
+    }
+    case 'log-slot': {
+      const nowMs = Date.now();
+      const before = state.habitLog;
+      state.habitLog = logSlot(before, habitDay(nowMs), btn.dataset.id, btn.dataset.slot, btn.dataset.v, nowMs);
+      // A refused write returns the same object, so there is nothing to save
+      // and nothing to redraw.
+      if (state.habitLog === before) break;
+      await persistHabitLog();
+      renderView();
+      break;
+    }
+    case 'habit-off-plan': {
+      const nowMs = Date.now();
+      const before = state.habitLog;
+      state.habitLog = setOffPlan(before, habitDay(nowMs), btn.dataset.id, btn.dataset.on === '1', nowMs);
+      if (state.habitLog === before) break;
+      await persistHabitLog();
+      renderView();
+      break;
+    }
     case 'open-add-exercise': state.modal = { type: 'exerciseForm', exId: null }; renderModal(); break;
     case 'open-edit-exercise': state.modal = { type: 'exerciseForm', exId: btn.dataset.id }; renderModal(); break;
     case 'close-modal': closeModal(); break;

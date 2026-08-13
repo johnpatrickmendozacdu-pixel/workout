@@ -156,6 +156,18 @@ export const GUIDE_SECTIONS = [
     ],
   },
   {
+    id: 'habits',
+    phase: 'Every day',
+    title: 'Keep a health habit',
+    lead: 'Plan → Add → Health habit. No target: a day is clean unless something breaks it.',
+    notes: [
+      'A skipped meal costs nothing. Only a break breaks the day.',
+      'Tap a slot and it is final — that is what makes the streak worth having.',
+      'A habit day runs 5 AM to 5 AM, so a late-night snack lands on the night you are still up.',
+      'Take a day off plan before you start it, as often as you like. A day you never logged is neutral.',
+    ],
+  },
+  {
     id: 'crew',
     phase: 'Every day',
     title: 'Train with a crew',

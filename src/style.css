@@ -1925,3 +1925,73 @@
 .habit-done-text{flex:1;font-size:14px;color:var(--text-dim);}
 .habit-done-text b{color:var(--text);}
 .habit-done-edit{font-family:var(--font-mono);font-size:11px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.05em;}
+
+  /* ---------- health habits ---------- */
+  .add-kind{
+    display:flex; flex-direction:column; align-items:flex-start; gap:4px; width:100%;
+    background:var(--bg-card); border:1px solid var(--border-strong); border-radius:var(--radius-lg);
+    padding:16px; margin-bottom:10px; min-height:44px; text-align:left;
+  }
+  .add-kind b{font-size:16px; color:var(--text);}
+  .add-kind span{font-size:12.5px; color:var(--text-faint); font-weight:500;}
+  .preset-emoji{font-size:22px; line-height:1;}
+
+  .habit-day-card{
+    background:var(--bg-card); border:1px solid var(--border); border-radius:var(--radius-lg);
+    padding:14px; margin-bottom:10px;
+  }
+  .habit-day-card.state-clean{border-color:var(--accent);}
+  .habit-day-card.state-broken{border-color:var(--danger);}
+  .habit-head{display:flex; align-items:center; gap:12px;}
+  .habit-emoji{font-size:26px; line-height:1;}
+  .habit-title{flex:1; display:flex; flex-direction:column; min-width:0;}
+  .habit-title b{font-size:15.5px;}
+  .habit-title span{font-size:12px; color:var(--text-faint); font-weight:600;}
+  .habit-streak{font-family:var(--font-num); font-size:14px; color:var(--accent);}
+  .habit-note{font-size:12.5px; color:var(--text-faint); margin-top:8px; line-height:1.45;}
+
+  .habit-block-row{border-top:1px solid var(--border); margin-top:12px; padding-top:10px;}
+  .habit-block-row.other{opacity:0.5;}
+  .habit-block-name{
+    display:flex; justify-content:space-between; gap:8px; margin-bottom:8px;
+    font-family:var(--font-mono); font-size:10.5px; letter-spacing:0.1em;
+    text-transform:uppercase; color:var(--text-faint);
+  }
+  .habit-slots{display:flex; flex-direction:column; gap:8px;}
+  .slot-row{display:flex; align-items:center; gap:10px; flex-wrap:wrap;}
+  .slot-name{flex:1; min-width:90px; font-size:13.5px; font-weight:600;}
+  .slot-btns{display:flex; gap:6px;}
+  .slot-btn{
+    min-height:44px; padding:0 12px; border:1px solid var(--border-strong);
+    background:var(--bg); color:var(--text-dim); font-weight:700; font-size:12.5px;
+    border-radius:var(--radius-sm);
+  }
+  .slot-btn.kept{color:var(--accent); border-color:var(--accent);}
+  .slot-btn.broke{color:var(--danger); border-color:var(--danger);}
+
+  /* Filled means logged inside its own window; hollow means caught up later.
+     The border style is the whole distinction — it comes from the clock, so it
+     is the one mark that cannot be tapped into existence after the fact. */
+  .slot-done{
+    display:flex; align-items:center; gap:10px; min-height:44px; padding:0 12px;
+    border:1px solid var(--border-strong); border-radius:var(--radius-sm);
+    font-size:13.5px; font-weight:600;
+  }
+  .slot-done.live{background:var(--bg-elevated);}
+  .slot-done.late{background:transparent; border-style:dashed;}
+  .slot-done.kept .slot-mark{color:var(--accent);}
+  .slot-done.broke .slot-mark{color:var(--danger);}
+  .slot-done.skip{opacity:0.55;}
+  .slot-mark{font-family:var(--font-num); font-size:14px; width:14px; text-align:center;}
+
+  .habit-offbtn{
+    display:block; width:100%; min-height:44px; margin-top:12px;
+    background:transparent; border:1px dashed var(--border-strong); border-radius:var(--radius-sm);
+    color:var(--text-faint); font-size:12.5px; font-weight:700;
+  }
+
+  .hstrip{display:grid; grid-template-columns:repeat(30,1fr); gap:2px; margin:10px 0;}
+  .hstrip-cell{height:18px; background:var(--bg-elevated); border:1px solid var(--bg-elevated);}
+  .hstrip-cell.clean{background:var(--accent); border-color:var(--accent);}
+  .hstrip-cell.broken{background:var(--danger); border-color:var(--danger);}
+  .hstrip-cell.off{background:transparent; border-color:var(--text-faint);}

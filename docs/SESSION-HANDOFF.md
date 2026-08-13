@@ -184,6 +184,37 @@ through it.
 
 ## Hard-won facts — do not re-derive these
 
+**A habit day runs 5 AM to 4:59 AM.** `habitDay(nowMs)` is the calendar date
+five hours ago, so a 1 AM snack breaks the night you are still living rather
+than the morning you have not started. Only habit code calls it — `todayISO()`
+keeps its meaning everywhere else. Between midnight and 5 AM the two disagree
+and the card says so, or it looks broken.
+
+**A logged habit slot can never be changed.** Add anything, change nothing. The
+guard lives once, in `logSlot`, and a refused write returns *the same object* so
+callers can skip the save and the re-render. There is no catch-up prompt and no
+edit path — a day you never logged stays unlogged forever, and counts as
+neither clean nor broken. A rewritable log is one that argues with you at
+exactly the moment you are most motivated to lie.
+
+**Off plan is refused once anything is logged.** Without that guard you could
+break at lunch, mark the day off plan, and keep the streak — which would make
+every streak in the app meaningless. It is a decision taken before the day, not
+an escape hatch during it. It is also the only habit state that can be undone.
+
+**`mergeByDayKey` is one level too shallow for `habitLog`.** It merges day →
+key, so the winning phone's habit entry would replace the loser's whole slot set
+and bin meals logged on the other device. `mergeHabitLogs` goes day → habit →
+slot, and because a slot can never change, the merge is conflict-free: where
+both sides hold a value it is the same tap, so the **earlier timestamp wins**.
+
+**Habits are archived, never deleted** (`active: false`), which is why they need
+no tombstone key. Two new sync keys only: `habits`, `habitLog`.
+
+**An empty plan must not hide a habit.** `viewToday` returns early when there
+are no exercises; that branch now renders the habits section first. Progress
+already had the equivalent rule for the weigh-in block.
+
 **A logged day is immutable history.** Changing an exercise's schedule used to erase
 its streak and strip: four separate places (`calcDayStats`, `streakInfo`,
 `recentDayStates`, `dayHistory`) re-judged every past day against the *current*
@@ -270,7 +301,8 @@ asking.
 | Today | Only exercises scheduled for today (or already logged), one-offs included. Daily weigh-in card → "✓ Weighed in today · N kg" once done. |
 | Plan | Grouped by shared schedule, collapsed by default, tap to open. Add → Scheduled or One-time. Category picks the icon. Equipment: bodyweight / dumbbell + kg/lb. |
 | Progress | Same schedule groups + combo times. Weekly-average weight chart. BMI. One-offs get their own group, sorted last. Per-exercise card: 7-day strip, streak, then figures in **two groups** — reps (top set, first day, best day, lifetime) and time (best/average/total) — each with a 💡 that opens term-and-meaning rows. Empty figures are not rendered at all. Day list is unboxed: green total = target met, dashed underline = tap to edit. |
-| Health habit | Daily weigh-in, weekly-average line chart. Never touches any exercise streak. |
+| Health habits | Plan → Add → Health habit. Recurring, no target, own streak. Two shapes: **meals** (six slots — breakfast, morning snack, lunch, afternoon snack, dinner, evening snack) and **plain** (one tap a day). Each slot is Kept / Skipped / Broke. A day is **clean** (nothing broke, ≥1 kept), **broken** (anything broke), **neutral** (nothing logged, or all skipped) or **off plan**. Neutral and off-plan days are gaps the streak steps over. Three presets — Keto, No alcohol, Sleep by 11 — which are **copied, never linked**. |
+| Weigh-in | Daily weigh-in, weekly-average line chart. Never touches any exercise streak. Deliberately not a "health habit": it stores a number BMI and the chart read. |
 | Guide | **Two of them, deliberately.** The Guide tab (book icon, 4th slot) is the full 12-step walkthrough, collapsed on arrival, content as data in `src/guide.js`. The topbar **?** opens a short sheet about the screen you are standing on (`modalGuide`). The Guide screen carries no ? of its own. They were merged once and it was worse — the user asked for both back. |
 | Categories | Ten, in `src/categories.js`. The exercise stores the **category key, never the picture**, so artwork can be redrawn without touching a single saved exercise. Icons are cut from committed source art by `tools/slice-icons.py` — a grid (`icon-source.png`) plus per-category singles. Exercises saved before categories show no icon until edited; that blank is deliberate. |
 | Timed exercises | Plan → How you measure it → **Time** (number + min/hr). No keypad on Today: a dormant clock with Start, then the usual Pause / Resume / Give up / Complete. Nothing auto-completes — reaching the target pauses and asks *Take the win / Keep going* the next tick you are looking at it. Progress swaps in Longest session, First day, Average session, Lifetime, all as durations. |

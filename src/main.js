@@ -63,6 +63,7 @@ import {
   HABIT_SLOTS, HABIT_BLOCKS, HABIT_PRESETS,
   slotsFor, habitDay, blockAt, isLive,
   slotAt, hasAnySlot, isOffPlan, logSlot, setOffPlan, setHabitSchedule, archiveHabit,
+  setHabitKind, presetAllowsMeals,
   habitDayState, habitStats, newHabit,
 } from './domain/habits.js';
 import { NOTICES } from './notices.js';
@@ -3407,14 +3408,18 @@ function viewPlan() {
   if (habits.length) {
     html += `<div class="section-label">Health habits</div>`;
     habits.forEach((h) => {
-      html += `<button class="plan-row" data-action="open-edit-habit" data-id="${h.id}">
+      html += `<div class="plan-row">
+        <button class="plan-row-open" data-action="open-edit-habit" data-id="${h.id}" aria-label="Edit ${escapeHtml(h.name)}">
         <div class="ex-icon-badge habit-badge">${escapeHtml(h.emoji || '✅')}</div>
         <div class="plan-row-body">
           <div class="plan-row-name">${escapeHtml(h.name)}</div>
-          <div class="plan-row-sub">${escapeHtml(scheduleLabel(h))} · ${h.kind === 'meals' ? 'meal by meal' : 'one tap a day'}</div>
+          <div class="plan-row-sub">${escapeHtml(scheduleLabel(h))} · ${h.kind === 'meals' ? 'by every meal' : 'by day'}</div>
         </div>
-        <span class="group-chev">${ICONS.chevron}</span>
-      </button>`;
+        </button>
+        <div class="plan-row-actions">
+          <button class="mini-btn danger" data-action="ask-delete-habit" data-id="${h.id}" data-name="${escapeHtml(h.name)}" aria-label="Delete ${escapeHtml(h.name)}">${ICONS.trash}</button>
+        </div>
+      </div>`;
     });
     html += tipHtml('plan-habits', 'No target and no reps — a habit day is clean unless something breaks it. Tap one to rename it, change its days, or delete it.');
   }
@@ -3754,6 +3759,7 @@ function renderModal() {
   else if (m.type === 'logger') root.innerHTML = modalLogger(m.exId);
   else if (m.type === 'exerciseForm') root.innerHTML = modalExerciseForm(m.exId);
   else if (m.type === 'notices') root.innerHTML = modalNotices();
+  else if (m.type === 'confirmDeleteHabit') root.innerHTML = modalConfirmDeleteHabit(m);
   else if (m.type === 'addChoice') root.innerHTML = modalAddChoice();
   else if (m.type === 'habitForm') root.innerHTML = modalHabitForm();
   else if (m.type === 'confirmDeleteSet') root.innerHTML = modalConfirm(m);
@@ -3927,6 +3933,19 @@ function modalLogger(exId) {
  * threw the name away. That was true of the schedule toggles long before the
  * Timer field existed; adding a third toggle just made it easier to hit.
  */
+function modalConfirmDeleteHabit(m) {
+  return `<div class="modal-backdrop" data-action="backdrop">
+    <div class="modal-sheet center" data-stop>
+      <h2 style="font-size:16px;margin:0 0 8px">Delete “${escapeHtml(m.name || '')}”?</h2>
+      <p style="font-size:13.5px;color:var(--text-dim);margin:0 0 18px;line-height:1.5">It disappears from Today, Plan and Progress. Nothing else on your phone changes.</p>
+      <div class="form-actions">
+        <button class="secondary-btn" data-action="close-modal">Cancel</button>
+        <button class="primary-btn" style="background:var(--danger);color:#fff" data-action="delete-habit" data-id="${escapeHtml(m.habitId || '')}">Delete</button>
+      </div>
+    </div>
+  </div>`;
+}
+
 function modalNotices() {
   const status = { latest: 'Up to date', stale: 'Update ready', unknown: 'Offline — can’t check' }[state.version.status];
   const list = NOTICES.length
@@ -3984,10 +4003,11 @@ function modalHabitForm() {
   const preset = HABIT_PRESETS.find((x) => x.key === m.preset) || null;
   const name = m.name !== undefined ? m.name : (editing ? editing.name : (preset ? preset.name : ''));
   const emoji = m.emoji !== undefined ? m.emoji : (editing ? editing.emoji : (preset ? preset.emoji : '✅'));
-  // The shape is not editable and not chosen: it rides on the preset. Switching
-  // a keto habit to one tap would orphan every slot already logged against it,
-  // and there is no honest way to reinterpret that history.
-  const kind = editing ? editing.kind : (preset ? preset.kind : 'plain');
+  // Offered wherever food is involved — keto, a custom habit, or anything
+  // already tracked that way. Switching is safe on history: a past day is judged
+  // by the slot values it holds, whatever shape the habit is now.
+  const mealsOk = editing ? (editing.meal || editing.kind === 'meals') : presetAllowsMeals(m.preset);
+  const kind = m.kind !== undefined ? m.kind : (editing ? editing.kind : (preset ? preset.kind : 'plain'));
   const daily = !Array.isArray(m.days);
   const days = Array.isArray(m.days) ? m.days : [];
   return `<div class="modal-backdrop" data-action="backdrop">
@@ -4027,6 +4047,13 @@ function modalHabitForm() {
         </div>
         <div class="hint">A day it isn't scheduled for is neutral — never a break. Changing this never rewrites a day you already logged.</div>
       </div>
+      ${mealsOk ? `<div class="field">
+        <label>How you track it</label>
+        <div class="sched-modes">
+          <button type="button" class="sched-mode ${kind === 'plain' ? 'on' : ''}" data-action="habit-kind" data-kind="plain">By day</button>
+          <button type="button" class="sched-mode ${kind === 'meals' ? 'on' : ''}" data-action="habit-kind" data-kind="meals">By every meal</button>
+        </div>
+      </div>` : ''}
       <div class="field">
         <div class="hint">${kind === 'meals'
           ? 'Six slots — breakfast, lunch, dinner and the snacks between them. Any break, and the day is broken.'
@@ -5066,6 +5093,7 @@ document.addEventListener('click', async (e) => {
       const preset = HABIT_PRESETS.find((x) => x.key === key) || null;
       state.modal = {
         type: 'habitForm', preset: key, days: state.modal.days,
+        kind: preset ? preset.kind : 'plain',
         name: preset ? preset.name : '',
         emoji: preset ? preset.emoji : '✅',
       };
@@ -5092,9 +5120,18 @@ document.addEventListener('click', async (e) => {
       renderModal();
       break;
     }
+    case 'habit-kind':
+      captureHabitDraft();
+      state.modal.kind = btn.dataset.kind === 'meals' ? 'meals' : 'plain';
+      renderModal();
+      break;
     case 'confirm-delete-habit':
       captureHabitDraft();
       state.modal.confirmDelete = true;
+      renderModal();
+      break;
+    case 'ask-delete-habit':
+      state.modal = { type: 'confirmDeleteHabit', habitId: btn.dataset.id, name: btn.dataset.name };
       renderModal();
       break;
     case 'delete-habit':
@@ -5115,15 +5152,19 @@ document.addEventListener('click', async (e) => {
       const editing = state.habits.find((h) => h.id === m.habitId) || null;
       const emoji = (m.emoji || '').trim() || '✅';
       if (editing) {
+        const canMeals = editing.meal || editing.kind === 'meals';
+        const kind = (canMeals && m.kind !== undefined) ? m.kind : editing.kind;
         state.habits = state.habits.map((h) => (h.id === editing.id
-          ? { ...setHabitSchedule(h, schedule, todayISO()), name, emoji }
+          ? { ...setHabitKind(setHabitSchedule(h, schedule, todayISO()), kind), name, emoji }
           : h));
       } else {
         const preset = HABIT_PRESETS.find((x) => x.key === m.preset) || null;
+        const canMeals = presetAllowsMeals(m.preset);
         state.habits = [...state.habits, newHabit({
           name,
           emoji,
-          kind: preset ? preset.kind : 'plain',
+          meal: canMeals,
+          kind: canMeals && m.kind !== undefined ? m.kind : (preset ? preset.kind : 'plain'),
           // The rule is the preset's own words, kept only while it is still the
           // preset. Rename it and it is your habit, with your own terms.
           rule: preset && preset.name === name ? preset.rule : '',

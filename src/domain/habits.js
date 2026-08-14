@@ -221,17 +221,29 @@ export function habitStats(habitLog, habit, today) {
  * presets are referenced by id, editing one later mutates habits already living
  * on other people's phones, and we own a sync problem nobody asked for.
  */
-// Meal by meal is a keto idea, so only keto carries it. Everything else is one
-// tap a day, which is why the form has no shape toggle: the preset decides. The
-// escape hatch costs nothing — start from Keto and rename it, and you keep the
-// six slots for anything you want tracked that way.
+/**
+ * `meal: true` means the habit is about what you eat, so it can be tracked
+ * either way — by day or by every meal — and the form offers the choice. Habits
+ * that are not about food have nothing to put in six slots, so they are one tap
+ * a day and are offered no toggle at all. That is the whole rule: the choice
+ * appears where it means something and nowhere else.
+ *
+ * `kind` here is only the default the choice starts on.
+ */
 export const HABIT_PRESETS = [
-  { key: 'keto', name: 'Keto', emoji: '🥑', kind: 'meals', rule: 'Any carb breaks the day.' },
+  { key: 'keto', name: 'Keto', emoji: '🥑', kind: 'meals', meal: true, rule: 'Any carb breaks the day.' },
   { key: 'alcohol', name: 'No alcohol', emoji: '🚫', kind: 'plain', rule: 'One drink breaks the day.' },
   { key: 'smoking', name: 'No smoking or vaping', emoji: '🚭', kind: 'plain', rule: 'One puff breaks the day.' },
   { key: 'teeth', name: 'Brush teeth', emoji: '🪥', kind: 'plain', rule: 'Morning and night.' },
   { key: 'sleep', name: 'Sleep by 11', emoji: '🌙', kind: 'plain', rule: 'Lights out by 11 PM.' },
 ];
+
+/** A custom habit could be about food, so it is offered the choice too. */
+export function presetAllowsMeals(presetKey) {
+  if (!presetKey) return true;
+  const p = HABIT_PRESETS.find((x) => x.key === presetKey);
+  return !!(p && p.meal);
+}
 
 /**
  * `schedule` and `scheduleHistory` are deliberately the same fields an exercise
@@ -281,4 +293,15 @@ export function setHabitSchedule(habit, schedule, todayStr) {
  */
 export function archiveHabit(habits, habitId) {
   return (habits || []).map((h) => (h.id === habitId ? { ...h, active: false } : h));
+}
+
+/**
+ * Switching between by-day and by-meal is safe on already-logged history: a day
+ * is judged by the slot values it holds, whatever shape the habit is now, so
+ * past days keep computing exactly as they did. Only what today offers you to
+ * tap changes. `meal` records that this habit is about food, so the choice stays
+ * available after it is created.
+ */
+export function setHabitKind(habit, kind) {
+  return { ...habit, kind: kind === 'meals' ? 'meals' : 'plain', meal: true };
 }

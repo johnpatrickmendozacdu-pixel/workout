@@ -4,7 +4,7 @@ import {
   slotsFor, habitDay, habitMinute, blockOf, blockAt, isLive,
   slotAt, hasAnySlot, isOffPlan, logSlot, setOffPlan,
   habitDayState, habitStats, habitFromPreset, newHabit,
-  setHabitSchedule, archiveHabit,
+  setHabitSchedule, archiveHabit, setHabitKind, presetAllowsMeals,
 } from '../src/domain/habits.js';
 
 // Local-time constructors on purpose: the app reads the phone's clock, so the
@@ -326,5 +326,27 @@ describe('presets after the shape rule', () => {
   });
   it('includes no smoking or vaping', () => {
     expect(HABIT_PRESETS.map((p) => p.key)).toContain('smoking');
+  });
+});
+
+describe('by day or by every meal', () => {
+  it('offers the choice only where food is involved', () => {
+    expect(presetAllowsMeals('keto')).toBe(true);
+    expect(presetAllowsMeals(null)).toBe(true);   // custom could be about food
+    expect(presetAllowsMeals('smoking')).toBe(false);
+    expect(presetAllowsMeals('teeth')).toBe(false);
+    expect(presetAllowsMeals('sleep')).toBe(false);
+  });
+
+  it('switches shape without disturbing a logged day', () => {
+    const h = newHabit({ name: 'Keto', kind: 'meals', schedule: 'daily' }, '2026-08-01');
+    let log = logSlot({}, '2026-08-10', h.id, 'breakfast', 'kept', at('2026-08-10T08:00:00'));
+    log = logSlot(log, '2026-08-10', h.id, 'dinner', 'broke', at('2026-08-10T19:00:00'));
+    expect(habitDayState(log, h, '2026-08-10')).toBe('broken');
+    const plain = setHabitKind(h, 'plain');
+    // The past is judged by what was logged, not by the shape it is now.
+    expect(habitDayState(log, plain, '2026-08-10')).toBe('broken');
+    expect(slotsFor(plain)).toHaveLength(1);
+    expect(slotsFor(setHabitKind(plain, 'meals'))).toHaveLength(6);
   });
 });

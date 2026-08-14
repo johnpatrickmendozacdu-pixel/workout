@@ -21,7 +21,7 @@ export const NOTICES = [
     title: 'Sets updates itself now',
     body: [
       'No more “force update”. When you come back to the app, it quietly takes the newest version — never while a clock is running or a sheet is open, so nothing you are in the middle of gets thrown away.',
-      'The ↻ button next to this bell is still there if you ever want to pull the newest build down yourself.',
+      'The button next to this bell shows a tick when you are on the newest build, and an arrow when one is waiting. Tap it any time to pull the newest build down yourself.',
       'This bell is where new things get explained. The number tells you how many you have not read.',
     ],
   },

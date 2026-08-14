@@ -2396,18 +2396,34 @@ function versionChipHtml() {
   const { local, status } = state.version;
   const label = { latest: 'Up to date', stale: 'Update ready', unknown: 'Version unknown (offline?)' }[status];
   return `<button class="version-chip ${status}" data-action="force-update"
-    title="Build ${escapeHtml(local)} · ${label} — tap to refresh" aria-label="${label}. Tap to force update.">${status === 'latest' ? '↻' : status === 'stale' ? '↓' : '↻'}</button>`;
+    title="Build ${escapeHtml(local)} · ${label} — tap to refresh" aria-label="${label}. Tap to force update.">${status === 'latest' ? '✓' : status === 'stale' ? '↓' : '↻'}</button>`;
 }
 
 function unreadNotices() {
   return NOTICES.filter((n) => !state.noticesSeen.includes(n.id));
 }
 
+/**
+ * A waiting update earns a bell of its own, and it cannot live in NOTICES:
+ * that file ships inside the build, so the new version's announcement of itself
+ * is unreachable from the old version that needs to hear it. It is a live
+ * condition instead — counted while it is true, gone the moment you update.
+ * Nothing marks it read, deliberately: "read" would silence something that is
+ * still waiting.
+ */
+function updatePending() {
+  return state.version.status === 'stale';
+}
+
+function bellCount() {
+  return unreadNotices().length + (updatePending() ? 1 : 0);
+}
+
 /** The bell takes the version chip's slot rather than adding a fifth: once
  *  updates apply themselves, "which build am I on" is a question for Backup &
  *  data, not for the top of every screen. */
 function bellChipHtml() {
-  const n = unreadNotices().length;
+  const n = bellCount();
   return `<button class="bell-chip ${n ? 'has-unread' : ''}" data-action="open-notices" aria-label="${n ? `What's new — ${n} unread` : "What's new"}">
     ${ICONS.bell}${n ? `<span class="bell-count">${n > 9 ? '9+' : n}</span>` : ''}
   </button>`;
@@ -3973,6 +3989,14 @@ function modalConfirmDeleteHabit(m) {
 
 function modalNotices() {
   const status = { latest: 'Up to date', stale: 'Update ready', unknown: 'Offline — can’t check' }[state.version.status];
+  const pending = updatePending()
+    ? `<div class="notice update">
+        <div class="notice-date">Waiting</div>
+        <h3>A new version is ready</h3>
+        <p>Sets takes it on its own next time you come back to the app. Tap below if you would rather have it now.</p>
+        <button class="primary-btn wide" data-action="force-update">Update now</button>
+      </div>`
+    : '';
   const list = NOTICES.length
     ? NOTICES.map((n) => `<div class="notice">
         <div class="notice-date">${escapeHtml(formatDisplayDate(n.date, { month: 'short', day: 'numeric', year: 'numeric' }))}</div>
@@ -3987,6 +4011,7 @@ function modalNotices() {
         <h2>What’s new</h2>
         <button class="sheet-close" data-action="close-modal">${ICONS.close}</button>
       </div>
+      ${pending}
       ${list}
       <div class="notice-foot">Build ${escapeHtml(state.version.local)} · ${status}. Updates apply themselves next time you come back to the app.</div>
     </div>

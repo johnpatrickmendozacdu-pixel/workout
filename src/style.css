@@ -2028,3 +2028,6 @@
     border-top:1px solid var(--border); margin-top:6px; padding-top:12px;
     font-size:12px; color:var(--text-faint); line-height:1.5;
   }
+
+  .notice.update{border-top:none; border:1px solid var(--accent); padding:14px; margin-bottom:4px;}
+  .notice.update h3{color:var(--accent);}

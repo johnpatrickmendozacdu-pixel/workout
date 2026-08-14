@@ -188,6 +188,15 @@ through it.
 
 ## Hard-won facts — do not re-derive these
 
+**An installed app that is never closed keeps running the JS it started with**,
+however new the service worker under it is — which is why "Force update now"
+existed. `checkVersion()` already ran on every `visibilitychange` back to
+visible; `maybeAutoUpdate()` now acts on it and calls `forceUpdate()`. It
+refuses while a clock is running or a sheet is open (a reload would throw away
+what someone is mid-way through) and fires **once per run**, so a deploy that
+reports a build it cannot serve costs one reload rather than a loop. Those cases
+fall through to the existing banner.
+
 **A habit day runs 5 AM to 4:59 AM.** `habitDay(nowMs)` is the calendar date
 five hours ago, so a 1 AM snack breaks the night you are still living rather
 than the morning you have not started. Only habit code calls it — `todayISO()`
@@ -305,7 +314,8 @@ asking.
 | Today | Only exercises scheduled for today (or already logged), one-offs included. Daily weigh-in card → "✓ Weighed in today · N kg" once done. |
 | Plan | Grouped by shared schedule, collapsed by default, tap to open. Add → Scheduled or One-time. Category picks the icon. Equipment: bodyweight / dumbbell + kg/lb. |
 | Progress | Same schedule groups + combo times. Weekly-average weight chart. BMI. One-offs get their own group, sorted last. Per-exercise card: 7-day strip, streak, then figures in **two groups** — reps (top set, first day, best day, lifetime) and time (best/average/total) — each with a 💡 that opens term-and-meaning rows. Empty figures are not rendered at all. Day list is unboxed: green total = target met, dashed underline = tap to edit. |
-| Health habits | Plan → Add → Health habit. Recurring, no target, own streak. Two shapes: **meals** (six slots — breakfast, morning snack, lunch, afternoon snack, dinner, evening snack) and **plain** (one tap a day). Each slot is Kept / Skipped / Broke. A day is **clean** (nothing broke, ≥1 kept), **broken** (anything broke), **neutral** (nothing logged, or all skipped) or **off plan**. Neutral and off-plan days are gaps the streak steps over. Three presets — Keto, No alcohol, Sleep by 11 — which are **copied, never linked**. |
+| What's new | A bell in the topbar, **in the version chip's old slot** — once updates apply themselves, "which build am I on" belongs in Backup & data, not on every screen. Notices are a data file (`src/notices.js`) shipped **inside the build**: the release is the delivery mechanism, so there is no endpoint, no table and no network dependency in the topbar. Read state is per-device (`notices-seen`), never synced, and a fresh install starts with everything read. **Adding an entry is what sends it — never add one without asking Johnny, every time.** |
+| Health habits | Plan → Add → Health habit. Listed on Plan; tap to rename, re-schedule or delete. Delete **archives** (`active:false`) — habits carry no tombstone key, so a hard delete would come back from Drive. Today collapses a meals habit to one row; a one-tap habit never collapses, because its row is the action. | Recurring, no target, own streak. Two shapes: **meals** (six slots — breakfast, morning snack, lunch, afternoon snack, dinner, evening snack) and **plain** (one tap a day). Each slot is Kept / Skipped / Broke. A day is **clean** (nothing broke, ≥1 kept), **broken** (anything broke), **neutral** (nothing logged, or all skipped) or **off plan**. Neutral and off-plan days are gaps the streak steps over. Three presets — Keto, No alcohol, Sleep by 11 — which are **copied, never linked**. |
 | Weigh-in | Daily weigh-in, weekly-average line chart. Never touches any exercise streak. Deliberately not a "health habit": it stores a number BMI and the chart read. |
 | Guide | **Two of them, deliberately.** The Guide tab (book icon, 4th slot) is the full 12-step walkthrough, collapsed on arrival, content as data in `src/guide.js`. The topbar **?** opens a short sheet about the screen you are standing on (`modalGuide`). The Guide screen carries no ? of its own. They were merged once and it was worse — the user asked for both back. |
 | Categories | Ten, in `src/categories.js`. The exercise stores the **category key, never the picture**, so artwork can be redrawn without touching a single saved exercise. Icons are cut from committed source art by `tools/slice-icons.py` — a grid (`icon-source.png`) plus per-category singles. Exercises saved before categories show no icon until edited; that blank is deliberate. |

@@ -222,25 +222,24 @@ export function habitStats(habitLog, habit, today) {
  * on other people's phones, and we own a sync problem nobody asked for.
  */
 /**
- * `meal: true` means the habit is about what you eat, so it can be tracked
- * either way — by day or by every meal — and the form offers the choice. Habits
- * that are not about food have nothing to put in six slots, so they are one tap
- * a day and are offered no toggle at all. That is the whole rule: the choice
- * appears where it means something and nowhere else.
+ * `meal: true` means this habit happens at meals, so it can be tracked either
+ * way — by day, or by every meal — and the form offers the choice. Everything
+ * else has nothing to put in six slots and is one tap a day, with no toggle at
+ * all: the choice appears where it means something and nowhere else.
  *
- * `kind` here is only the default the choice starts on.
+ * `kind` here is only the default that choice starts on.
  */
 export const HABIT_PRESETS = [
   { key: 'keto', name: 'Keto', emoji: '🥑', kind: 'meals', meal: true, rule: 'Any carb breaks the day.' },
-  { key: 'alcohol', name: 'No alcohol', emoji: '🚫', kind: 'plain', rule: 'One drink breaks the day.' },
+  { key: 'alcohol', name: 'No alcohol', emoji: '🚫', kind: 'plain', meal: true, rule: 'One drink breaks the day.' },
   { key: 'smoking', name: 'No smoking or vaping', emoji: '🚭', kind: 'plain', rule: 'One puff breaks the day.' },
-  { key: 'teeth', name: 'Brush teeth', emoji: '🪥', kind: 'plain', rule: 'Morning and night.' },
+  { key: 'teeth', name: 'Brush teeth', emoji: '🪥', kind: 'plain', meal: true, rule: 'Morning and night.' },
   { key: 'sleep', name: 'Sleep by 11', emoji: '🌙', kind: 'plain', rule: 'Lights out by 11 PM.' },
 ];
 
-/** A custom habit could be about food, so it is offered the choice too. */
+/** Only the three that actually happen at meals. A custom habit is one tap a
+ *  day — it can always be rebuilt from Keto if it turns out to be a food one. */
 export function presetAllowsMeals(presetKey) {
-  if (!presetKey) return true;
   const p = HABIT_PRESETS.find((x) => x.key === presetKey);
   return !!(p && p.meal);
 }

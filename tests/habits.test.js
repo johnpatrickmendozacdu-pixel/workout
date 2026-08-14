@@ -330,12 +330,13 @@ describe('presets after the shape rule', () => {
 });
 
 describe('by day or by every meal', () => {
-  it('offers the choice only where food is involved', () => {
+  it('offers the choice only to the three that happen at meals', () => {
     expect(presetAllowsMeals('keto')).toBe(true);
-    expect(presetAllowsMeals(null)).toBe(true);   // custom could be about food
+    expect(presetAllowsMeals('alcohol')).toBe(true);
+    expect(presetAllowsMeals('teeth')).toBe(true);
     expect(presetAllowsMeals('smoking')).toBe(false);
-    expect(presetAllowsMeals('teeth')).toBe(false);
     expect(presetAllowsMeals('sleep')).toBe(false);
+    expect(presetAllowsMeals(null)).toBe(false);  // custom is one tap a day
   });
 
   it('switches shape without disturbing a logged day', () => {

@@ -216,12 +216,21 @@ async function loadAll() {
   // Absent reads as empty. Optional data must never be able to kill a screen.
   state.habits = habits || [];
   state.habitLog = habitLog || {};
-  // A new install starts with everything read. Greeting someone with a backlog
-  // of notices about features they have never not had is noise, not news.
+  // A genuinely fresh install starts with everything read: greeting a first-time
+  // user with a backlog about features they have never not had is noise.
+  //
+  // An existing phone upgrading INTO the bell is NOT a fresh install, and
+  // treating it as one is exactly how the first two notices went undelivered —
+  // every device that already had data marked them read before anyone saw them.
+  // "No notices-seen key" cannot tell the two apart; having data can.
   if (Array.isArray(noticesSeen)) {
     state.noticesSeen = noticesSeen;
   } else {
-    state.noticesSeen = NOTICES.map((n) => n.id);
+    const fresh = !state.exercises.length
+      && !state.habits.length
+      && !Object.keys(state.setsLog).length
+      && !((state.profile && state.profile.weightLog) || []).length;
+    state.noticesSeen = fresh ? NOTICES.map((n) => n.id) : [];
     db.setItem('notices-seen', state.noticesSeen).catch(() => {});
   }
 
@@ -2379,6 +2388,17 @@ function helpChipHtml() {
   return `<button class="help-chip" data-action="open-guide" aria-label="Guide">${ICONS.help}</button>`;
 }
 
+/** Always here, not only when an update is waiting: the whole point of a manual
+ *  refresh is to be able to reach for it when you suspect something, which is
+ *  precisely when the app believes it is up to date. Tapping always refreshes;
+ *  the glyph only reports what the last check found. */
+function versionChipHtml() {
+  const { local, status } = state.version;
+  const label = { latest: 'Up to date', stale: 'Update ready', unknown: 'Version unknown (offline?)' }[status];
+  return `<button class="version-chip ${status}" data-action="force-update"
+    title="Build ${escapeHtml(local)} · ${label} — tap to refresh" aria-label="${label}. Tap to force update.">${status === 'latest' ? '↻' : status === 'stale' ? '↓' : '↻'}</button>`;
+}
+
 function unreadNotices() {
   return NOTICES.filter((n) => !state.noticesSeen.includes(n.id));
 }
@@ -2431,6 +2451,7 @@ function renderTopbar() {
         <div class="topbar-right">
           <div class="streak-pill" title="Longest run currently going">${ICONS.flame}${streak}</div>
           ${helpChipHtml()}
+          ${versionChipHtml()}
           ${bellChipHtml()}
           ${avatarChipHtml()}
         </div>
@@ -2442,6 +2463,7 @@ function renderTopbar() {
         <div class="topbar-right">
           <button class="add-btn" data-action="open-add">${ICONS.plus} Add</button>
           ${helpChipHtml()}
+          ${versionChipHtml()}
           ${bellChipHtml()}
           ${avatarChipHtml()}
         </div>
@@ -2455,6 +2477,7 @@ function renderTopbar() {
             data-action="refresh-crew" aria-label="${state.crew.refreshedAt ? 'Crew up to date' : 'Refresh crew'}"
             ${state.crew.refreshing ? 'disabled' : ''}>${state.crew.refreshedAt ? ICONS.check : ICONS.restore}</button>
           ${helpChipHtml()}
+          ${versionChipHtml()}
           ${bellChipHtml()}
           ${avatarChipHtml()}
         </div>
@@ -2466,6 +2489,7 @@ function renderTopbar() {
       <div class="topbar-row">
         <div class="topbar-left">${LOGO_MARK}<div class="screen-title">Guide</div></div>
         <div class="topbar-right">
+          ${versionChipHtml()}
           ${bellChipHtml()}
           ${avatarChipHtml()}
         </div>
@@ -2477,6 +2501,7 @@ function renderTopbar() {
         <div class="topbar-right">
           <button class="icon-btn" data-action="open-data">${ICONS.gear}</button>
           ${helpChipHtml()}
+          ${versionChipHtml()}
           ${bellChipHtml()}
           ${avatarChipHtml()}
         </div>

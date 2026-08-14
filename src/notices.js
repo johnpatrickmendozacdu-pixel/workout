@@ -16,21 +16,22 @@
  */
 export const NOTICES = [
   {
-    id: '2026-08-14-updates-and-bell',
+    id: '2026-08-14-updates-and-bell.2',
     date: '2026-08-14',
     title: 'Sets updates itself now',
     body: [
       'No more “force update”. When you come back to the app, it quietly takes the newest version — never while a clock is running or a sheet is open, so nothing you are in the middle of gets thrown away.',
+      'The ↻ button next to this bell is still there if you ever want to pull the newest build down yourself.',
       'This bell is where new things get explained. The number tells you how many you have not read.',
     ],
   },
   {
-    id: '2026-08-14-health-habits',
+    id: '2026-08-14-health-habits.2',
     date: '2026-08-14',
     title: 'Health habits',
     body: [
       'Plan → Add → Health habit. No target and no reps: a day is clean unless something breaks it.',
-      'Keto can be tracked by day or by every meal — breakfast, lunch, dinner and the snacks between them. Skipping a meal costs nothing, because not eating is not a carb. Anything else, from no alcohol to brushing your teeth, is one tap a day.',
+      'Keto, No alcohol and Brush teeth can be tracked by day or by every meal — breakfast, lunch, dinner and the snacks between them. Skipping a meal costs nothing, because not eating is not a carb. Everything else is one tap a day.',
       'Once you tap a slot it is final, and that is the point: a streak you can edit is not a streak. A day you never logged is simply neutral, and you can take a day off plan whenever you need one.',
       'A habit day runs 5 AM to 5 AM, so a late-night snack lands on the night you are still up rather than the morning you have not started.',
     ],

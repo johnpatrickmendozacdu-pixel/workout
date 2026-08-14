@@ -465,6 +465,14 @@
 
   .loading-screen{display:flex; align-items:center; justify-content:center; height:100dvh; color:var(--text-faint); font-size:13px; letter-spacing:0.08em; text-transform:uppercase;}
 
+  /* ---------- version / manual refresh ---------- */
+  .version-chip{
+    width:34px; height:34px; display:flex; align-items:center; justify-content:center;
+    font-size:15px; font-weight:700; background:var(--bg-card);
+    border:1px solid var(--border-strong); color:var(--text-dim);
+  }
+  .version-chip.stale{color:var(--accent-ink); background:var(--accent); border-color:var(--accent);}
+
   /* ---------- three-column shell ---------- */
   /* Phone first: the rails are off-canvas drawers, the workout column is the
      app. At >=1180px there is room for all three at once and the rails become

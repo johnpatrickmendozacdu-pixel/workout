@@ -221,9 +221,15 @@ export function habitStats(habitLog, habit, today) {
  * presets are referenced by id, editing one later mutates habits already living
  * on other people's phones, and we own a sync problem nobody asked for.
  */
+// Meal by meal is a keto idea, so only keto carries it. Everything else is one
+// tap a day, which is why the form has no shape toggle: the preset decides. The
+// escape hatch costs nothing — start from Keto and rename it, and you keep the
+// six slots for anything you want tracked that way.
 export const HABIT_PRESETS = [
   { key: 'keto', name: 'Keto', emoji: '🥑', kind: 'meals', rule: 'Any carb breaks the day.' },
   { key: 'alcohol', name: 'No alcohol', emoji: '🚫', kind: 'plain', rule: 'One drink breaks the day.' },
+  { key: 'smoking', name: 'No smoking or vaping', emoji: '🚭', kind: 'plain', rule: 'One puff breaks the day.' },
+  { key: 'teeth', name: 'Brush teeth', emoji: '🪥', kind: 'plain', rule: 'Morning and night.' },
   { key: 'sleep', name: 'Sleep by 11', emoji: '🌙', kind: 'plain', rule: 'Lights out by 11 PM.' },
 ];
 
@@ -252,4 +258,27 @@ export function habitFromPreset(presetKey, schedule, todayStr) {
   const p = HABIT_PRESETS.find((x) => x.key === presetKey);
   if (!p) return null;
   return newHabit({ name: p.name, emoji: p.emoji, kind: p.kind, rule: p.rule, schedule }, todayStr);
+}
+
+/**
+ * A schedule change appends a dated entry rather than overwriting, so past days
+ * keep the schedule they were judged against — the same rule exercises follow.
+ * Changing it twice in one day replaces today's entry instead of stacking, or a
+ * few taps in the form would leave a trail of no-op history.
+ */
+export function setHabitSchedule(habit, schedule, todayStr) {
+  const hist = (Array.isArray(habit.scheduleHistory) ? habit.scheduleHistory : [])
+    .filter((h) => h && h.effectiveDate !== todayStr);
+  hist.push({ effectiveDate: todayStr, schedule });
+  hist.sort((a, b) => (a.effectiveDate < b.effectiveDate ? -1 : 1));
+  return { ...habit, schedule, scheduleHistory: hist };
+}
+
+/**
+ * Deleting a habit archives it: gone from Today, Plan and Progress, with its log
+ * left inert in storage. Habits carry no tombstone key, and a hard delete
+ * without one is exactly how a deleted exercise came back from Drive.
+ */
+export function archiveHabit(habits, habitId) {
+  return (habits || []).map((h) => (h.id === habitId ? { ...h, active: false } : h));
 }

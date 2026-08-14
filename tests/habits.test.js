@@ -4,6 +4,7 @@ import {
   slotsFor, habitDay, habitMinute, blockOf, blockAt, isLive,
   slotAt, hasAnySlot, isOffPlan, logSlot, setOffPlan,
   habitDayState, habitStats, habitFromPreset, newHabit,
+  setHabitSchedule, archiveHabit,
 } from '../src/domain/habits.js';
 
 // Local-time constructors on purpose: the app reads the phone's clock, so the
@@ -252,10 +253,10 @@ describe('habitStats', () => {
 });
 
 describe('presets', () => {
-  it('offers keto as a meals habit and two plain ones', () => {
-    expect(HABIT_PRESETS.map((p) => p.key)).toEqual(['keto', 'alcohol', 'sleep']);
+  it('offers keto as the one meals habit, the rest one tap a day', () => {
+    expect(HABIT_PRESETS.map((p) => p.key)).toEqual(['keto', 'alcohol', 'smoking', 'teeth', 'sleep']);
     expect(HABIT_PRESETS[0].kind).toBe('meals');
-    expect(HABIT_PRESETS[1].kind).toBe('plain');
+    expect(HABIT_PRESETS.slice(1).every((p) => p.kind === 'plain')).toBe(true);
   });
   it('copies a preset rather than linking to it', () => {
     const h = habitFromPreset('keto', 'daily', '2026-08-13');
@@ -283,5 +284,47 @@ describe('presets', () => {
     expect(h.kind).toBe('plain');
     expect(h.name).toBe('No fizzy drinks');
     expect(h.scheduleHistory[0].effectiveDate).toBe('2026-08-13');
+  });
+});
+
+describe('editing a habit', () => {
+  const H = newHabit({ name: 'Keto', kind: 'meals', schedule: 'daily' }, '2026-08-01');
+
+  it('appends a dated schedule entry rather than rewriting the past', () => {
+    const next = setHabitSchedule(H, [1, 3, 5], '2026-08-13');
+    expect(next.schedule).toEqual([1, 3, 5]);
+    expect(next.scheduleHistory).toEqual([
+      { effectiveDate: '2026-08-01', schedule: 'daily' },
+      { effectiveDate: '2026-08-13', schedule: [1, 3, 5] },
+    ]);
+  });
+
+  it('judges a past day by the schedule it had, not the new one', () => {
+    const next = setHabitSchedule(H, [1, 3, 5], '2026-08-13');
+    // 2026-08-09 is a Sunday: not in the new schedule, but it was daily then.
+    expect(habitDayState({}, next, '2026-08-09')).toBe('neutral');
+    expect(habitDayState({}, next, '2026-08-16')).toBe('off');
+  });
+
+  it('replaces today’s entry instead of stacking on repeated edits', () => {
+    let next = setHabitSchedule(H, [1], '2026-08-13');
+    next = setHabitSchedule(next, [1, 2], '2026-08-13');
+    expect(next.scheduleHistory).toHaveLength(2);
+    expect(next.scheduleHistory[1].schedule).toEqual([1, 2]);
+  });
+
+  it('archives rather than deletes, leaving the log alone', () => {
+    const out = archiveHabit([H, { id: 'other', active: true }], H.id);
+    expect(out.find((h) => h.id === H.id).active).toBe(false);
+    expect(out.find((h) => h.id === 'other').active).toBe(true);
+  });
+});
+
+describe('presets after the shape rule', () => {
+  it('only keto is meal by meal', () => {
+    expect(HABIT_PRESETS.filter((p) => p.kind === 'meals').map((p) => p.key)).toEqual(['keto']);
+  });
+  it('includes no smoking or vaping', () => {
+    expect(HABIT_PRESETS.map((p) => p.key)).toContain('smoking');
   });
 });

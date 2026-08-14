@@ -465,14 +465,6 @@
 
   .loading-screen{display:flex; align-items:center; justify-content:center; height:100dvh; color:var(--text-faint); font-size:13px; letter-spacing:0.08em; text-transform:uppercase;}
 
-  /* ---------- version indicator ---------- */
-  .version-chip{
-    width:26px; height:26px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center;
-    font-size:13px; font-weight:700; background:var(--bg-card); border:1px solid var(--border); color:var(--text-faint);
-  }
-  .version-chip.latest{color:var(--success); border-color:var(--border-strong);}
-  .version-chip.stale{color:#171614; background:var(--accent); border-color:var(--accent);}
-
   /* ---------- three-column shell ---------- */
   /* Phone first: the rails are off-canvas drawers, the workout column is the
      app. At >=1180px there is room for all three at once and the rails become
@@ -1694,6 +1686,7 @@
   .member-ex-num b{color:var(--accent); font-weight:700;}
 
   .secondary-btn.wide{width:100%; margin-bottom:8px;}
+  .primary-btn.wide{width:100%; margin-bottom:8px;}
   .danger-btn{
     width:100%; min-height:48px; margin-top:6px; background:none;
     border:1px solid rgba(228,87,46,0.5); color:var(--danger); font-size:14px; font-weight:700;
@@ -1995,3 +1988,35 @@
   .hstrip-cell.clean{background:var(--accent); border-color:var(--accent);}
   .hstrip-cell.broken{background:var(--danger); border-color:var(--danger);}
   .hstrip-cell.off{background:transparent; border-color:var(--text-faint);}
+
+  .habit-day-card.tucked{padding:12px 14px;}
+  button.habit-head{width:100%; background:none; border:none; padding:0; text-align:left;}
+  .habit-badge{display:flex; align-items:center; justify-content:center; font-size:22px;}
+  .danger-btn{border-color:var(--danger); color:var(--danger);}
+
+  /* ---------- what's new ---------- */
+  .bell-chip{
+    position:relative; width:34px; height:34px; display:flex; align-items:center; justify-content:center;
+    background:var(--bg-card); border:1px solid var(--border-strong); color:var(--text-dim);
+  }
+  .bell-chip.has-unread{color:var(--accent); border-color:var(--accent);}
+  .bell-count{
+    position:absolute; top:-6px; right:-6px; min-width:17px; height:17px; padding:0 4px;
+    display:flex; align-items:center; justify-content:center;
+    background:var(--accent); color:var(--accent-ink);
+    font-family:var(--font-num); font-size:10px; font-weight:700; line-height:1;
+  }
+  .notice{border-top:1px solid var(--border); padding:14px 0;}
+  .notice:first-of-type{border-top:none;}
+  .notice-date{
+    font-family:var(--font-mono); font-size:10.5px; letter-spacing:0.1em;
+    text-transform:uppercase; color:var(--text-faint);
+  }
+  .notice h3{margin:4px 0 8px; font-size:16px;}
+  .notice p{margin:0 0 8px; font-size:13.5px; line-height:1.55; color:var(--text-dim);}
+  .notice p:last-child{margin-bottom:0;}
+  .notice-empty{font-size:13.5px; line-height:1.55; color:var(--text-dim); padding:6px 0 14px;}
+  .notice-foot{
+    border-top:1px solid var(--border); margin-top:6px; padding-top:12px;
+    font-size:12px; color:var(--text-faint); line-height:1.5;
+  }

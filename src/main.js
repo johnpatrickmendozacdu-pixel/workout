@@ -62,9 +62,10 @@ import {
 import {
   HABIT_SLOTS, HABIT_BLOCKS, HABIT_PRESETS,
   slotsFor, habitDay, blockAt, isLive,
-  slotAt, hasAnySlot, isOffPlan, logSlot, setOffPlan,
+  slotAt, hasAnySlot, isOffPlan, logSlot, setOffPlan, setHabitSchedule, archiveHabit,
   habitDayState, habitStats, newHabit,
 } from './domain/habits.js';
+import { NOTICES } from './notices.js';
 import { GUIDE_SECTIONS, GUIDE_INTRO } from './guide.js';
 import { CATEGORIES, categoryOf, categoryLabel, categoryIconUrl } from './categories.js';
 import * as gsync from './sync/googleSync.js';
@@ -88,6 +89,8 @@ const state = {
   streakOverrides: {},
   habits: [],
   habitLog: {},
+  noticesSeen: [],
+  autoUpdated: false,
   deletedExercises: {},
   storageError: false,
   updateAvailable: false,
@@ -189,7 +192,7 @@ async function restoreNamespace() {
 }
 
 async function loadAll() {
-  const [exercises, setsLog, meta, timersLog, profile, streakOverrides, deletedExercises, habits, habitLog] = await Promise.all([
+  const [exercises, setsLog, meta, timersLog, profile, streakOverrides, deletedExercises, habits, habitLog, noticesSeen] = await Promise.all([
     db.getItem('exercises'),
     db.getItem('sets-log'),
     db.getItem('app-meta'),
@@ -199,6 +202,7 @@ async function loadAll() {
     db.getItem('deleted-exercises'),
     db.getItem('habits'),
     db.getItem('habit-log'),
+    db.getItem('notices-seen'),
   ]);
 
   state.exercises = exercises || [];
@@ -211,6 +215,14 @@ async function loadAll() {
   // Absent reads as empty. Optional data must never be able to kill a screen.
   state.habits = habits || [];
   state.habitLog = habitLog || {};
+  // A new install starts with everything read. Greeting someone with a backlog
+  // of notices about features they have never not had is noise, not news.
+  if (Array.isArray(noticesSeen)) {
+    state.noticesSeen = noticesSeen;
+  } else {
+    state.noticesSeen = NOTICES.map((n) => n.id);
+    db.setItem('notices-seen', state.noticesSeen).catch(() => {});
+  }
 
   // One-time: start Top set fresh from today for every existing exercise, and
   // drop old manual corrections. Old and stray sets before today stop counting
@@ -1142,6 +1154,7 @@ const ICONS = {
   flame: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 2c1 3-2 4-2 7a4 4 0 108 0c0-1-.4-2-1-3 2 1 4 3.5 4 6.5A7 7 0 015 12.5C5 8 8 6 12 2z" fill="var(--accent)"/></svg>`,
   close: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`,
   plus: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>`,
+  bell: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 8-3 8h18s-3-1-3-8M13.7 21a2 2 0 0 1-3.4 0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
   chevron: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
   trash: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M4 7h16M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m-9 0l1 12a1 1 0 001 1h6a1 1 0 001-1l1-12" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
   up: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M6 15l6-6 6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
@@ -2309,6 +2322,30 @@ function rerender() {
  * from the precache globs, so this always reaches the network rather than the
  * service worker's copy — which is the whole point.
  */
+/**
+ * An installed app that is never closed keeps running the JS it started with,
+ * however new the service worker underneath it is — which is why "Force update
+ * now" existed at all. checkVersion already runs every time the app is brought
+ * back to the foreground, and that is exactly the safe moment to take a new
+ * build: nothing is mid-tap, and the screen is about to be redrawn anyway.
+ *
+ * Never mid-session. A reload during a running clock or an open sheet throws
+ * away what someone is in the middle of, and no update is worth that — those
+ * cases fall through to the banner, which is what it is for.
+ *
+ * Once per run, so a deploy that somehow reports a build it cannot serve costs
+ * one reload rather than an endless loop.
+ */
+function maybeAutoUpdate() {
+  if (state.version.status !== 'stale' || state.autoUpdated) return;
+  if (state.modal || document.visibilityState !== 'visible') return;
+  const busy = Object.values(state.timersLog || {}).some((day) =>
+    Object.values(day || {}).some((t) => t && t.status === 'running'));
+  if (busy) return;
+  state.autoUpdated = true;
+  forceUpdate();
+}
+
 async function checkVersion() {
   try {
     const res = await fetch('./version.json', { cache: 'no-store' });
@@ -2319,6 +2356,7 @@ async function checkVersion() {
     state.version.status = 'unknown'; // offline — say nothing rather than guess
   }
   renderTopbar();
+  maybeAutoUpdate();
 }
 
 /** Stats drawer toggle — phone only; at desktop width the rail is always visible. */
@@ -2340,11 +2378,18 @@ function helpChipHtml() {
   return `<button class="help-chip" data-action="open-guide" aria-label="Guide">${ICONS.help}</button>`;
 }
 
-function versionChipHtml() {
-  const { local, status } = state.version;
-  const label = { latest: 'Up to date', stale: 'Update ready — tap to reload', unknown: 'Version unknown (offline?)' }[status];
-  return `<button class="version-chip ${status}" data-action="${status === 'stale' ? 'apply-update' : 'check-version'}"
-    title="Build ${escapeHtml(local)} · ${label}" aria-label="${label}">${status === 'latest' ? '\u2713' : status === 'stale' ? '\u21bb' : '\u2022'}</button>`;
+function unreadNotices() {
+  return NOTICES.filter((n) => !state.noticesSeen.includes(n.id));
+}
+
+/** The bell takes the version chip's slot rather than adding a fifth: once
+ *  updates apply themselves, "which build am I on" is a question for Backup &
+ *  data, not for the top of every screen. */
+function bellChipHtml() {
+  const n = unreadNotices().length;
+  return `<button class="bell-chip ${n ? 'has-unread' : ''}" data-action="open-notices" aria-label="${n ? `What's new — ${n} unread` : "What's new"}">
+    ${ICONS.bell}${n ? `<span class="bell-count">${n > 9 ? '9+' : n}</span>` : ''}
+  </button>`;
 }
 
 function avatarChipHtml() {
@@ -2385,7 +2430,7 @@ function renderTopbar() {
         <div class="topbar-right">
           <div class="streak-pill" title="Longest run currently going">${ICONS.flame}${streak}</div>
           ${helpChipHtml()}
-          ${versionChipHtml()}
+          ${bellChipHtml()}
           ${avatarChipHtml()}
         </div>
       </div>`;
@@ -2396,7 +2441,7 @@ function renderTopbar() {
         <div class="topbar-right">
           <button class="add-btn" data-action="open-add">${ICONS.plus} Add</button>
           ${helpChipHtml()}
-          ${versionChipHtml()}
+          ${bellChipHtml()}
           ${avatarChipHtml()}
         </div>
       </div>`;
@@ -2409,7 +2454,7 @@ function renderTopbar() {
             data-action="refresh-crew" aria-label="${state.crew.refreshedAt ? 'Crew up to date' : 'Refresh crew'}"
             ${state.crew.refreshing ? 'disabled' : ''}>${state.crew.refreshedAt ? ICONS.check : ICONS.restore}</button>
           ${helpChipHtml()}
-          ${versionChipHtml()}
+          ${bellChipHtml()}
           ${avatarChipHtml()}
         </div>
       </div>`;
@@ -2420,7 +2465,7 @@ function renderTopbar() {
       <div class="topbar-row">
         <div class="topbar-left">${LOGO_MARK}<div class="screen-title">Guide</div></div>
         <div class="topbar-right">
-          ${versionChipHtml()}
+          ${bellChipHtml()}
           ${avatarChipHtml()}
         </div>
       </div>`;
@@ -2431,7 +2476,7 @@ function renderTopbar() {
         <div class="topbar-right">
           <button class="icon-btn" data-action="open-data">${ICONS.gear}</button>
           ${helpChipHtml()}
-          ${versionChipHtml()}
+          ${bellChipHtml()}
           ${avatarChipHtml()}
         </div>
       </div>`;
@@ -2581,8 +2626,9 @@ function slotPillHtml(habit, day, slot) {
       <span class="slot-mark">${SLOT_MARK[rec.v]}</span><span class="slot-name">${escapeHtml(slot.label)}</span>
     </div>`;
   }
+  const label = slot.block ? slot.label : (habit.rule || slot.label);
   return `<div class="slot-row">
-    <span class="slot-name">${escapeHtml(slot.label)}</span>
+    <span class="slot-name">${escapeHtml(label)}</span>
     <span class="slot-btns">
       <button class="slot-btn kept" data-action="log-slot" data-id="${habit.id}" data-slot="${slot.key}" data-v="kept">Kept</button>
       <button class="slot-btn" data-action="log-slot" data-id="${habit.id}" data-slot="${slot.key}" data-v="skip">Skipped</button>
@@ -2596,15 +2642,42 @@ function habitCardHtml(habit, day, nowMs) {
   const stats = habitStats(state.habitLog, habit, day);
   const off = isOffPlan(state.habitLog, day, habit.id);
   const untouched = !hasAnySlot(state.habitLog, day, habit.id);
-  const nowBlock = blockAt(nowMs);
+  const meals = habit.kind === 'meals';
+  // A one-tap habit never collapses: its row IS the action, and hiding that
+  // behind a chevron would turn one tap into two. Only the six-slot shape has
+  // anything worth tucking away.
+  const open = meals ? groupOpen('habit', habit.id, 0) : true;
+
+  const stateLabel = st === 'broken' ? 'Broken today'
+    : st === 'clean' ? 'Clean today'
+    : st === 'off' ? 'Off plan'
+    : 'Nothing logged yet';
+
+  const logged = slotsFor(habit).filter((sl) => slotAt(state.habitLog, day, habit.id, sl.key)).length;
+  const summary = off ? 'Off plan' : (meals ? `${logged} of 6 · ${stateLabel}` : stateLabel);
+
+  const head = meals
+    ? `<button class="habit-head" data-action="toggle-group" data-view="habit" data-key="${habit.id}" data-open="${open}" aria-expanded="${open}">
+        <span class="habit-emoji">${escapeHtml(habit.emoji || '✅')}</span>
+        <div class="habit-title"><b>${escapeHtml(habit.name)}</b><span>${escapeHtml(summary)}</span></div>
+        <span class="habit-streak">🔥 ${stats.current}</span>
+        <span class="group-chev ${open ? 'open' : ''}">${ICONS.chevron}</span>
+      </button>`
+    : `<div class="habit-head">
+        <span class="habit-emoji">${escapeHtml(habit.emoji || '✅')}</span>
+        <div class="habit-title"><b>${escapeHtml(habit.name)}</b><span>${escapeHtml(summary)}</span></div>
+        <span class="habit-streak">🔥 ${stats.current}</span>
+      </div>`;
+
+  if (!open) return `<div class="habit-day-card state-${st} tucked">${head}</div>`;
 
   let body;
   if (off) {
     body = `<div class="habit-note">🌙 Off plan today — the streak holds.</div>`;
-  } else if (habit.kind === 'meals') {
+  } else if (meals) {
     body = HABIT_BLOCKS.map((b) => {
       const slots = HABIT_SLOTS.filter((sl) => sl.block === b.key);
-      const isNow = b.key === nowBlock.key;
+      const isNow = b.key === blockAt(nowMs).key;
       const allDone = slots.every((sl) => slotAt(state.habitLog, day, habit.id, sl.key));
       return `<div class="habit-block-row ${isNow ? 'now' : (allDone ? 'done' : 'other')}">
         <div class="habit-block-name"><span>${b.label}</span><span>${b.window}</span></div>
@@ -2621,18 +2694,9 @@ function habitCardHtml(habit, day, nowMs) {
     ? `<div class="habit-note">Still ${escapeHtml(formatDisplayDate(day, { weekday: 'long' }))} night — a habit day runs 5 AM to 5 AM.</div>`
     : '';
 
-  const stateLabel = st === 'broken' ? 'Broken today'
-    : st === 'clean' ? 'Clean today'
-    : st === 'off' ? 'Off plan'
-    : 'Nothing logged yet';
-
   return `<div class="habit-day-card state-${st}">
-    <div class="habit-head">
-      <span class="habit-emoji">${escapeHtml(habit.emoji || '✅')}</span>
-      <div class="habit-title"><b>${escapeHtml(habit.name)}</b><span>${stateLabel}</span></div>
-      <span class="habit-streak">🔥 ${stats.current}</span>
-    </div>
-    ${habit.rule ? `<div class="habit-note">${escapeHtml(habit.rule)}</div>` : ''}
+    ${head}
+    ${meals && habit.rule ? `<div class="habit-note">${escapeHtml(habit.rule)}</div>` : ''}
     ${nightNote}
     ${body}
     ${untouched && !off ? `<button class="habit-offbtn" data-action="habit-off-plan" data-id="${habit.id}" data-on="1">Take today off plan</button>` : ''}
@@ -2713,7 +2777,7 @@ function habitProgressHtml() {
       </div>
       <div class="hstrip">${strip}</div>
       <div class="bmi-line">🔥 ${s.current} day${s.current === 1 ? '' : 's'} · longest ${s.longest} · ${s.cleanIn30} clean in the last 30</div>
-      ${s.liveRate != null ? `<div class="bmi-line">Logged in the moment — ${s.liveRate}%</div>` : ''}
+      ${h.kind === 'meals' && s.liveRate != null ? `<div class="bmi-line">Logged in the moment — ${s.liveRate}%</div>` : ''}
       ${worstSlot && worst[1] > 1 ? `<div class="bmi-line">Breaks most at <b>${escapeHtml(worstSlot.label)}</b> — ${worst[1]} times.</div>` : ''}
     </div>`;
   }).join('');
@@ -3339,6 +3403,21 @@ function viewPlan() {
     });
     html += tipHtml('plan-groups', 'Exercises on the same days are grouped. Change an exercise’s days and it moves to its new group.');
   }
+  const habits = state.habits.filter((h) => h.active);
+  if (habits.length) {
+    html += `<div class="section-label">Health habits</div>`;
+    habits.forEach((h) => {
+      html += `<button class="plan-row" data-action="open-edit-habit" data-id="${h.id}">
+        <div class="ex-icon-badge habit-badge">${escapeHtml(h.emoji || '✅')}</div>
+        <div class="plan-row-body">
+          <div class="plan-row-name">${escapeHtml(h.name)}</div>
+          <div class="plan-row-sub">${escapeHtml(scheduleLabel(h))} · ${h.kind === 'meals' ? 'meal by meal' : 'one tap a day'}</div>
+        </div>
+        <span class="group-chev">${ICONS.chevron}</span>
+      </button>`;
+    });
+    html += tipHtml('plan-habits', 'No target and no reps — a habit day is clean unless something breaks it. Tap one to rename it, change its days, or delete it.');
+  }
   if (archived.length > 0) {
     html += `<button class="archived-toggle" data-action="toggle-archived">${state.showArchived ? ICONS.down : ICONS.chevron} Archived (${archived.length})</button>`;
     if (state.showArchived) {
@@ -3674,6 +3753,7 @@ function renderModal() {
   else if (m.type === 'weighin') root.innerHTML = modalWeighIn();
   else if (m.type === 'logger') root.innerHTML = modalLogger(m.exId);
   else if (m.type === 'exerciseForm') root.innerHTML = modalExerciseForm(m.exId);
+  else if (m.type === 'notices') root.innerHTML = modalNotices();
   else if (m.type === 'addChoice') root.innerHTML = modalAddChoice();
   else if (m.type === 'habitForm') root.innerHTML = modalHabitForm();
   else if (m.type === 'confirmDeleteSet') root.innerHTML = modalConfirm(m);
@@ -3847,6 +3927,28 @@ function modalLogger(exId) {
  * threw the name away. That was true of the schedule toggles long before the
  * Timer field existed; adding a third toggle just made it easier to hit.
  */
+function modalNotices() {
+  const status = { latest: 'Up to date', stale: 'Update ready', unknown: 'Offline — can’t check' }[state.version.status];
+  const list = NOTICES.length
+    ? NOTICES.map((n) => `<div class="notice">
+        <div class="notice-date">${escapeHtml(formatDisplayDate(n.date, { month: 'short', day: 'numeric', year: 'numeric' }))}</div>
+        <h3>${escapeHtml(n.title)}</h3>
+        ${n.body.map((para) => `<p>${escapeHtml(para)}</p>`).join('')}
+      </div>`).join('')
+    : `<p class="notice-empty">Nothing new yet. When something is added to Sets, the note about it lands here.</p>`;
+  return `<div class="modal-backdrop" data-action="backdrop">
+    <div class="modal-sheet" data-stop>
+      <div class="sheet-handle"></div>
+      <div class="sheet-head">
+        <h2>What’s new</h2>
+        <button class="sheet-close" data-action="close-modal">${ICONS.close}</button>
+      </div>
+      ${list}
+      <div class="notice-foot">Build ${escapeHtml(state.version.local)} · ${status}. Updates apply themselves next time you come back to the app.</div>
+    </div>
+  </div>`;
+}
+
 function modalAddChoice() {
   return `<div class="modal-backdrop" data-action="backdrop">
     <div class="modal-sheet" data-stop>
@@ -3878,20 +3980,24 @@ function captureHabitDraft() {
 
 function modalHabitForm() {
   const m = state.modal || {};
-  const p = HABIT_PRESETS.find((x) => x.key === m.preset) || null;
-  const name = m.name !== undefined ? m.name : (p ? p.name : '');
-  const emoji = m.emoji !== undefined ? m.emoji : (p ? p.emoji : '✅');
-  const kind = m.kind === 'meals' ? 'meals' : 'plain';
+  const editing = state.habits.find((h) => h.id === m.habitId) || null;
+  const preset = HABIT_PRESETS.find((x) => x.key === m.preset) || null;
+  const name = m.name !== undefined ? m.name : (editing ? editing.name : (preset ? preset.name : ''));
+  const emoji = m.emoji !== undefined ? m.emoji : (editing ? editing.emoji : (preset ? preset.emoji : '✅'));
+  // The shape is not editable and not chosen: it rides on the preset. Switching
+  // a keto habit to one tap would orphan every slot already logged against it,
+  // and there is no honest way to reinterpret that history.
+  const kind = editing ? editing.kind : (preset ? preset.kind : 'plain');
   const daily = !Array.isArray(m.days);
   const days = Array.isArray(m.days) ? m.days : [];
   return `<div class="modal-backdrop" data-action="backdrop">
     <div class="modal-sheet" data-stop>
       <div class="sheet-handle"></div>
       <div class="sheet-head">
-        <h2>Add health habit</h2>
+        <h2>${editing ? 'Edit habit' : 'Add health habit'}</h2>
         <button class="sheet-close" data-action="close-modal">${ICONS.close}</button>
       </div>
-      <div class="field">
+      ${editing ? '' : `<div class="field">
         <label>Start from</label>
         <div class="cat-grid">
           ${HABIT_PRESETS.map((x) => `<button type="button" class="cat-chip ${x.key === m.preset ? 'on' : ''}" data-action="pick-habit-preset" data-preset="${x.key}" aria-pressed="${x.key === m.preset}">
@@ -3901,8 +4007,7 @@ function modalHabitForm() {
             <span class="preset-emoji">✏️</span><span>Custom</span>
           </button>
         </div>
-        ${p ? `<div class="hint">${escapeHtml(p.rule)} Copied, not linked — edit any of it.</div>` : ''}
-      </div>
+      </div>`}
       <div class="field">
         <label>Name</label>
         <input id="f-habit-name" type="text" placeholder="e.g. Keto" value="${escapeHtml(name)}" autocomplete="off">
@@ -3910,16 +4015,6 @@ function modalHabitForm() {
       <div class="field">
         <label>Emoji</label>
         <input id="f-habit-emoji" type="text" maxlength="4" value="${escapeHtml(emoji)}" autocomplete="off">
-      </div>
-      <div class="field">
-        <label>How you track it</label>
-        <div class="sched-modes">
-          <button type="button" class="sched-mode ${kind === 'plain' ? 'on' : ''}" data-action="habit-kind" data-kind="plain">One tap a day</button>
-          <button type="button" class="sched-mode ${kind === 'meals' ? 'on' : ''}" data-action="habit-kind" data-kind="meals">Meal by meal</button>
-        </div>
-        <div class="hint">${kind === 'meals'
-          ? 'Six slots — breakfast, lunch, dinner and the snacks between them. Any break, and the day is broken.'
-          : 'One decision for the whole day.'}</div>
       </div>
       <div class="field">
         <label>Schedule</label>
@@ -3930,12 +4025,18 @@ function modalHabitForm() {
         <div class="sched-days ${daily ? 'disabled' : ''}">
           ${['S','M','T','W','T','F','S'].map((d, i) => `<button type="button" class="sched-day ${(!daily && days.includes(i)) ? 'on' : ''}" data-action="habit-day" data-day="${i}" aria-label="${['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][i]}" aria-pressed="${!daily && days.includes(i)}">${d}</button>`).join('')}
         </div>
-        <div class="hint">A day it isn't scheduled for is neutral — never a break.</div>
+        <div class="hint">A day it isn't scheduled for is neutral — never a break. Changing this never rewrites a day you already logged.</div>
       </div>
       <div class="field">
-        <div class="hint">No target. A day is clean unless something breaks it, and once you tap a slot it's final.</div>
+        <div class="hint">${kind === 'meals'
+          ? 'Six slots — breakfast, lunch, dinner and the snacks between them. Any break, and the day is broken.'
+          : 'One tap a day. A day is clean unless something breaks it.'} Once you tap a slot it's final.</div>
       </div>
-      <button class="primary-btn wide" data-action="save-habit">Add habit</button>
+      <button class="primary-btn wide" data-action="save-habit">${editing ? 'Save' : 'Add habit'}</button>
+      ${editing ? (m.confirmDelete
+        ? `<button class="secondary-btn wide danger-btn" data-action="delete-habit" data-id="${editing.id}">Really delete ${escapeHtml(editing.name)}?</button>
+           <div class="hint">It disappears from Today, Plan and Progress. Nothing else changes.</div>`
+        : `<button class="secondary-btn wide" data-action="confirm-delete-habit">Delete habit</button>`) : ''}
     </div>
   </div>`;
 }
@@ -4943,6 +5044,15 @@ document.addEventListener('click', async (e) => {
       renderNav(); renderTopbar(); renderView(); renderBanner();
       break;
 
+    case 'open-notices':
+      state.modal = { type: 'notices' };
+      // Opening is reading. The badge clears now rather than on close, so
+      // dismissing the sheet cannot leave a count for something already seen.
+      state.noticesSeen = NOTICES.map((n) => n.id);
+      db.setItem('notices-seen', state.noticesSeen).catch(() => {});
+      renderModal();
+      renderTopbar();
+      break;
     case 'open-add': state.modal = { type: 'addChoice' }; renderModal(); break;
     case 'add-kind':
       state.modal = btn.dataset.kind === 'habit'
@@ -4956,18 +5066,12 @@ document.addEventListener('click', async (e) => {
       const preset = HABIT_PRESETS.find((x) => x.key === key) || null;
       state.modal = {
         type: 'habitForm', preset: key, days: state.modal.days,
-        kind: preset ? preset.kind : 'plain',
         name: preset ? preset.name : '',
         emoji: preset ? preset.emoji : '✅',
       };
       renderModal();
       break;
     }
-    case 'habit-kind':
-      captureHabitDraft();
-      state.modal.kind = btn.dataset.kind === 'meals' ? 'meals' : 'plain';
-      renderModal();
-      break;
     case 'habit-sched-mode':
       captureHabitDraft();
       state.modal.days = btn.dataset.mode === 'daily' ? undefined : [];
@@ -4981,22 +5085,51 @@ document.addEventListener('click', async (e) => {
       renderModal();
       break;
     }
+    case 'open-edit-habit': {
+      const h = state.habits.find((x) => x.id === btn.dataset.id);
+      if (!h) break;
+      state.modal = { type: 'habitForm', habitId: h.id, days: Array.isArray(h.schedule) ? h.schedule.slice() : undefined };
+      renderModal();
+      break;
+    }
+    case 'confirm-delete-habit':
+      captureHabitDraft();
+      state.modal.confirmDelete = true;
+      renderModal();
+      break;
+    case 'delete-habit':
+      // Archived, not purged: habits carry no tombstone key, and a hard delete
+      // without one is how a deleted exercise came back from Drive.
+      state.habits = archiveHabit(state.habits, btn.dataset.id);
+      await persistHabits();
+      closeModal();
+      renderView();
+      break;
     case 'save-habit': {
       captureHabitDraft();
       const m = state.modal;
       const name = (m.name || '').trim();
       if (!name) return;
       const chosen = Array.isArray(m.days) ? m.days.slice().sort((a, b) => a - b) : null;
-      const preset = HABIT_PRESETS.find((x) => x.key === m.preset) || null;
-      state.habits = [...state.habits, newHabit({
-        name,
-        emoji: (m.emoji || '').trim() || '✅',
-        kind: m.kind,
-        // The rule is the preset's own words, kept only while it is still the
-        // preset. Rename it and it is your habit, with your own terms.
-        rule: preset && preset.name === name ? preset.rule : '',
-        schedule: chosen && chosen.length ? chosen : 'daily',
-      }, todayISO())];
+      const schedule = chosen && chosen.length ? chosen : 'daily';
+      const editing = state.habits.find((h) => h.id === m.habitId) || null;
+      const emoji = (m.emoji || '').trim() || '✅';
+      if (editing) {
+        state.habits = state.habits.map((h) => (h.id === editing.id
+          ? { ...setHabitSchedule(h, schedule, todayISO()), name, emoji }
+          : h));
+      } else {
+        const preset = HABIT_PRESETS.find((x) => x.key === m.preset) || null;
+        state.habits = [...state.habits, newHabit({
+          name,
+          emoji,
+          kind: preset ? preset.kind : 'plain',
+          // The rule is the preset's own words, kept only while it is still the
+          // preset. Rename it and it is your habit, with your own terms.
+          rule: preset && preset.name === name ? preset.rule : '',
+          schedule,
+        }, todayISO())];
+      }
       await persistHabits();
       closeModal();
       renderView();
@@ -5673,12 +5806,6 @@ document.addEventListener('click', async (e) => {
       if (state.applyUpdate) state.applyUpdate();
       else location.reload();
       break;
-    case 'check-version': {
-      await checkVersion();
-      const label = { latest: 'Up to date', stale: 'Update ready', unknown: 'Offline — can\u2019t check' }[state.version.status];
-      showToast(`Build ${state.version.local} \u00b7 ${label}`);
-      break;
-    }
   }
 });
 

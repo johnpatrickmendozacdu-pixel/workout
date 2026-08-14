@@ -23,6 +23,9 @@ comma-separated `ALLOWED_ORIGIN`. Adding a host is a Google Console entry plus
 one Cloudflare variable — never a code change.
 
 - `src/domain/domain.js` + `src/domain/stats.js` — pure, hold every rule
+- `src/domain/habits.js` — pure, every health-habit rule (5 AM day, slots, the
+  immutability guard, streaks, presets). The merge lives in `domain.js` instead,
+  next to the others, so `habits.js` never imports back and makes a cycle.
 - `src/main.js` — all rendering and events (large; no test coverage)
 - `src/guide.js` — the Guide tab's content, as data. No logic.
 - `src/categories.js` — the nine categories and their icon lookup. No logic.
@@ -33,14 +36,15 @@ one Cloudflare variable — never a code change.
 - `src/sync/googleSync.js` — self-contained Google auth + Drive (no test coverage)
 - `worker/` — the Cloudflare token-broker (deployed separately, see below)
 
-**321 tests, all passing** (`npm test`). They cover the pure domain layer and the
+**385 tests, all passing** (`npm test`). They cover the pure domain layer and the
 Worker's pure helpers only — **not `main.js`, not `googleSync.js`**.
 
 ## State right now
 
-- `main` = **`06428e1`**, live on Vercel, byte-verified. Working tree clean apart
-  from `.DS_Store`.
-- **321 tests pass.** Byte-verify every deploy against a build of the *pushed*
+- `main` = **`387c5ee`**, health habits shipped. Working tree clean apart from
+  `.DS_Store`. **Not yet byte-verified against Vercel** — do that before trusting
+  the deploy.
+- **385 tests pass.** Byte-verify every deploy against a build of the *pushed*
   commit — `__BUILD_ID__` is the commit SHA, so a build made before committing
   can never match. That mistake has cost a round of false-alarm polling twice.
 - Migration finished and verified 2026-08-05: the old Pages address serves a

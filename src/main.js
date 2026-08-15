@@ -1599,6 +1599,54 @@ function exerciseHistory(ex, s) {
  */
 const SHARE_W = 1080;
 const SHARE_H = 1920;
+
+/**
+ * All three cards used to open with a flat black fill. On a phone, in a feed of
+ * photographs, a perfectly uniform rectangle reads as an empty slide rather
+ * than a designed one — a solid fill is the one surface that always looks
+ * unfinished next to everything around it.
+ *
+ * Drawn, never downloaded: a tiled noise patch and one soft pool of the signal
+ * colour, both pure arithmetic. An image asset would mean bytes in the
+ * precache, a file in the repo and another thing for slice-icons.py to own, for
+ * a texture that is fifteen lines of canvas. The app still carries no runtime
+ * dependency and still works offline.
+ *
+ * The tile is cached, not the pattern: a CanvasPattern belongs to the context
+ * that made it, and these three cards each build their own.
+ */
+let grainTile = null;
+function grainTileCanvas() {
+  if (grainTile) return grainTile;
+  const t = document.createElement('canvas');
+  t.width = t.height = 128;
+  const tg = t.getContext('2d');
+  const img = tg.createImageData(128, 128);
+  for (let i = 0; i < img.data.length; i += 4) {
+    const v = (Math.random() * 255) | 0;
+    img.data[i] = img.data[i + 1] = img.data[i + 2] = v;
+    img.data[i + 3] = 10;   // barely there: texture should support the mood, not compete with it
+  }
+  tg.putImageData(img, 0, 0);
+  grainTile = t;
+  return t;
+}
+
+/** Ground for every share card: ink, one light source, then grain over both. */
+function paintShareBackdrop(g, ink, accent) {
+  g.fillStyle = ink;
+  g.fillRect(0, 0, SHARE_W, SHARE_H);
+  // A single high pool of the signal green, so the frame has a light source
+  // instead of being uniformly dead. Kept under 10% or it starts tinting text.
+  const glow = g.createRadialGradient(SHARE_W * 0.5, SHARE_H * 0.24, 0, SHARE_W * 0.5, SHARE_H * 0.24, SHARE_W);
+  glow.addColorStop(0, 'rgba(62,224,127,0.09)');
+  glow.addColorStop(0.5, 'rgba(62,224,127,0.025)');
+  glow.addColorStop(1, 'rgba(62,224,127,0)');
+  g.fillStyle = glow;
+  g.fillRect(0, 0, SHARE_W, SHARE_H);
+  const pat = g.createPattern(grainTileCanvas(), 'repeat');
+  if (pat) { g.fillStyle = pat; g.fillRect(0, 0, SHARE_W, SHARE_H); }
+}
 const SAFE_TOP = 300;
 const SAFE_BOTTOM = 1680;
 
@@ -1761,7 +1809,7 @@ async function buildShareImage(ex, s) {
   const mono = "600 26px 'JetBrains Mono', ui-monospace, monospace";
   const num = "700 132px 'Martian Mono', ui-monospace, monospace";
 
-  g.fillStyle = INK; g.fillRect(0, 0, SHARE_W, SHARE_H);
+  paintShareBackdrop(g, INK, ACCENT);
 
   const pad = 76;
   const icon = await shareLoadIcon(ex);
@@ -1911,7 +1959,7 @@ async function buildSessionImage(ex, session) {
   if (document.fonts && document.fonts.ready) { try { await document.fonts.ready; } catch (e) { /* draw anyway */ } }
 
   const INK = '#0A0C0B', TEXT = '#EEF2EF', DIM = '#9AA5A0', FAINT = '#6E7975', ACCENT = '#3EE07F';
-  g.fillStyle = INK; g.fillRect(0, 0, SHARE_W, SHARE_H);
+  paintShareBackdrop(g, INK, ACCENT);
 
   const pad = 76;
   const icon = await shareLoadIcon(ex);
@@ -2013,7 +2061,7 @@ async function buildDayImage(day) {
   if (document.fonts && document.fonts.ready) { try { await document.fonts.ready; } catch (e) { /* draw anyway */ } }
 
   const INK = '#0A0C0B', TEXT = '#EEF2EF', DIM = '#9AA5A0', FAINT = '#6E7975', ACCENT = '#3EE07F';
-  g.fillStyle = INK; g.fillRect(0, 0, SHARE_W, SHARE_H);
+  paintShareBackdrop(g, INK, ACCENT);
   g.textBaseline = 'alphabetic';
 
   const pad = 76;

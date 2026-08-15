@@ -16,6 +16,15 @@
  */
 export const NOTICES = [
   {
+    id: '2026-08-14-share-card-texture',
+    date: '2026-08-14',
+    title: 'Share cards got a backdrop',
+    body: [
+      'The cards you save from an exercise, a finished day or the all-done block are no longer flat black. They now carry a soft grain and a single pool of light, which reads far better sitting in a story feed next to photographs.',
+      'Nothing was downloaded to do it — the texture is drawn, so the app is no heavier and still works offline.',
+    ],
+  },
+  {
     id: '2026-08-14-updates-and-bell.2',
     date: '2026-08-14',
     title: 'Sets updates itself now',

@@ -19,34 +19,32 @@
   <div id="app">
     <div id="loading" class="loading-screen">Loading…</div>
   </div>
-  <!-- A serpentine dragon, drawn as vectors rather than fetched: a dozen body
-       segments each running the same undulation a beat behind the one in front,
-       which is what turns a row of ellipses into something that swims. Wings
-       flap on their own shorter cycle. Nothing here is an image file, so it
-       costs no download, stays sharp at any size, and works offline. -->
+  <!-- The dragon from the mark: the S is a creature, so this is that creature
+       straightened into flight. Faceted body segments rather than ellipses,
+       a backswept horn, a needle tail. Pale stone with the green burning
+       around it, which is how the logo reads — the green is the energy, not
+       the animal. Drawn as vectors: no download, sharp at any size, offline. -->
   <div id="dragon" aria-hidden="true">
-    <svg viewBox="0 0 260 120" width="260" height="120" fill="none">
+    <svg viewBox="0 0 270 120" width="270" height="120" fill="none">
       <g class="dr">
-        <ellipse class="seg" cx="26" cy="60" rx="7.4" ry="2.6" style="animation-delay:-0.82s"/>
-        <ellipse class="seg" cx="39" cy="60" rx="7.6" ry="3.0" style="animation-delay:-0.75s"/>
-        <ellipse class="seg" cx="52" cy="60" rx="7.7" ry="3.4" style="animation-delay:-0.67s"/>
-        <ellipse class="seg" cx="65" cy="60" rx="7.9" ry="3.9" style="animation-delay:-0.60s"/>
-        <ellipse class="seg" cx="78" cy="60" rx="8.0" ry="4.3" style="animation-delay:-0.53s"/>
-        <ellipse class="seg" cx="91" cy="60" rx="8.2" ry="4.7" style="animation-delay:-0.45s"/>
-        <ellipse class="seg" cx="104" cy="60" rx="8.4" ry="5.1" style="animation-delay:-0.38s"/>
-        <ellipse class="seg" cx="117" cy="60" rx="8.5" ry="5.5" style="animation-delay:-0.30s"/>
-        <ellipse class="seg" cx="130" cy="60" rx="8.7" ry="6.0" style="animation-delay:-0.22s"/>
-        <ellipse class="seg" cx="143" cy="60" rx="8.8" ry="6.4" style="animation-delay:-0.15s"/>
-        <ellipse class="seg" cx="156" cy="60" rx="9.0" ry="6.8" style="animation-delay:-0.07s"/>
-        <ellipse class="seg" cx="169" cy="60" rx="9.2" ry="7.2" style="animation-delay:0.00s"/>
-        <path class="wing far" d="M150 56 C 138 22, 176 14, 190 34 C 178 38, 162 46, 150 56 Z"/>
-        <path class="wing near" d="M150 64 C 140 96, 178 104, 192 86 C 180 80, 162 72, 150 64 Z"/>
-        <path class="tailfin" d="M14 60 L 2 46 L 8 60 L 2 74 Z"/>
-        <g class="head">
-          <path d="M182 60 C 196 48, 214 48, 228 56 L 244 52 L 232 62 L 244 70 L 226 68 C 214 74, 196 72, 182 60 Z"/>
-          <path class="horn" d="M206 50 L 200 34 L 212 46 Z"/>
-          <path class="horn" d="M216 50 L 214 32 L 222 47 Z"/>
-        </g>
+        <path class="tailspike" d="M34 60 L2 52 L18 60 L2 68 Z"/>
+        <path class="seg" d="M25.0 60 L34.0 57.6 L43.0 60 L34.0 62.4 Z" style="animation-delay:-0.82s"/>
+        <path class="seg" d="M39.0 60 L48.0 57.1 L57.0 60 L48.0 62.9 Z" style="animation-delay:-0.75s"/>
+        <path class="seg" d="M53.0 60 L62.0 56.7 L71.0 60 L62.0 63.3 Z" style="animation-delay:-0.67s"/>
+        <path class="seg" d="M67.0 60 L76.0 56.2 L85.0 60 L76.0 63.8 Z" style="animation-delay:-0.60s"/>
+        <path class="seg" d="M81.0 60 L90.0 55.8 L99.0 60 L90.0 64.2 Z" style="animation-delay:-0.53s"/>
+        <path class="seg" d="M95.0 60 L104.0 55.3 L113.0 60 L104.0 64.7 Z" style="animation-delay:-0.45s"/>
+        <path class="seg" d="M109.0 60 L118.0 54.8 L127.0 60 L118.0 65.2 Z" style="animation-delay:-0.38s"/>
+        <path class="seg" d="M123.0 60 L132.0 54.4 L141.0 60 L132.0 65.6 Z" style="animation-delay:-0.30s"/>
+        <path class="seg" d="M137.0 60 L146.0 53.9 L155.0 60 L146.0 66.1 Z" style="animation-delay:-0.22s"/>
+        <path class="seg" d="M151.0 60 L160.0 53.5 L169.0 60 L160.0 66.5 Z" style="animation-delay:-0.15s"/>
+        <path class="seg" d="M165.0 60 L174.0 53.0 L183.0 60 L174.0 67.0 Z" style="animation-delay:-0.07s"/>
+        <path class="seg" d="M179.0 60 L188.0 52.5 L197.0 60 L188.0 67.5 Z" style="animation-delay:0.00s"/>
+        <path class="head" d="M196 48 L240 54 L256 59 L240 64 L246 74 L226 68 L210 76 L194 63 Z"/>
+        <path class="horn" d="M212 48 L192 18 L228 44 Z"/>
+        <path class="horn small" d="M200 52 L182 34 L206 48 Z"/>
+        <path class="whisker" d="M244 56 C 262 48, 268 36, 264 26"/>
+        <path class="whisker" d="M244 66 C 264 70, 270 80, 266 90"/>
       </g>
     </svg>
   </div>

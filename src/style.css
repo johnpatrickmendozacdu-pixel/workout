@@ -2128,7 +2128,7 @@
       opacity:0.5;
       transform:translate3d(48vw, 76vh, 0) scale(0.8) rotate(-4deg);
     }
-    #dragon .seg, #dragon .wing{animation:none !important;}
+    #dragon .seg{animation:none !important;}
     /* Embers are motion by definition — a still spark is just a green dot. */
     #embers{display:none;}
     /* The flame keeps its glow, and its tier, without the flicker. */
@@ -2150,13 +2150,15 @@
   }
   #dragon svg{width:100%; height:100%; overflow:visible;}
 
-  /* Green is the whole point, so it is not rationed here the way the UI rations
-     it: solid accent, doubled glow. */
-  #dragon .seg, #dragon .head path, #dragon .tailfin{fill:var(--accent);}
-  #dragon .wing{fill:var(--accent); opacity:0.62;}
-  #dragon .horn{fill:var(--accent);}
+  /* The mark is pale stone with green burning around it — the green is the
+     energy, not the animal. A solid green dragon lost exactly that, and read as
+     a caterpillar. */
+  #dragon .seg, #dragon .head, #dragon .tailspike{fill:var(--ink);}
+  #dragon .horn{fill:var(--ink);}
+  #dragon .whisker{stroke:var(--accent); stroke-width:2.4; fill:none; stroke-linecap:round; opacity:0.85;}
   #dragon .dr{
-    filter:drop-shadow(0 0 5px rgba(62,224,127,0.95)) drop-shadow(0 0 16px rgba(62,224,127,0.55));
+    filter:drop-shadow(0 0 4px rgba(62,224,127,1)) drop-shadow(0 0 14px rgba(62,224,127,0.75))
+           drop-shadow(0 0 30px rgba(62,224,127,0.4));
   }
 
   /* Each segment runs the same wave a beat behind the one ahead of it — the
@@ -2166,13 +2168,6 @@
   @keyframes undulate{
     from{transform:translateY(-7px);}
     to  {transform:translateY(7px);}
-  }
-
-  #dragon .wing{transform-origin:150px 60px; animation:flap 0.42s ease-in-out infinite alternate;}
-  #dragon .wing.near{animation-delay:-0.06s;}
-  @keyframes flap{
-    from{transform:scaleY(0.35) translateY(2px);}
-    to  {transform:scaleY(1.15) translateY(-2px);}
   }
 
   /* Visible for roughly the first sixth of the cycle, then off-screen and
@@ -2186,4 +2181,4 @@
     100% {transform:translate3d(112vw, 18vh, 0) rotate(-15deg) scale(0.8); opacity:0;}
   }
 
-  html.idle #dragon .seg, html.idle #dragon .wing{animation-play-state:paused;}
+  html.idle #dragon .seg{animation-play-state:paused;}

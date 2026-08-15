@@ -2127,3 +2127,24 @@
   }
 
   html.idle #embers i{animation-play-state:paused;}
+
+  /* ---------- reduced motion ----------
+     The global rule above crushes every animation to 0.001ms. For a looping
+     animation whose first and last frames are both opacity:0 — the dragon, the
+     embers — that does not calm the effect, it DELETES it: the element sits
+     invisible and motionless, which reads as a broken build rather than a
+     considered one.
+     
+     So these three get an explicit resting state. Someone who asked their phone
+     for less motion still gets the design; they just get it holding still. */
+  @media (prefers-reduced-motion: reduce){
+    #dragon{
+      animation:none !important;
+      opacity:0.07;
+      transform:translate3d(46vw, 42vh, 0) scale(1) rotate(10deg);
+    }
+    /* Embers are motion by definition — a still spark is just a green dot. */
+    #embers{display:none;}
+    /* The flame keeps its glow, and its tier, without the flicker. */
+    .streak-pill svg{animation:none !important;}
+  }

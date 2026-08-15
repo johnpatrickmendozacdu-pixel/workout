@@ -6145,6 +6145,7 @@ async function init() {
   });
 
   tryResumeSync().catch(() => {});
+  document.documentElement.classList.toggle('idle', document.hidden);
   checkVersion();
   document.addEventListener('visibilitychange', () => {
     // Pauses the flame and the dragon rather than letting them tick on in the

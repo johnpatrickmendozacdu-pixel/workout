@@ -2068,7 +2068,7 @@
   }
 
   /* Off-screen app, nothing moving. */
-  html.idle #dragon, html.idle .streak-pill svg{animation-play-state:paused;}
+  html.idle #floaters img, html.idle .streak-pill svg{animation-play-state:paused;}
 
   /* ---------- embers ----------
      Sparks off the same fire the streak burns with. Six of them, each a blurred
@@ -2087,25 +2087,34 @@
     will-change:transform, opacity;
     animation:rise linear infinite;
   }
-  #embers i:nth-child(1){left:12%; animation-duration:15s; animation-delay:0s;}
-  #embers i:nth-child(2){left:28%; animation-duration:19s; animation-delay:3.5s; width:3px; height:3px;}
-  #embers i:nth-child(3){left:47%; animation-duration:13s; animation-delay:7s;}
-  #embers i:nth-child(4){left:66%; animation-duration:21s; animation-delay:1.5s; width:4px; height:4px;}
-  #embers i:nth-child(5){left:81%; animation-duration:17s; animation-delay:9s; width:3px; height:3px;}
-  #embers i:nth-child(6){left:93%; animation-duration:23s; animation-delay:5s;}
-  #embers i:nth-child(7){left:6%;  animation-duration:18s; animation-delay:11s; width:4px; height:4px;}
-  #embers i:nth-child(8){left:20%; animation-duration:14s; animation-delay:6s;  width:7px; height:7px;}
-  #embers i:nth-child(9){left:36%; animation-duration:20s; animation-delay:2s;  width:4px; height:4px;}
-  #embers i:nth-child(10){left:55%; animation-duration:16s; animation-delay:12s;}
-  #embers i:nth-child(11){left:72%; animation-duration:22s; animation-delay:8s; width:5px; height:5px;}
-  #embers i:nth-child(12){left:88%; animation-duration:15s; animation-delay:14s; width:3px; height:3px;}
-  #embers i:nth-child(13){left:44%; animation-duration:24s; animation-delay:17s; width:7px; height:7px;}
-  #embers i:nth-child(14){left:62%; animation-duration:19s; animation-delay:4s;  width:4px; height:4px;}
+  #embers i:nth-child(1){left:12%; animation-duration:6.8s; animation-delay:0s;}
+  #embers i:nth-child(2){left:28%; animation-duration:8.6s; animation-delay:3.5s; width:3px; height:3px;}
+  #embers i:nth-child(3){left:47%; animation-duration:5.9s; animation-delay:7s;}
+  #embers i:nth-child(4){left:66%; animation-duration:9.5s; animation-delay:1.5s; width:4px; height:4px;}
+  #embers i:nth-child(5){left:81%; animation-duration:7.7s; animation-delay:9s; width:3px; height:3px;}
+  #embers i:nth-child(6){left:93%; animation-duration:10.3s; animation-delay:5s;}
+  #embers i:nth-child(7){left:6%;  animation-duration:8.1s; animation-delay:11s; width:4px; height:4px;}
+  #embers i:nth-child(8){left:20%; animation-duration:6.3s; animation-delay:6s;  width:7px; height:7px;}
+  #embers i:nth-child(9){left:36%; animation-duration:9.0s; animation-delay:2s;  width:4px; height:4px;}
+  #embers i:nth-child(10){left:55%; animation-duration:7.2s; animation-delay:12s;}
+  #embers i:nth-child(11){left:72%; animation-duration:9.9s; animation-delay:8s; width:5px; height:5px;}
+  #embers i:nth-child(12){left:88%; animation-duration:6.8s; animation-delay:14s; width:3px; height:3px;}
+  #embers i:nth-child(13){left:44%; animation-duration:10.8s; animation-delay:17s; width:7px; height:7px;}
+  #embers i:nth-child(14){left:62%; animation-duration:8.6s; animation-delay:4s;  width:4px; height:4px;}
+
+  #embers i:nth-child(15){left:3%; animation-duration:7.4s; animation-delay:2.2s; width:5px; height:5px;}
+  #embers i:nth-child(16){left:17%; animation-duration:9.1s; animation-delay:5.5s; width:3px; height:3px;}
+  #embers i:nth-child(17){left:31%; animation-duration:6.6s; animation-delay:8.1s; width:6px; height:6px;}
+  #embers i:nth-child(18){left:51%; animation-duration:8.3s; animation-delay:1.2s; width:4px; height:4px;}
+  #embers i:nth-child(19){left:68%; animation-duration:7.0s; animation-delay:10.4s; width:5px; height:5px;}
+  #embers i:nth-child(20){left:77%; animation-duration:9.8s; animation-delay:3.3s; width:3px; height:3px;}
+  #embers i:nth-child(21){left:90%; animation-duration:6.2s; animation-delay:6.7s; width:6px; height:6px;}
+  #embers i:nth-child(22){left:58%; animation-duration:10.5s; animation-delay:12.0s; width:4px; height:4px;}
 
   @keyframes rise{
     0%   {transform:translate3d(0, 0, 0) scale(0.6); opacity:0;}
-    12%  {opacity:0.85;}
-    55%  {transform:translate3d(14px, -46vh, 0) scale(1); opacity:0.6;}
+    12%  {opacity:0.95;}
+    55%  {transform:translate3d(14px, -46vh, 0) scale(1); opacity:0.7;}
     100% {transform:translate3d(-10px, -96vh, 0) scale(0.7); opacity:0;}
   }
 
@@ -2113,7 +2122,7 @@
 
   /* ---------- reduced motion ----------
      The global rule above crushes every animation to 0.001ms. For a looping
-     animation whose first and last frames are both opacity:0 — the dragon, the
+     animation whose first and last frames are both opacity:0 — the floaters, the
      embers — that does not calm the effect, it DELETES it: the element sits
      invisible and motionless, which reads as a broken build rather than a
      considered one.
@@ -2121,64 +2130,39 @@
      So these three get an explicit resting state. Someone who asked their phone
      for less motion still gets the design; they just get it holding still. */
   @media (prefers-reduced-motion: reduce){
-    /* A dragon frozen mid-flight is a poster, not a bug — so it perches
-       rather than hanging in the air, and nothing about it moves. */
-    #dragon{
-      animation:none !important;
-      opacity:0.5;
-      transform:translate3d(48vw, 76vh, 0) scale(0.8) rotate(-4deg);
-    }
-    #dragon .seg{animation:none !important;}
+    /* Nothing drifts; the screen simply rests. */
+    #floaters{display:none;}
     /* Embers are motion by definition — a still spark is just a green dot. */
     #embers{display:none;}
     /* The flame keeps its glow, and its tier, without the flicker. */
     .streak-pill svg{animation:none !important;}
   }
 
-  /* ---------- the dragon ----------
-     Fast and rare, not slow and constant: it crosses in about four seconds and
-     is gone for twenty. A brief pass reads as an event and cannot compete with
-     anything you are reading; a permanent resident would be clutter no matter
-     how faint. It flies BEHIND the cards (z-index -1, and the cards carry their
-     own background), which is what keeps text fully legible while letting the
-     dragon be genuinely bright against the black. */
-  #dragon{
-    position:fixed; top:0; left:0; width:260px; height:120px;
-    z-index:-1; pointer-events:none; opacity:0;
+
+  /* ---------- floating marks ----------
+     Six copies of the app icon drifting up through the screen at different
+     sizes and speeds, each already mid-journey on load (negative delays) so the
+     screen is never empty and they never form a visible wave. They sit at
+     z-index -1, behind every card, so the only place they show is the black
+     between things — which is exactly where there is nothing to read.
+
+     Rotation stays gentle. A tumbling logo reads as a bug; a mark that leans as
+     it rises reads as drifting. */
+  #floaters{
+    position:fixed; inset:0; z-index:-1; overflow:hidden; pointer-events:none;
+  }
+  #floaters img{
+    position:absolute; bottom:-180px; opacity:0;
     will-change:transform, opacity;
-    animation:flyby 26s ease-in-out infinite;
+    animation-name:drift;
+    animation-timing-function:linear;
+    animation-iteration-count:infinite;
+    filter:drop-shadow(0 0 14px rgba(62,224,127,0.5));
   }
-  #dragon svg{width:100%; height:100%; overflow:visible;}
-
-  /* The mark is pale stone with green burning around it — the green is the
-     energy, not the animal. A solid green dragon lost exactly that, and read as
-     a caterpillar. */
-  #dragon .seg, #dragon .head, #dragon .tailspike{fill:var(--ink);}
-  #dragon .horn{fill:var(--ink);}
-  #dragon .whisker{stroke:var(--accent); stroke-width:2.4; fill:none; stroke-linecap:round; opacity:0.85;}
-  #dragon .dr{
-    filter:drop-shadow(0 0 4px rgba(62,224,127,1)) drop-shadow(0 0 14px rgba(62,224,127,0.75))
-           drop-shadow(0 0 30px rgba(62,224,127,0.4));
+  @keyframes drift{
+    0%   {transform:translate3d(0, 0, 0) rotate(-14deg) scale(0.88); opacity:0;}
+    9%   {opacity:0.34;}
+    50%  {transform:translate3d(5vw, -62vh, 0) rotate(9deg) scale(1.06); opacity:0.28;}
+    91%  {opacity:0.16;}
+    100% {transform:translate3d(-3vw, -128vh, 0) rotate(20deg) scale(0.9); opacity:0;}
   }
-
-  /* Each segment runs the same wave a beat behind the one ahead of it — the
-     stagger lives in the markup as a negative animation-delay, so the whole
-     body is already mid-stroke on the first frame rather than starting flat. */
-  #dragon .seg{animation:undulate 0.9s ease-in-out infinite alternate;}
-  @keyframes undulate{
-    from{transform:translateY(-7px);}
-    to  {transform:translateY(7px);}
-  }
-
-  /* Visible for roughly the first sixth of the cycle, then off-screen and
-     invisible for the rest — that gap is what makes the arrival feel like one. */
-  @keyframes flyby{
-    0%   {transform:translate3d(-45vw, 74vh, 0) rotate(-6deg) scale(0.85); opacity:0;}
-    2%   {opacity:0.9;}
-    7%   {transform:translate3d(14vw, 34vh, 0) rotate(9deg) scale(1.05);}
-    12%  {transform:translate3d(56vw, 58vh, 0) rotate(-7deg) scale(0.95);}
-    16%  {transform:translate3d(112vw, 18vh, 0) rotate(-15deg) scale(0.8); opacity:0;}
-    100% {transform:translate3d(112vw, 18vh, 0) rotate(-15deg) scale(0.8); opacity:0;}
-  }
-
-  html.idle #dragon .seg{animation-play-state:paused;}

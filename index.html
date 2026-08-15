@@ -19,38 +19,22 @@
   <div id="app">
     <div id="loading" class="loading-screen">Loading…</div>
   </div>
-  <!-- The dragon from the mark: the S is a creature, so this is that creature
-       straightened into flight. Faceted body segments rather than ellipses,
-       a backswept horn, a needle tail. Pale stone with the green burning
-       around it, which is how the logo reads — the green is the energy, not
-       the animal. Drawn as vectors: no download, sharp at any size, offline. -->
-  <div id="dragon" aria-hidden="true">
-    <svg viewBox="0 0 270 120" width="270" height="120" fill="none">
-      <g class="dr">
-        <path class="tailspike" d="M34 60 L2 52 L18 60 L2 68 Z"/>
-        <path class="seg" d="M25.0 60 L34.0 57.6 L43.0 60 L34.0 62.4 Z" style="animation-delay:-0.82s"/>
-        <path class="seg" d="M39.0 60 L48.0 57.1 L57.0 60 L48.0 62.9 Z" style="animation-delay:-0.75s"/>
-        <path class="seg" d="M53.0 60 L62.0 56.7 L71.0 60 L62.0 63.3 Z" style="animation-delay:-0.67s"/>
-        <path class="seg" d="M67.0 60 L76.0 56.2 L85.0 60 L76.0 63.8 Z" style="animation-delay:-0.60s"/>
-        <path class="seg" d="M81.0 60 L90.0 55.8 L99.0 60 L90.0 64.2 Z" style="animation-delay:-0.53s"/>
-        <path class="seg" d="M95.0 60 L104.0 55.3 L113.0 60 L104.0 64.7 Z" style="animation-delay:-0.45s"/>
-        <path class="seg" d="M109.0 60 L118.0 54.8 L127.0 60 L118.0 65.2 Z" style="animation-delay:-0.38s"/>
-        <path class="seg" d="M123.0 60 L132.0 54.4 L141.0 60 L132.0 65.6 Z" style="animation-delay:-0.30s"/>
-        <path class="seg" d="M137.0 60 L146.0 53.9 L155.0 60 L146.0 66.1 Z" style="animation-delay:-0.22s"/>
-        <path class="seg" d="M151.0 60 L160.0 53.5 L169.0 60 L160.0 66.5 Z" style="animation-delay:-0.15s"/>
-        <path class="seg" d="M165.0 60 L174.0 53.0 L183.0 60 L174.0 67.0 Z" style="animation-delay:-0.07s"/>
-        <path class="seg" d="M179.0 60 L188.0 52.5 L197.0 60 L188.0 67.5 Z" style="animation-delay:0.00s"/>
-        <path class="head" d="M196 48 L240 54 L256 59 L240 64 L246 74 L226 68 L210 76 L194 63 Z"/>
-        <path class="horn" d="M212 48 L192 18 L228 44 Z"/>
-        <path class="horn small" d="M200 52 L182 34 L206 48 Z"/>
-        <path class="whisker" d="M244 56 C 262 48, 268 36, 264 26"/>
-        <path class="whisker" d="M244 66 C 264 70, 270 80, 266 90"/>
-      </g>
-    </svg>
+  <!-- The mark itself, drifting up through the screen. No hand-drawn stand-in
+       and no new asset: this is the same icon the topbar already loaded and the
+       service worker already precached, so it costs nothing to download and is
+       correct by definition. The art is black-backed, so on a black ground only
+       the ring and the S actually show. -->
+  <div id="floaters" aria-hidden="true">
+    <img src="icons/icon-192.png" alt="" style="left:8%; width:104px; height:104px; animation-duration:34s; animation-delay:-0s;"/>
+    <img src="icons/icon-192.png" alt="" style="left:27%; width:72px; height:72px; animation-duration:27s; animation-delay:-9s;"/>
+    <img src="icons/icon-192.png" alt="" style="left:46%; width:132px; height:132px; animation-duration:41s; animation-delay:-18s;"/>
+    <img src="icons/icon-192.png" alt="" style="left:66%; width:88px; height:88px; animation-duration:31s; animation-delay:-5s;"/>
+    <img src="icons/icon-192.png" alt="" style="left:84%; width:116px; height:116px; animation-duration:37s; animation-delay:-23s;"/>
+    <img src="icons/icon-192.png" alt="" style="left:38%; width:64px; height:64px; animation-duration:24s; animation-delay:-14s;"/>
   </div>
   <!-- Embers: more of them now, brighter, and unequal in size and pace so they
        never resolve into a visible loop. Pure CSS, no timers, no per-frame JS. -->
-  <div id="embers" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+  <div id="embers" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
   <div id="modal-root"></div>
   <div id="toast-root"></div>
   <script type="module" src="/src/main.js"></script>

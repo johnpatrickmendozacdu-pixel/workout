@@ -16,6 +16,16 @@
  */
 export const NOTICES = [
   {
+    id: '2026-08-15-floating-marks',
+    date: '2026-08-15',
+    title: 'The mark is loose',
+    body: [
+      'Copies of the Sets mark now drift up through the background at their own speeds, and the embers are thicker and faster.',
+      'It all sits behind your cards, so nothing you are reading is ever in the way, and it stops the moment you leave the app.',
+      'No extra download: it is the same icon your phone already had.',
+    ],
+  },
+  {
     id: '2026-08-15-new-mark',
     date: '2026-08-15',
     title: 'New mark',

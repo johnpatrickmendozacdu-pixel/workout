@@ -2067,33 +2067,6 @@
     75%{transform:scale(0.985,1.045) translateY(-0.2px);}
   }
 
-  /* Leaves the logo, wanders, comes home. Faint enough to read as atmosphere
-     rather than a thing on top of your workout — it must never compete with
-     text, which is why it sits behind the content and under 9% opacity. */
-  #dragon{
-    position:fixed; top:0; left:0; width:300px; height:300px;
-    z-index:-1; pointer-events:none; opacity:0;
-    will-change:transform, opacity;
-    animation:roam 32s ease-in-out infinite;
-  }
-  /* The only art is the app icon, which is a tile: rounded frame, ring, ground.
-     Drifting that reads as a floating app icon rather than a creature. A round
-     mask cuts the packaging away and leaves what is actually drawn inside, so
-     this needs no new asset and no extra bytes. */
-  #dragon img{
-    width:100%; height:100%; display:block;
-    -webkit-mask-image:radial-gradient(circle at 50% 50%, #000 46%, rgba(0,0,0,0.35) 58%, transparent 66%);
-    mask-image:radial-gradient(circle at 50% 50%, #000 46%, rgba(0,0,0,0.35) 58%, transparent 66%);
-  }
-
-  @keyframes roam{
-    0%   {transform:translate3d(8px, 40px, 0) scale(0.13) rotate(0deg); opacity:0;}
-    8%   {opacity:0.10;}
-    50%  {transform:translate3d(52vw, 48vh, 0) scale(1) rotate(12deg); opacity:0.085;}
-    92%  {opacity:0.05;}
-    100% {transform:translate3d(8px, 40px, 0) scale(0.13) rotate(0deg); opacity:0;}
-  }
-
   /* Off-screen app, nothing moving. */
   html.idle #dragon, html.idle .streak-pill svg{animation-play-state:paused;}
 
@@ -2107,8 +2080,10 @@
     position:fixed; inset:0; z-index:-1; overflow:hidden; pointer-events:none;
   }
   #embers i{
-    position:absolute; bottom:-20px; width:5px; height:5px; border-radius:50%;
-    background:var(--accent); filter:blur(2px); opacity:0;
+    position:absolute; bottom:-24px; width:6px; height:6px; border-radius:50%;
+    background:var(--accent); opacity:0;
+    box-shadow:0 0 8px var(--accent), 0 0 18px rgba(62,224,127,0.55);
+    filter:blur(1px);
     will-change:transform, opacity;
     animation:rise linear infinite;
   }
@@ -2118,11 +2093,19 @@
   #embers i:nth-child(4){left:66%; animation-duration:21s; animation-delay:1.5s; width:4px; height:4px;}
   #embers i:nth-child(5){left:81%; animation-duration:17s; animation-delay:9s; width:3px; height:3px;}
   #embers i:nth-child(6){left:93%; animation-duration:23s; animation-delay:5s;}
+  #embers i:nth-child(7){left:6%;  animation-duration:18s; animation-delay:11s; width:4px; height:4px;}
+  #embers i:nth-child(8){left:20%; animation-duration:14s; animation-delay:6s;  width:7px; height:7px;}
+  #embers i:nth-child(9){left:36%; animation-duration:20s; animation-delay:2s;  width:4px; height:4px;}
+  #embers i:nth-child(10){left:55%; animation-duration:16s; animation-delay:12s;}
+  #embers i:nth-child(11){left:72%; animation-duration:22s; animation-delay:8s; width:5px; height:5px;}
+  #embers i:nth-child(12){left:88%; animation-duration:15s; animation-delay:14s; width:3px; height:3px;}
+  #embers i:nth-child(13){left:44%; animation-duration:24s; animation-delay:17s; width:7px; height:7px;}
+  #embers i:nth-child(14){left:62%; animation-duration:19s; animation-delay:4s;  width:4px; height:4px;}
 
   @keyframes rise{
     0%   {transform:translate3d(0, 0, 0) scale(0.6); opacity:0;}
-    12%  {opacity:0.55;}
-    55%  {transform:translate3d(14px, -46vh, 0) scale(1); opacity:0.35;}
+    12%  {opacity:0.85;}
+    55%  {transform:translate3d(14px, -46vh, 0) scale(1); opacity:0.6;}
     100% {transform:translate3d(-10px, -96vh, 0) scale(0.7); opacity:0;}
   }
 
@@ -2138,13 +2121,69 @@
      So these three get an explicit resting state. Someone who asked their phone
      for less motion still gets the design; they just get it holding still. */
   @media (prefers-reduced-motion: reduce){
+    /* A dragon frozen mid-flight is a poster, not a bug — so it perches
+       rather than hanging in the air, and nothing about it moves. */
     #dragon{
       animation:none !important;
-      opacity:0.07;
-      transform:translate3d(46vw, 42vh, 0) scale(1) rotate(10deg);
+      opacity:0.5;
+      transform:translate3d(48vw, 76vh, 0) scale(0.8) rotate(-4deg);
     }
+    #dragon .seg, #dragon .wing{animation:none !important;}
     /* Embers are motion by definition — a still spark is just a green dot. */
     #embers{display:none;}
     /* The flame keeps its glow, and its tier, without the flicker. */
     .streak-pill svg{animation:none !important;}
   }
+
+  /* ---------- the dragon ----------
+     Fast and rare, not slow and constant: it crosses in about four seconds and
+     is gone for twenty. A brief pass reads as an event and cannot compete with
+     anything you are reading; a permanent resident would be clutter no matter
+     how faint. It flies BEHIND the cards (z-index -1, and the cards carry their
+     own background), which is what keeps text fully legible while letting the
+     dragon be genuinely bright against the black. */
+  #dragon{
+    position:fixed; top:0; left:0; width:260px; height:120px;
+    z-index:-1; pointer-events:none; opacity:0;
+    will-change:transform, opacity;
+    animation:flyby 26s ease-in-out infinite;
+  }
+  #dragon svg{width:100%; height:100%; overflow:visible;}
+
+  /* Green is the whole point, so it is not rationed here the way the UI rations
+     it: solid accent, doubled glow. */
+  #dragon .seg, #dragon .head path, #dragon .tailfin{fill:var(--accent);}
+  #dragon .wing{fill:var(--accent); opacity:0.62;}
+  #dragon .horn{fill:var(--accent);}
+  #dragon .dr{
+    filter:drop-shadow(0 0 5px rgba(62,224,127,0.95)) drop-shadow(0 0 16px rgba(62,224,127,0.55));
+  }
+
+  /* Each segment runs the same wave a beat behind the one ahead of it — the
+     stagger lives in the markup as a negative animation-delay, so the whole
+     body is already mid-stroke on the first frame rather than starting flat. */
+  #dragon .seg{animation:undulate 0.9s ease-in-out infinite alternate;}
+  @keyframes undulate{
+    from{transform:translateY(-7px);}
+    to  {transform:translateY(7px);}
+  }
+
+  #dragon .wing{transform-origin:150px 60px; animation:flap 0.42s ease-in-out infinite alternate;}
+  #dragon .wing.near{animation-delay:-0.06s;}
+  @keyframes flap{
+    from{transform:scaleY(0.35) translateY(2px);}
+    to  {transform:scaleY(1.15) translateY(-2px);}
+  }
+
+  /* Visible for roughly the first sixth of the cycle, then off-screen and
+     invisible for the rest — that gap is what makes the arrival feel like one. */
+  @keyframes flyby{
+    0%   {transform:translate3d(-45vw, 74vh, 0) rotate(-6deg) scale(0.85); opacity:0;}
+    2%   {opacity:0.9;}
+    7%   {transform:translate3d(14vw, 34vh, 0) rotate(9deg) scale(1.05);}
+    12%  {transform:translate3d(56vw, 58vh, 0) rotate(-7deg) scale(0.95);}
+    16%  {transform:translate3d(112vw, 18vh, 0) rotate(-15deg) scale(0.8); opacity:0;}
+    100% {transform:translate3d(112vw, 18vh, 0) rotate(-15deg) scale(0.8); opacity:0;}
+  }
+
+  html.idle #dragon .seg, html.idle #dragon .wing{animation-play-state:paused;}

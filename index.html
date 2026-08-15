@@ -19,13 +19,40 @@
   <div id="app">
     <div id="loading" class="loading-screen">Loading…</div>
   </div>
-  <!-- The mark, wandering. It is the same already-cached icon the topbar uses,
-       so it costs no download and cannot drift off-brand: it IS the brand. -->
-  <div id="dragon" aria-hidden="true"><img src="icons/icon-192.png" alt=""></div>
-  <!-- Embers. Six elements, each with its own delay and duration, so they never
-       line up into an obvious loop. Pure CSS: no timers, no random numbers, no
-       per-frame JavaScript. -->
-  <div id="embers" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+  <!-- A serpentine dragon, drawn as vectors rather than fetched: a dozen body
+       segments each running the same undulation a beat behind the one in front,
+       which is what turns a row of ellipses into something that swims. Wings
+       flap on their own shorter cycle. Nothing here is an image file, so it
+       costs no download, stays sharp at any size, and works offline. -->
+  <div id="dragon" aria-hidden="true">
+    <svg viewBox="0 0 260 120" width="260" height="120" fill="none">
+      <g class="dr">
+        <ellipse class="seg" cx="26" cy="60" rx="3.2" ry="2.8" style="animation-delay:-0.82s"/>
+        <ellipse class="seg" cx="39" cy="60" rx="3.7" ry="3.2" style="animation-delay:-0.75s"/>
+        <ellipse class="seg" cx="52" cy="60" rx="4.2" ry="3.7" style="animation-delay:-0.67s"/>
+        <ellipse class="seg" cx="65" cy="60" rx="4.8" ry="4.1" style="animation-delay:-0.60s"/>
+        <ellipse class="seg" cx="78" cy="60" rx="5.3" ry="4.6" style="animation-delay:-0.53s"/>
+        <ellipse class="seg" cx="91" cy="60" rx="5.8" ry="5.0" style="animation-delay:-0.45s"/>
+        <ellipse class="seg" cx="104" cy="60" rx="6.3" ry="5.4" style="animation-delay:-0.38s"/>
+        <ellipse class="seg" cx="117" cy="60" rx="6.8" ry="5.9" style="animation-delay:-0.30s"/>
+        <ellipse class="seg" cx="130" cy="60" rx="7.4" ry="6.3" style="animation-delay:-0.22s"/>
+        <ellipse class="seg" cx="143" cy="60" rx="7.9" ry="6.8" style="animation-delay:-0.15s"/>
+        <ellipse class="seg" cx="156" cy="60" rx="8.4" ry="7.2" style="animation-delay:-0.07s"/>
+        <ellipse class="seg" cx="169" cy="60" rx="8.9" ry="7.6" style="animation-delay:0.00s"/>
+        <path class="wing far" d="M150 56 C 138 22, 176 14, 190 34 C 178 38, 162 46, 150 56 Z"/>
+        <path class="wing near" d="M150 64 C 140 96, 178 104, 192 86 C 180 80, 162 72, 150 64 Z"/>
+        <path class="tailfin" d="M14 60 L 2 46 L 8 60 L 2 74 Z"/>
+        <g class="head">
+          <path d="M182 60 C 196 48, 214 48, 228 56 L 244 52 L 232 62 L 244 70 L 226 68 C 214 74, 196 72, 182 60 Z"/>
+          <path class="horn" d="M206 50 L 200 34 L 212 46 Z"/>
+          <path class="horn" d="M216 50 L 214 32 L 222 47 Z"/>
+        </g>
+      </g>
+    </svg>
+  </div>
+  <!-- Embers: more of them now, brighter, and unequal in size and pace so they
+       never resolve into a visible loop. Pure CSS, no timers, no per-frame JS. -->
+  <div id="embers" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
   <div id="modal-root"></div>
   <div id="toast-root"></div>
   <script type="module" src="/src/main.js"></script>

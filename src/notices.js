@@ -16,6 +16,16 @@
  */
 export const NOTICES = [
   {
+    id: '2026-08-15-dragon-flyby',
+    date: '2026-08-15',
+    title: 'There is a dragon in here now',
+    body: [
+      'Every twenty seconds or so a dragon tears across the background, banks, and is gone. It flies behind your cards, so nothing you are reading is ever in its way.',
+      'The embers are brighter and there are more of them.',
+      'It is drawn rather than downloaded — vectors and arithmetic — so the app is no heavier, still works offline, and it all stops the moment you leave.',
+    ],
+  },
+  {
     id: '2026-08-15-embers',
     date: '2026-08-15',
     title: 'Embers',

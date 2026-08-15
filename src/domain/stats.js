@@ -522,3 +522,20 @@ export function buildCrewCard(profile, exercises, statsById, todayTotals, dayStr
     exercises: cards,
   };
 }
+
+/**
+ * How hard the streak flame burns, 0-4.
+ *
+ * Deliberately not streakTier, which stays 0 until a week and is about earned
+ * status. This starts at day one: a flame that stays dead for your first six
+ * days is a flame that never rewards starting, which is the moment the reward
+ * matters most. No streak means no fire at all.
+ */
+export function flameLevel(days) {
+  const d = Number(days) || 0;
+  if (d < 1) return 0;
+  if (d < 3) return 1;
+  if (d < 7) return 2;
+  if (d < 30) return 3;
+  return 4;
+}

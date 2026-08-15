@@ -35,8 +35,9 @@
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
   html,body{height:100%;}
+  html{background:var(--bg);}
   body{
-    margin:0; background:var(--bg); color:var(--text); font-family:var(--font-body);
+    margin:0; background:transparent; color:var(--text); font-family:var(--font-body);
     -webkit-font-smoothing:antialiased;
   }
   button, input{font-family:inherit; color:inherit;}
@@ -2031,3 +2032,51 @@
 
   .notice.update{border-top:none; border:1px solid var(--accent); padding:14px; margin-bottom:4px;}
   .notice.update h3{color:var(--accent);}
+
+  /* ---------- the flame, and the wandering mark ----------
+     Both animate transform / opacity / filter only. Those are composited off
+     the main thread, so nothing here can touch layout, block a tap, or show up
+     as jank while scrolling. No JS runs per frame — there is no rAF loop to
+     leak, and prefers-reduced-motion is already handled globally above. */
+
+  .streak-pill svg{transform-origin:50% 88%; will-change:transform;}
+
+  /* No streak, no fire: a cold ember, so lighting it is the reward for day one. */
+  .flame-l0 svg path{fill:var(--text-faint);}
+  .flame-l1 svg{animation:flicker 2.4s ease-in-out infinite;
+    filter:drop-shadow(0 0 2px rgba(62,224,127,0.30));}
+  .flame-l2 svg{animation:flicker 2s ease-in-out infinite;
+    filter:drop-shadow(0 0 4px rgba(62,224,127,0.45));}
+  .flame-l3 svg{animation:flicker 1.6s ease-in-out infinite;
+    filter:drop-shadow(0 0 7px rgba(62,224,127,0.65));}
+  .flame-l4 svg{animation:flicker 1.25s ease-in-out infinite;
+    filter:drop-shadow(0 0 10px rgba(62,224,127,0.85)) drop-shadow(0 0 20px rgba(62,224,127,0.35));}
+
+  @keyframes flicker{
+    0%,100%{transform:scale(1,1) translateY(0);}
+    25%{transform:scale(0.965,1.085) translateY(-0.4px);}
+    50%{transform:scale(1.03,0.97) translateY(0.2px);}
+    75%{transform:scale(0.985,1.045) translateY(-0.2px);}
+  }
+
+  /* Leaves the logo, wanders, comes home. Faint enough to read as atmosphere
+     rather than a thing on top of your workout — it must never compete with
+     text, which is why it sits behind the content and under 9% opacity. */
+  #dragon{
+    position:fixed; top:0; left:0; width:230px; height:230px;
+    z-index:-1; pointer-events:none; opacity:0;
+    will-change:transform, opacity;
+    animation:roam 54s ease-in-out infinite;
+  }
+  #dragon img{width:100%; height:100%; display:block;}
+
+  @keyframes roam{
+    0%   {transform:translate3d(8px, 40px, 0) scale(0.13) rotate(0deg); opacity:0;}
+    8%   {opacity:0.085;}
+    50%  {transform:translate3d(58vw, 52vh, 0) scale(1) rotate(12deg); opacity:0.065;}
+    92%  {opacity:0.04;}
+    100% {transform:translate3d(8px, 40px, 0) scale(0.13) rotate(0deg); opacity:0;}
+  }
+
+  /* Off-screen app, nothing moving. */
+  html.idle #dragon, html.idle .streak-pill svg{animation-play-state:paused;}

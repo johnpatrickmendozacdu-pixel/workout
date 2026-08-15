@@ -71,7 +71,7 @@ import { GUIDE_SECTIONS, GUIDE_INTRO } from './guide.js';
 import { CATEGORIES, categoryOf, categoryLabel, categoryIconUrl } from './categories.js';
 import * as gsync from './sync/googleSync.js';
 import * as crewApi from './sync/crew.js';
-import { allStats, exerciseStats, recentDayStates, workoutDates, streakTier, dayHistory, trajectorySeries, formatDuration, formatTotalDuration, formatMinutes, formatCount, buildCrewCard, formatClock, groupBySchedule, comboTimes } from './domain/stats.js';
+import { allStats, exerciseStats, recentDayStates, workoutDates, streakTier, flameLevel, dayHistory, trajectorySeries, formatDuration, formatTotalDuration, formatMinutes, formatCount, buildCrewCard, formatClock, groupBySchedule, comboTimes } from './domain/stats.js';
 
 // Every number is on screen — no hunting, no typing. One tap applies it in
 // whichever direction the lever is set to.
@@ -2513,7 +2513,7 @@ function renderTopbar() {
           </div>
         </div>
         <div class="topbar-right">
-          <div class="streak-pill" title="Longest run currently going">${ICONS.flame}${streak}</div>
+          <div class="streak-pill flame-l${flameLevel(streak)}" title="Longest run currently going">${ICONS.flame}${streak}</div>
           ${helpChipHtml()}
           ${versionChipHtml()}
           ${bellChipHtml()}
@@ -6132,11 +6132,15 @@ async function init() {
   tryResumeSync().catch(() => {});
   checkVersion();
   document.addEventListener('visibilitychange', () => {
+    // Pauses the flame and the dragon rather than letting them tick on in the
+    // background. CSS does the pausing; this only flips the flag.
+    document.documentElement.classList.toggle('idle', document.hidden);
     if (document.visibilityState !== 'visible') return;
     // A backgrounded phone stops the interval but not the clock. Coming back is
     // the moment to restart it — and, for a timed exercise, the moment its
     // finished session can finally ask the question.
     ensureGlobalTick();
+    document.documentElement.classList.remove('idle');
     checkVersion();
     if (hasSyncAccount() && isOnline()) retryBackupQuietly();
   });

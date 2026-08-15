@@ -12,6 +12,7 @@ import {
   formatCount,
   recentDayStates,
   streakTier,
+  flameLevel,
   dayHistory,
   trajectorySeries,
 } from '../src/domain/stats.js';
@@ -688,5 +689,26 @@ describe('buildCrewCard and rest days', () => {
 
   it('is false when nobody is resting anything', () => {
     expect(buildCrewCard({}, exercises, {}, {}, {}, due, {}, {}, {}, {}, {}).restingToday).toBe(false);
+  });
+});
+
+describe('flameLevel', () => {
+  it('gives no fire without a streak', () => {
+    expect(flameLevel(0)).toBe(0);
+    expect(flameLevel(null)).toBe(0);
+    expect(flameLevel(undefined)).toBe(0);
+  });
+  it('lights on day one, unlike streakTier', () => {
+    expect(flameLevel(1)).toBe(1);
+    expect(streakTier(1)).toBe(0);
+  });
+  it('climbs with the streak and then holds', () => {
+    expect([1, 2, 3, 7, 29, 30, 365].map(flameLevel)).toEqual([1, 1, 2, 3, 3, 4, 4]);
+  });
+  it('never leaves the 0-4 range', () => {
+    [0, 1, 5, 50, 5000].forEach((d) => {
+      expect(flameLevel(d)).toBeGreaterThanOrEqual(0);
+      expect(flameLevel(d)).toBeLessThanOrEqual(4);
+    });
   });
 });

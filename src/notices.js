@@ -16,6 +16,16 @@
  */
 export const NOTICES = [
   {
+    id: '2026-08-15-flame-and-dragon',
+    date: '2026-08-15',
+    title: 'The streak is on fire',
+    body: [
+      'The flame beside your streak now burns, and burns harder the longer the streak runs. No streak, no fire — lighting it is what day one gets you.',
+      'The mark from the top corner also wanders quietly through the background while the app is open, and settles back where it came from.',
+      'Both stop the moment you leave the app, and neither downloads anything — it is the same icon you already have, moved.',
+    ],
+  },
+  {
     id: '2026-08-14-share-card-texture',
     date: '2026-08-14',
     title: 'Share cards got a backdrop',

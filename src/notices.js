@@ -16,6 +16,15 @@
  */
 export const NOTICES = [
   {
+    id: '2026-08-15-new-mark',
+    date: '2026-08-15',
+    title: 'New mark',
+    body: [
+      'Sets has a new icon — the dragon, cut from stone, burning green. It is on your home screen, in the top corner, and on every share card you send.',
+      'If the old one is still showing on your phone, it will swap itself over the next time you open the app.',
+    ],
+  },
+  {
     id: '2026-08-15-dragon-flyby',
     date: '2026-08-15',
     title: 'There is a dragon in here now',

@@ -2071,18 +2071,26 @@
      rather than a thing on top of your workout — it must never compete with
      text, which is why it sits behind the content and under 9% opacity. */
   #dragon{
-    position:fixed; top:0; left:0; width:230px; height:230px;
+    position:fixed; top:0; left:0; width:300px; height:300px;
     z-index:-1; pointer-events:none; opacity:0;
     will-change:transform, opacity;
     animation:roam 54s ease-in-out infinite;
   }
-  #dragon img{width:100%; height:100%; display:block;}
+  /* The only art is the app icon, which is a tile: rounded frame, ring, ground.
+     Drifting that reads as a floating app icon rather than a creature. A round
+     mask cuts the packaging away and leaves what is actually drawn inside, so
+     this needs no new asset and no extra bytes. */
+  #dragon img{
+    width:100%; height:100%; display:block;
+    -webkit-mask-image:radial-gradient(circle at 50% 50%, #000 46%, rgba(0,0,0,0.35) 58%, transparent 66%);
+    mask-image:radial-gradient(circle at 50% 50%, #000 46%, rgba(0,0,0,0.35) 58%, transparent 66%);
+  }
 
   @keyframes roam{
     0%   {transform:translate3d(8px, 40px, 0) scale(0.13) rotate(0deg); opacity:0;}
-    8%   {opacity:0.085;}
-    50%  {transform:translate3d(58vw, 52vh, 0) scale(1) rotate(12deg); opacity:0.065;}
-    92%  {opacity:0.04;}
+    8%   {opacity:0.10;}
+    50%  {transform:translate3d(52vw, 48vh, 0) scale(1) rotate(12deg); opacity:0.085;}
+    92%  {opacity:0.05;}
     100% {transform:translate3d(8px, 40px, 0) scale(0.13) rotate(0deg); opacity:0;}
   }
 

@@ -2201,14 +2201,18 @@
      shape. Opacity and transform only — no repaint, no JS, and it pauses with
      everything else when the app is not on screen. */
   #firelight{
-    position:fixed; left:-10%; right:-10%; top:34%; height:30%;
+    /* The box has to be much larger than the glow, and the glow has to reach
+       zero well inside it. Sized tight, the gradient was still carrying colour
+       where the element ended, and screen-blending a hard edge drew a visible
+       horizontal seam straight across the arena. */
+    position:fixed; left:-25%; right:-25%; top:18%; height:58%;
     z-index:-1; pointer-events:none; mix-blend-mode:screen;
-    transform-origin:50% 70%;
-    background:radial-gradient(ellipse 62% 100% at 50% 62%,
-      rgba(140,255,150,0.30) 0%,
-      rgba(62,224,127,0.16) 42%,
-      rgba(62,224,127,0.04) 68%,
-      transparent 80%);
+    transform-origin:50% 62%;
+    background:radial-gradient(ellipse 42% 44% at 50% 55%,
+      rgba(140,255,150,0.32) 0%,
+      rgba(62,224,127,0.17) 34%,
+      rgba(62,224,127,0.05) 54%,
+      rgba(62,224,127,0) 72%);
     animation:firebreathe 3.6s ease-in-out infinite alternate;
     will-change:opacity, transform;
   }

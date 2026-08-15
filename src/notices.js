@@ -16,6 +16,16 @@
  */
 export const NOTICES = [
   {
+    id: '2026-08-15-embers',
+    date: '2026-08-15',
+    title: 'Embers',
+    body: [
+      'Sparks now drift up through the background while the app is open, off the same fire your streak burns with.',
+      'The wandering mark moves quicker than it did, so it reads as roaming rather than parked.',
+      'Everything stops when you leave the app, and none of it downloads anything.',
+    ],
+  },
+  {
     id: '2026-08-15-flame-and-dragon',
     date: '2026-08-15',
     title: 'The streak is on fire',

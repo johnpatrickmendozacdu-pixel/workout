@@ -2401,12 +2401,27 @@ function maybeAutoUpdate() {
     Object.values(day || {}).some((t) => t && t.status === 'running'));
   if (busy) return;
   state.autoUpdated = true;
-  forceUpdate();
+  // The service worker's own swap is the gentle path and keeps the cache warm;
+  // forceUpdate is the sledgehammer for when no worker has reported in.
+  if (state.applyUpdate) state.applyUpdate();
+  else forceUpdate();
 }
 
 async function checkVersion() {
   try {
-    const res = await fetch('./version.json', { cache: 'no-store' });
+    // Two belts here, both earned. `cache: no-store` is the correct request,
+    // but an installed iOS webview has been known to answer it from its own
+    // store anyway, so the URL is unique per call as well. And asking the
+    // registration to update() is the only supported way to make the browser
+    // go and look for a new service worker — without it, a PWA that is never
+    // fully closed can sit on the worker it started with indefinitely, which is
+    // exactly the "my updates never arrive" symptom.
+    if (navigator.serviceWorker) {
+      navigator.serviceWorker.getRegistration()
+        .then((r) => r && r.update())
+        .catch(() => {});
+    }
+    const res = await fetch(`./version.json?t=${Date.now()}`, { cache: 'no-store' });
     if (!res.ok) return;
     const { build } = await res.json();
     state.version.status = versionStatus(state.version.local, build);

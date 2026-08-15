@@ -2074,7 +2074,7 @@
     position:fixed; top:0; left:0; width:300px; height:300px;
     z-index:-1; pointer-events:none; opacity:0;
     will-change:transform, opacity;
-    animation:roam 54s ease-in-out infinite;
+    animation:roam 32s ease-in-out infinite;
   }
   /* The only art is the app icon, which is a tile: rounded frame, ring, ground.
      Drifting that reads as a floating app icon rather than a creature. A round
@@ -2096,3 +2096,34 @@
 
   /* Off-screen app, nothing moving. */
   html.idle #dragon, html.idle .streak-pill svg{animation-play-state:paused;}
+
+  /* ---------- embers ----------
+     Sparks off the same fire the streak burns with. Six of them, each a blurred
+     dot that rises and fades; the whole effect is transform and opacity, so it
+     rides the compositor and never touches layout. Staggered delays and unequal
+     durations keep them from pulsing in unison, which is what makes a small
+     number of elements read as random rather than as a loop. */
+  #embers{
+    position:fixed; inset:0; z-index:-1; overflow:hidden; pointer-events:none;
+  }
+  #embers i{
+    position:absolute; bottom:-20px; width:5px; height:5px; border-radius:50%;
+    background:var(--accent); filter:blur(2px); opacity:0;
+    will-change:transform, opacity;
+    animation:rise linear infinite;
+  }
+  #embers i:nth-child(1){left:12%; animation-duration:15s; animation-delay:0s;}
+  #embers i:nth-child(2){left:28%; animation-duration:19s; animation-delay:3.5s; width:3px; height:3px;}
+  #embers i:nth-child(3){left:47%; animation-duration:13s; animation-delay:7s;}
+  #embers i:nth-child(4){left:66%; animation-duration:21s; animation-delay:1.5s; width:4px; height:4px;}
+  #embers i:nth-child(5){left:81%; animation-duration:17s; animation-delay:9s; width:3px; height:3px;}
+  #embers i:nth-child(6){left:93%; animation-duration:23s; animation-delay:5s;}
+
+  @keyframes rise{
+    0%   {transform:translate3d(0, 0, 0) scale(0.6); opacity:0;}
+    12%  {opacity:0.55;}
+    55%  {transform:translate3d(14px, -46vh, 0) scale(1); opacity:0.35;}
+    100% {transform:translate3d(-10px, -96vh, 0) scale(0.7); opacity:0;}
+  }
+
+  html.idle #embers i{animation-play-state:paused;}

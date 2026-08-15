@@ -980,8 +980,7 @@
   .day-dot.complete{background:var(--accent);}
 
   /* primary actions carry the green, with dark ink for contrast */
-  .nav-btn.active{background:var(--accent); color:var(--accent-ink);}
-  .nav-btn.active svg{stroke:var(--accent-ink);}
+  .nav-btn.active{color:var(--accent);}
   .primary-btn, .add-btn{background:var(--accent); color:var(--accent-ink);}
   .avatar-chip.signed-in{background:var(--accent); color:var(--accent-ink); border-color:var(--accent);}
   .lever-opt.on{background:var(--accent); color:var(--accent-ink);}
@@ -1213,13 +1212,12 @@
   .lever-opt.on{background:var(--accent); color:var(--accent-ink);}
   .lever-opt.sub.on{background:var(--danger); color:#0A0C0B;}
 
-  .primary-btn, .add-btn, .nav-btn.active, .sched-mode.on, .sched-day.on,
+  .primary-btn, .add-btn, .sched-mode.on, .sched-day.on,
   .rest-toggle.on, .avatar-chip.signed-in, .guide-sec h3 em{
     background:var(--accent); color:var(--accent-ink); border:2px solid var(--accent);
   }
   .nav-btn{color:var(--text-dim);}
-  .nav-btn.active{color:var(--accent-ink);}
-  .nav-btn.active svg{stroke:var(--accent-ink);}
+  .nav-btn.active{color:var(--accent);}
   .sheet-close{background:transparent; border:2px solid var(--danger); color:var(--danger);}
   .sheet-close svg{stroke:var(--danger);}
   .streak-pill svg path{fill:var(--accent);}
@@ -1697,7 +1695,7 @@
     font-family:var(--font-mono); font-size:9px; font-weight:700; font-style:normal;
     display:flex; align-items:center; justify-content:center;
   }
-  .nav-btn.active .nav-dot{background:var(--accent-ink); color:var(--accent);}
+  .nav-btn.active .nav-dot{background:var(--accent); color:var(--accent-ink);}
   .member-ex-row{display:flex; align-items:center; gap:10px; padding:9px 2px; border-bottom:1px solid var(--border);}
   .member-ex-name{flex:1; min-width:0; font-size:14px; color:var(--text);
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}

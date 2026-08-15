@@ -2039,6 +2039,14 @@
      as jank while scrolling. No JS runs per frame — there is no rAF loop to
      leak, and prefers-reduced-motion is already handled globally above. */
 
+  /* A z-index of -1 paints above the root background but BELOW the background
+     of ordinary in-flow content — so the ground colour has to live on <html>,
+     and nothing above it may paint an opaque background of its own. The night
+     pass sets `body, #app{background:var(--paper)}`, which buried the mark
+     completely until this put the colour back on the root. */
+  html{background:var(--paper);}
+  body, #app{background:transparent;}
+
   .streak-pill svg{transform-origin:50% 88%; will-change:transform;}
 
   /* No streak, no fire: a cold ember, so lighting it is the reward for day one. */

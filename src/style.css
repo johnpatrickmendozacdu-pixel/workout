@@ -181,7 +181,11 @@
   }
   .nav-btn{position:relative; min-height:48px; transition:color .18s ease, background .18s ease;}
   .nav-btn.active{color:var(--accent-ink); background:var(--accent); border-radius:12px;}
-  .nav-btn.active svg{stroke:var(--accent-ink);}
+  /* The active tab burns: the same metal, lit green, over the accent tile —
+     silver held in green light, which is the mark's own relationship. */
+  .nav-btn.active svg [stroke]{stroke:url(#metal-lit);}
+  .nav-btn.active svg [fill]{fill:url(#metal-lit);}
+  .nav-btn.active svg{filter:drop-shadow(0 0 5px rgba(6,18,11,0.55));}
   .nav-btn.active span{font-weight:800;}
   .nav-btn svg{width:22px; height:22px;}
   /* Five tabs, so the label has to give up a point of size rather than the tap
@@ -2254,3 +2258,19 @@
     border:2px solid var(--ink);
     box-shadow:0 0 0 2px rgba(62,224,127,0.7);
   }
+
+  /* ---------- metal in the nav ----------
+     The icons are struck from the same material as the mark: a silver gradient
+     with a highlight running across it, sitting in green light. Flat
+     currentColor was why redrawing the shapes alone changed nothing to look at.
+
+     The glow is on the SVG rather than the button so it hugs the strokes
+     instead of boxing the tab. */
+  .nav-btn svg{
+    filter:drop-shadow(0 0 4px rgba(62,224,127,0.55)) drop-shadow(0 1px 0 rgba(0,0,0,0.6));
+    transition:opacity .18s var(--ease), filter .18s var(--ease);
+  }
+  /* Unvisited tabs sit back without going grey — the metal dims, it does not
+     change material. */
+  .nav-btn:not(.active) svg{opacity:0.62;}
+  .nav-btn:not(.active):active svg{opacity:1;}

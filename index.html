@@ -23,6 +23,27 @@
        light layer sitting over its flame band, blended to ADD light rather than
        paint over it — which is what makes the picture itself look alive instead
        of having a green rectangle on top of it. -->
+  <!-- One set of gradients every nav icon paints itself with. SVG defs are
+       document-scoped, so a single hidden sheet here serves all five icons and
+       costs one element instead of repeating a gradient inside each one. -->
+  <svg id="ink-defs" aria-hidden="true" width="0" height="0" style="position:absolute">
+    <defs>
+      <linearGradient id="metal" x1="0" y1="0" x2="0.35" y2="1">
+        <stop offset="0%" stop-color="#FFFFFF"/>
+        <stop offset="26%" stop-color="#D8DEDA"/>
+        <stop offset="52%" stop-color="#8D968F"/>
+        <stop offset="74%" stop-color="#E6EBE7"/>
+        <stop offset="100%" stop-color="#79837C"/>
+      </linearGradient>
+      <linearGradient id="metal-lit" x1="0" y1="0" x2="0.35" y2="1">
+        <stop offset="0%" stop-color="#EAFFF1"/>
+        <stop offset="30%" stop-color="#BFF5D5"/>
+        <stop offset="55%" stop-color="#3EE07F"/>
+        <stop offset="78%" stop-color="#D7FBE6"/>
+        <stop offset="100%" stop-color="#1E7A47"/>
+      </linearGradient>
+    </defs>
+  </svg>
   <div id="firelight" aria-hidden="true"></div>
   <!-- Embers: more of them now, brighter, and unequal in size and pace so they
        never resolve into a visible loop. Pure CSS, no timers, no per-frame JS. -->

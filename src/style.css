@@ -2054,18 +2054,19 @@
      embers, which ride at z-index -1, rise IN FRONT of it — sparks off the fire
      in the picture rather than a separate effect floating over a photo.
 
-     The scrim is not decoration: at full strength the fire band washes out any
-     text that is not inside a card. Two layers, darkest across the middle where
-     the flames are, so the floor and the emblem keep their depth while the
-     readable band stays readable. --paper underneath is what shows if the image
-     has not decoded yet, so nothing ever flashes white. */
+     The scrim is held as light as the text allows — the arena is the point, and
+     at 80% it may as well not be there. What buys that headroom is the
+     text-shadow below: every card already has an opaque back, so the only thing
+     at risk is loose text, and a shadow protects that far more cheaply than
+     drowning the whole picture. --paper underneath is what shows before the
+     image decodes, so nothing ever flashes white. */
   html{
     background:
       linear-gradient(180deg,
-        rgba(10,12,11,0.72) 0%,
-        rgba(10,12,11,0.88) 42%,
-        rgba(10,12,11,0.90) 62%,
-        rgba(10,12,11,0.78) 100%),
+        rgba(10,12,11,0.42) 0%,
+        rgba(10,12,11,0.58) 40%,
+        rgba(10,12,11,0.62) 60%,
+        rgba(10,12,11,0.40) 100%),
       url('/arena.jpg') center center / cover no-repeat,
       var(--paper);
     background-color:var(--paper);
@@ -2157,6 +2158,8 @@
   @media (prefers-reduced-motion: reduce){
     /* Embers are motion by definition — a still spark is just a green dot. */
     #embers{display:none;}
+    /* The fire holds a steady glow rather than pulsing. */
+    #firelight{animation:none !important; opacity:0.8;}
     /* The flame keeps its glow, and its tier, without the flicker. */
     .streak-pill svg{animation:none !important;}
   }
@@ -2184,3 +2187,33 @@
     from{opacity:0; transform:translateY(10px);}
     to  {opacity:1; transform:none;}
   }
+
+  /* Loose text sits directly on the arena — labels, hints, the nudge lines.
+     Cards carry their own opaque background and need none of this. One shadow
+     is what lets the picture come up two stops without costing legibility. */
+  body{text-shadow:0 1px 3px rgba(0,0,0,0.85);}
+  .modal-sheet, .ex-card, .plan-row, .empty-card, .habit-day-card,
+  .habit-block, .day-row, .break-row, .timer-block{text-shadow:none;}
+
+  /* ---------- the fire breathes ----------
+     Sits over the flame band of the photo and ADDS light (screen blend), so the
+     arena's own fire brightens and sinks rather than being covered by a green
+     shape. Opacity and transform only — no repaint, no JS, and it pauses with
+     everything else when the app is not on screen. */
+  #firelight{
+    position:fixed; left:-10%; right:-10%; top:34%; height:30%;
+    z-index:-1; pointer-events:none; mix-blend-mode:screen;
+    transform-origin:50% 70%;
+    background:radial-gradient(ellipse 62% 100% at 50% 62%,
+      rgba(140,255,150,0.30) 0%,
+      rgba(62,224,127,0.16) 42%,
+      rgba(62,224,127,0.04) 68%,
+      transparent 80%);
+    animation:firebreathe 3.6s ease-in-out infinite alternate;
+    will-change:opacity, transform;
+  }
+  @keyframes firebreathe{
+    from{opacity:0.5; transform:scaleY(0.94) scaleX(0.98);}
+    to  {opacity:1;   transform:scaleY(1.08) scaleX(1.02);}
+  }
+  html.idle #firelight{animation-play-state:paused;}

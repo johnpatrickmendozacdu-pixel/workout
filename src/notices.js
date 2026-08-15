@@ -16,6 +16,15 @@
  */
 export const NOTICES = [
   {
+    id: '2026-08-15-screen-motion',
+    date: '2026-08-15',
+    title: 'Screens arrive now',
+    body: [
+      'Switching tabs used to swap the screen instantly. Now the cards rise into place one after another, so moving around the app feels like moving rather than cutting.',
+      'It is deliberately quick and shallow — you see this thirty times a day, and anything showier would start costing you time.',
+    ],
+  },
+  {
     id: '2026-08-15-floating-marks',
     date: '2026-08-15',
     title: 'The mark is loose',

@@ -32,6 +32,12 @@
     --font-mono:'JetBrains Mono',ui-monospace,Menlo,monospace;
     --font-num:'Martian Mono','JetBrains Mono',ui-monospace,monospace;
     --safe-bottom: env(safe-area-inset-bottom, 0px);
+    /* One motion vocabulary instead of four ad-hoc curves. --ease is the
+       everyday one: quick out of the gate, settled at the end, which is what
+       makes a tap feel answered rather than played back at you. */
+    --ease: cubic-bezier(.2,.8,.2,1);
+    --ease-out: cubic-bezier(.22,.61,.36,1);
+    --ease-pop: cubic-bezier(.2,.9,.3,1.4);
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
   html,body{height:100%;}
@@ -196,7 +202,7 @@
     padding:16px 20px calc(24px + var(--safe-bottom));
     border-top:1px solid var(--border-strong);
   }
-  .modal-sheet.entering{animation:slideUp .22s cubic-bezier(.2,.8,.2,1);}
+  .modal-sheet.entering{animation:slideUp .22s var(--ease);}
   .modal-sheet.center{border-radius:22px; max-width:340px; margin:0 20px 40px;}
   .sheet-handle{width:36px; height:4px; background:var(--border-strong); border-radius:99px; margin:0 auto 14px;}
   .sheet-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:16px;}
@@ -484,7 +490,7 @@
     position:fixed; top:0; bottom:0; width:min(86vw, 340px); z-index:40; overflow-y:auto;
     background:var(--bg-elevated); border:1px solid var(--border);
     padding:22px 16px calc(28px + var(--safe-bottom));
-    transition:transform .24s cubic-bezier(.22,.61,.36,1); -webkit-overflow-scrolling:touch;
+    transition:transform .24s var(--ease-out); -webkit-overflow-scrolling:touch;
   }
   .rail-left{left:0; transform:translateX(-102%); border-radius:0 var(--radius-lg) var(--radius-lg) 0;}
   .rail-right{right:0; transform:translateX(102%); border-radius:var(--radius-lg) 0 0 var(--radius-lg);}
@@ -516,7 +522,7 @@
   }
   .alert-card.live{
     border-color:var(--accent); background:linear-gradient(var(--bg-card), var(--bg-card)) padding-box;
-    animation:alertIn .26s cubic-bezier(.22,.61,.36,1);
+    animation:alertIn .26s var(--ease-out);
   }
   @keyframes alertIn{from{opacity:0; transform:translateX(16px) scale(.98);} to{opacity:1; transform:none;}}
   .alert-icon{font-size:17px; line-height:1.2; flex-shrink:0;}
@@ -538,7 +544,7 @@
 
   /* completion dialog */
   .modal-sheet.celebrate{text-align:center; padding:30px 24px 24px;}
-  .celebrate-glyph{display:flex; justify-content:center; animation:pop .32s cubic-bezier(.2,.9,.3,1.4);}
+  .celebrate-glyph{display:flex; justify-content:center; animation:pop .32s var(--ease-pop);}
   @keyframes pop{from{transform:scale(.5); opacity:0;} to{transform:scale(1); opacity:1;}}
   .modal-sheet.celebrate h2{margin:10px 0 4px; font-size:21px;}
   .celebrate-line{color:var(--text-dim); font-size:14px;}
@@ -2170,4 +2176,28 @@
     50%  {transform:translate3d(5vw, -62vh, 0) rotate(9deg) scale(1.06); opacity:0.38;}
     91%  {opacity:0.2;}
     100% {transform:translate3d(-3vw, -128vh, 0) rotate(20deg) scale(0.9); opacity:0;}
+  }
+
+  /* ---------- arriving on a screen ----------
+     The cards rise and fade in one after another, which turns an instant
+     innerHTML swap into something that reads as arriving somewhere. Short and
+     shallow on purpose: 10px and a quarter second. Anything longer and you feel
+     it every time you check your streak, which is thirty times a day.
+
+     Only the first eight are staggered — past that the delay would be longer
+     than the animation, and a screen you have to wait to read is a worse screen.
+     Transform and opacity only, so it stays on the compositor. */
+  .view-enter > *{animation:viewIn 0.26s var(--ease-out) both;}
+  .view-enter > *:nth-child(1){animation-delay:0ms;}
+  .view-enter > *:nth-child(2){animation-delay:26ms;}
+  .view-enter > *:nth-child(3){animation-delay:52ms;}
+  .view-enter > *:nth-child(4){animation-delay:78ms;}
+  .view-enter > *:nth-child(5){animation-delay:104ms;}
+  .view-enter > *:nth-child(6){animation-delay:130ms;}
+  .view-enter > *:nth-child(7){animation-delay:156ms;}
+  .view-enter > *:nth-child(n+8){animation-delay:180ms;}
+
+  @keyframes viewIn{
+    from{opacity:0; transform:translateY(10px);}
+    to  {opacity:1; transform:none;}
   }

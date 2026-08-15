@@ -2588,14 +2588,33 @@ function renderTopbar() {
   }
 }
 
+/**
+ * Which screen the container last drew. The entrance only plays when this
+ * actually changes — renderView() is also called after every logged set, every
+ * expanded group and every sync, and animating those would strobe the whole
+ * screen on each tap. That is the same mistake as the old "TV static" flash,
+ * arrived at from the other direction: motion on a re-render that changed
+ * nothing the eye cares about.
+ */
+let lastRenderedView = null;
+
 function renderView() {
   const el = document.getElementById('view-container');
   if (!el) return;
+  const arriving = state.view !== lastRenderedView;
+  lastRenderedView = state.view;
+  el.classList.remove('view-enter');
   if (state.view === 'today') el.innerHTML = viewToday();
   else if (state.view === 'plan') el.innerHTML = viewPlan();
   else if (state.view === 'guide') el.innerHTML = guideBodyHtml();
   else if (state.view === 'social') el.innerHTML = viewSocial();
   else el.innerHTML = viewProgress();
+  if (arriving) {
+    // Reading offsetWidth restarts the animation: without it the class is
+    // removed and re-added inside one frame and the browser sees no change.
+    void el.offsetWidth;
+    el.classList.add('view-enter');
+  }
 }
 
 /* ============================= THE GUIDE =============================

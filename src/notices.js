@@ -16,6 +16,16 @@
  */
 export const NOTICES = [
   {
+    id: '2026-08-15-arena',
+    date: '2026-08-15',
+    title: 'Welcome to the arena',
+    body: [
+      'Sets now stands in one. The floor, the fire and the mark on the wall sit behind everything you do, and the embers rise off that fire.',
+      'The floating logos are gone — the arena says it better.',
+      'It is stored on your phone with the rest of the app, so it still opens with no signal.',
+    ],
+  },
+  {
     id: '2026-08-15-screen-motion',
     date: '2026-08-15',
     title: 'Screens arrive now',

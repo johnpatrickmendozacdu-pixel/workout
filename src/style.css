@@ -2050,7 +2050,26 @@
      and nothing above it may paint an opaque background of its own. The night
      pass sets `body, #app{background:var(--paper)}`, which buried the mark
      completely until this put the colour back on the root. */
-  html{background:var(--paper);}
+  /* The arena is the ground the whole app stands on. It lives on <html> so the
+     embers, which ride at z-index -1, rise IN FRONT of it — sparks off the fire
+     in the picture rather than a separate effect floating over a photo.
+
+     The scrim is not decoration: at full strength the fire band washes out any
+     text that is not inside a card. Two layers, darkest across the middle where
+     the flames are, so the floor and the emblem keep their depth while the
+     readable band stays readable. --paper underneath is what shows if the image
+     has not decoded yet, so nothing ever flashes white. */
+  html{
+    background:
+      linear-gradient(180deg,
+        rgba(10,12,11,0.72) 0%,
+        rgba(10,12,11,0.88) 42%,
+        rgba(10,12,11,0.90) 62%,
+        rgba(10,12,11,0.78) 100%),
+      url('/arena.jpg') center center / cover no-repeat,
+      var(--paper);
+    background-color:var(--paper);
+  }
   body, #app{background:transparent;}
 
   .streak-pill svg{transform-origin:50% 88%; will-change:transform;}
@@ -2074,7 +2093,7 @@
   }
 
   /* Off-screen app, nothing moving. */
-  html.idle #floaters img, html.idle .streak-pill svg{animation-play-state:paused;}
+  html.idle #embers i, html.idle .streak-pill svg{animation-play-state:paused;}
 
   /* ---------- embers ----------
      Sparks off the same fire the streak burns with. Six of them, each a blurred
@@ -2128,54 +2147,18 @@
 
   /* ---------- reduced motion ----------
      The global rule above crushes every animation to 0.001ms. For a looping
-     animation whose first and last frames are both opacity:0 — the floaters, the
-     embers — that does not calm the effect, it DELETES it: the element sits
+     animation whose first and last frames are both opacity:0 — the embers —
+     that does not calm the effect, it DELETES it: the element sits
      invisible and motionless, which reads as a broken build rather than a
      considered one.
      
      So these three get an explicit resting state. Someone who asked their phone
      for less motion still gets the design; they just get it holding still. */
   @media (prefers-reduced-motion: reduce){
-    /* Nothing drifts; the screen simply rests. */
-    #floaters{display:none;}
     /* Embers are motion by definition — a still spark is just a green dot. */
     #embers{display:none;}
     /* The flame keeps its glow, and its tier, without the flicker. */
     .streak-pill svg{animation:none !important;}
-  }
-
-
-  /* ---------- floating marks ----------
-     Six copies of the app icon drifting up through the screen at different
-     sizes and speeds, each already mid-journey on load (negative delays) so the
-     screen is never empty and they never form a visible wave. They sit at
-     z-index -1, behind every card, so the only place they show is the black
-     between things — which is exactly where there is nothing to read.
-
-     Rotation stays gentle. A tumbling logo reads as a bug; a mark that leans as
-     it rises reads as drifting. */
-  #floaters{
-    position:fixed; inset:0; z-index:-1; overflow:hidden; pointer-events:none;
-  }
-  #floaters img{
-    position:absolute; bottom:-180px; opacity:0;
-    will-change:transform, opacity;
-    animation-name:drift;
-    animation-timing-function:linear;
-    animation-iteration-count:infinite;
-    /* The icon is a square tile with a black ground. Unmasked, six of them
-       drift past as visibly darker SQUARES with glowing edges — floating cards,
-       not floating marks. Cutting the corners leaves only the emblem. The art
-       carries its own glow, so adding a drop-shadow only re-drew the box. */
-    -webkit-mask-image:radial-gradient(circle closest-side, #000 82%, rgba(0,0,0,0.4) 92%, transparent 100%);
-    mask-image:radial-gradient(circle closest-side, #000 82%, rgba(0,0,0,0.4) 92%, transparent 100%);
-  }
-  @keyframes drift{
-    0%   {transform:translate3d(0, 0, 0) rotate(-14deg) scale(0.88); opacity:0;}
-    9%   {opacity:0.44;}
-    50%  {transform:translate3d(5vw, -62vh, 0) rotate(9deg) scale(1.06); opacity:0.38;}
-    91%  {opacity:0.2;}
-    100% {transform:translate3d(-3vw, -128vh, 0) rotate(20deg) scale(0.9); opacity:0;}
   }
 
   /* ---------- arriving on a screen ----------

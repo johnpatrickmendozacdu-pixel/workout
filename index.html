@@ -19,19 +19,6 @@
   <div id="app">
     <div id="loading" class="loading-screen">Loading…</div>
   </div>
-  <!-- The mark itself, drifting up through the screen. No hand-drawn stand-in
-       and no new asset: this is the same icon the topbar already loaded and the
-       service worker already precached, so it costs nothing to download and is
-       correct by definition. The art is black-backed, so on a black ground only
-       the ring and the S actually show. -->
-  <div id="floaters" aria-hidden="true">
-    <img src="icons/icon-192.png" alt="" style="left:8%; width:104px; height:104px; animation-duration:34s; animation-delay:-0s;"/>
-    <img src="icons/icon-192.png" alt="" style="left:27%; width:72px; height:72px; animation-duration:27s; animation-delay:-9s;"/>
-    <img src="icons/icon-192.png" alt="" style="left:46%; width:132px; height:132px; animation-duration:41s; animation-delay:-18s;"/>
-    <img src="icons/icon-192.png" alt="" style="left:66%; width:88px; height:88px; animation-duration:31s; animation-delay:-5s;"/>
-    <img src="icons/icon-192.png" alt="" style="left:84%; width:116px; height:116px; animation-duration:37s; animation-delay:-23s;"/>
-    <img src="icons/icon-192.png" alt="" style="left:38%; width:64px; height:64px; animation-duration:24s; animation-delay:-14s;"/>
-  </div>
   <!-- Embers: more of them now, brighter, and unequal in size and pace so they
        never resolve into a visible loop. Pure CSS, no timers, no per-frame JS. -->
   <div id="embers" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>

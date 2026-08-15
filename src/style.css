@@ -2221,3 +2221,36 @@
     to  {opacity:1;   transform:scaleY(1.08) scaleX(1.02);}
   }
   html.idle #firelight{animation-play-state:paused;}
+
+  /* ---------- the Sets frame ----------
+     Silver rule inside a green ring, because that is literally what the mark
+     is: a stone S held in a burning circle. Reusing that relationship means the
+     frame reads as belonging to the app rather than as a border someone added.
+
+     Square, not round — everything structural here is zero-radius, and a lone
+     circle would look like it came from a different app. */
+  .profile-avatar-big{
+    position:relative;
+    border:2px solid var(--ink);
+    box-shadow:0 0 0 3px var(--green-deep), 0 0 0 4px rgba(62,224,127,0.55),
+               0 0 18px rgba(62,224,127,0.35);
+  }
+  /* Empty state: a waiting frame, not a flat green tile. */
+  .profile-avatar-big:not(.has-photo){
+    background:var(--surface); color:var(--accent);
+  }
+  .profile-avatar-big.has-photo{border-color:var(--ink);}
+
+  /* A hairline of the arena's own light along the top edge, so the frame reads
+     as lit from the fire rather than drawn on. */
+  .profile-avatar-big::after{
+    content:""; position:absolute; inset:0; pointer-events:none;
+    background:linear-gradient(180deg, rgba(62,224,127,0.20), transparent 42%);
+  }
+
+  /* The topbar chip is the same frame at small size — one ring, no glow, or it
+     would smear against the four chips beside it. */
+  .avatar-chip.has-photo{
+    border:2px solid var(--ink);
+    box-shadow:0 0 0 2px rgba(62,224,127,0.7);
+  }

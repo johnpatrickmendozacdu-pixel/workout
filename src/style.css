@@ -180,12 +180,14 @@
     color:var(--text-faint); padding:6px 0; font-size:11px; font-weight:600;
   }
   .nav-btn{position:relative; min-height:48px; transition:color .18s ease, background .18s ease;}
-  .nav-btn.active{color:var(--accent-ink); background:var(--accent); border-radius:12px;}
-  /* White inside green is the mark's own arrangement, so the active tab keeps
-     the painted tile and lets the icon go dark against it. */
-  .nav-btn.active svg{color:var(--accent-ink);}
+  .nav-btn.active{color:var(--accent);}
+  /* The green tile is gone. Every icon is now a mark inside a green ring, and a
+     green slab behind a green ring erases the ring — the two fight for the same
+     colour. Presence carries the active state instead: full paint against dimmed
+     paint, which is how the mark itself works on black. */
+  .nav-btn.active{background:none; color:var(--accent);}
   .nav-btn.active span{font-weight:800;}
-  .nav-btn svg{width:22px; height:22px;}
+  .nav-btn svg{width:26px; height:26px;}
   /* Five tabs, so the label has to give up a point of size rather than the tap
      target giving up height. */
   .nav-inner{padding-left:8px; padding-right:8px;}
@@ -2268,8 +2270,9 @@
     transition:opacity .18s var(--ease);
   }
   /* Paint dims; it does not change material. */
-  .nav-btn:not(.active) svg{opacity:0.58;}
-  .nav-btn:not(.active):active svg{opacity:0.9;}
+  .nav-btn:not(.active) svg{opacity:0.45;}
+  .nav-btn:not(.active):active svg{opacity:0.85;}
+  .nav-btn.active svg{filter:url(#rough) drop-shadow(0 0 6px rgba(62,224,127,0.65));}
 
   /* An SVG filter is a raster step, so it is dropped where motion is not
      wanted and where the cost buys the least. */

@@ -2157,12 +2157,17 @@
     animation-name:drift;
     animation-timing-function:linear;
     animation-iteration-count:infinite;
-    filter:drop-shadow(0 0 14px rgba(62,224,127,0.5));
+    /* The icon is a square tile with a black ground. Unmasked, six of them
+       drift past as visibly darker SQUARES with glowing edges — floating cards,
+       not floating marks. Cutting the corners leaves only the emblem. The art
+       carries its own glow, so adding a drop-shadow only re-drew the box. */
+    -webkit-mask-image:radial-gradient(circle closest-side, #000 82%, rgba(0,0,0,0.4) 92%, transparent 100%);
+    mask-image:radial-gradient(circle closest-side, #000 82%, rgba(0,0,0,0.4) 92%, transparent 100%);
   }
   @keyframes drift{
     0%   {transform:translate3d(0, 0, 0) rotate(-14deg) scale(0.88); opacity:0;}
-    9%   {opacity:0.34;}
-    50%  {transform:translate3d(5vw, -62vh, 0) rotate(9deg) scale(1.06); opacity:0.28;}
-    91%  {opacity:0.16;}
+    9%   {opacity:0.44;}
+    50%  {transform:translate3d(5vw, -62vh, 0) rotate(9deg) scale(1.06); opacity:0.38;}
+    91%  {opacity:0.2;}
     100% {transform:translate3d(-3vw, -128vh, 0) rotate(20deg) scale(0.9); opacity:0;}
   }

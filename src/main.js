@@ -78,7 +78,7 @@ import { GUIDE_SECTIONS, GUIDE_INTRO } from './guide.js';
 import { CATEGORIES, categoryOf, categoryLabel, categoryIconUrl } from './categories.js';
 import * as gsync from './sync/googleSync.js';
 import * as crewApi from './sync/crew.js';
-import { allStats, exerciseStats, recentDayStates, workoutDates, streakTier, flameLevel, clusterByCategory, lastSessionTopSet, dayHistory, trajectorySeries, formatDuration, formatTotalDuration, formatMinutes, formatCount, buildCrewCard, formatClock, groupBySchedule, comboTimes } from './domain/stats.js';
+import { allStats, exerciseStats, recentDayStates, workoutDates, streakTier, flameLevel, clusterByCategory, bestSessionTotal, dayHistory, trajectorySeries, formatDuration, formatTotalDuration, formatMinutes, formatCount, buildCrewCard, formatClock, groupBySchedule, comboTimes } from './domain/stats.js';
 
 // Every number is on screen — no hunting, no typing. One tap applies it in
 // whichever direction the lever is set to.
@@ -2372,26 +2372,33 @@ async function offerImage(blob, ex, suffix) {
  * the day's numbers under it — and it downloads rather than opening the share
  * sheet, so the two paths can never be confused.
  */
-async function saveProofCollage(exId) {
+/**
+ * Proof and card in one 1080x1920 frame — already the Instagram story shape.
+ *
+ * Both halves are FITTED, never cropped. Cropping the proof to fill was cutting
+ * heads off, and cropping the card lost the number it exists to show. The arena
+ * backdrop fills whatever is left over, so letterboxing reads as the frame
+ * rather than as a mistake.
+ */
+async function buildProofCollage(exId) {
   const ex = state.exercises.find((e) => e.id === exId);
   const d = todayISO();
   const img = (state.proofImages[d] || {})[exId];
-  if (!ex || !img) { showToast('No proof saved for this one.'); return; }
-  showToast('Building…');
+  if (!ex || !img) return null;
 
-  const bitmap = await new Promise((res) => {
+  const load = (src) => new Promise((res) => {
     const i = new Image();
     i.onload = () => res(i);
     i.onerror = () => res(null);
-    i.src = img;
+    i.src = src;
   });
-  if (!bitmap) { showToast("That photo couldn't be read."); return; }
 
-  // The card half is the REAL share image — the same buildSessionImage every
-  // Share button uses. Drawing a second, similar-looking card by hand is how
-  // the two drift apart until the keepsake stops matching what you shared.
+  const bitmap = await load(img);
+  if (!bitmap) return null;
+
+  // The card half is the REAL share image, so the keepsake can never drift
+  // from what the Share button sends.
   const arr = getSetsFor(exId, d);
-  const total = calcTotal(arr);
   const target = getEffectiveTarget(ex, d);
   const timer = getTimerPure(state.timersLog, d, exId);
   const st = exerciseStats(ex, state.setsLog, state.timersLog, null, state.streakOverrides);
@@ -2409,53 +2416,55 @@ async function saveProofCollage(exId) {
       headline: target > 0 ? 'Target met' : 'Session complete',
     });
   } catch (e) { cardBlob = null; }
-  if (!cardBlob) { showToast("Couldn't build the image."); return; }
-  const card = await new Promise((res) => {
-    const i = new Image();
-    i.onload = () => res(i);
-    i.onerror = () => res(null);
-    i.src = URL.createObjectURL(cardBlob);
-  });
-  if (!card) { showToast("Couldn't build the image."); return; }
+  if (!cardBlob) return null;
+  const card = await load(URL.createObjectURL(cardBlob));
+  if (!card) return null;
 
-  // Proof on top, card beneath, one story-shaped frame: the picture is the
-  // evidence and the card is the caption, in that reading order.
   const c = document.createElement('canvas');
   c.width = SHARE_W; c.height = SHARE_H;
   const g = c.getContext('2d');
   paintShareBackdrop(g, '#0A0C0B', '#3EE07F');
 
-  const photoH = Math.round(SHARE_H * 0.42);
-  const scale = Math.max(SHARE_W / bitmap.width, photoH / bitmap.height);
-  const dw = bitmap.width * scale, dh = bitmap.height * scale;
-  g.save();
-  g.beginPath(); g.rect(0, 0, SHARE_W, photoH); g.clip();
-  g.drawImage(bitmap, (SHARE_W - dw) / 2, (photoH - dh) / 2, dw, dh);
-  g.restore();
+  // Contain each half inside its own band, centred.
+  const fit = (im, top, h) => {
+    const sc = Math.min(SHARE_W / im.width, h / im.height);
+    const w = im.width * sc, hh = im.height * sc;
+    g.drawImage(im, (SHARE_W - w) / 2, top + (h - hh) / 2, w, hh);
+    return { w, h: hh, y: top + (h - hh) / 2 };
+  };
+  const half = SHARE_H / 2;
+  fit(bitmap, 0, half);
+  fit(card, half, half);
 
-  // The card is FITTED into what is left, never cropped. Scaling it to full
-  // width overflowed the space by 883px and cut off the exercise name and the
-  // number — the two things the card exists to say.
-  const cardTop = photoH;
-  const cardH = SHARE_H - photoH;
-  const cScale = Math.min(SHARE_W / card.width, cardH / card.height);
-  const cw = card.width * cScale, ch = card.height * cScale;
-  g.drawImage(card, (SHARE_W - cw) / 2, cardTop + (cardH - ch) / 2, cw, ch);
+  g.strokeStyle = 'rgba(216,222,218,0.7)'; g.lineWidth = 3;
+  g.beginPath(); g.moveTo(0, half); g.lineTo(SHARE_W, half); g.stroke();
 
-  g.strokeStyle = 'rgba(216,222,218,0.85)'; g.lineWidth = 3;
-  g.beginPath(); g.moveTo(0, photoH); g.lineTo(SHARE_W, photoH); g.stroke();
+  return new Promise((res) => c.toBlob(res, 'image/png'));
+}
 
-  const blob = await new Promise((res) => c.toBlob(res, 'image/png'));
+/** Keepsake: straight to the roll, never the share sheet. */
+async function saveProofCollage(exId) {
+  const ex = state.exercises.find((e) => e.id === exId);
+  if (!ex) return;
+  showToast('Building…');
+  const blob = await buildProofCollage(exId);
   if (!blob) { showToast("Couldn't build the image."); return; }
-  // Straight to the roll: never the share sheet, so this cannot reach a story
-  // by accident. Sharing stays the clean card.
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   const slug = (v) => String(v || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-  a.href = url; a.download = `sets-proof-${slug(ex.name)}-${d}.png`;
+  a.href = url; a.download = `sets-proof-${slug(ex.name)}-${todayISO()}.png`;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
   showToast('Saved to your photos');
+}
+
+/** The same collage, but out through the share sheet. */
+async function shareProofCollage(exId) {
+  const ex = state.exercises.find((e) => e.id === exId);
+  if (!ex) return;
+  showToast('Building image…');
+  const blob = await buildProofCollage(exId);
+  await offerImage(blob, ex, '-proof');
 }
 
 /** Today's session, from the finished card it was tapped on. */
@@ -3255,7 +3264,7 @@ function viewToday() {
         <span class="done-name">${escapeHtml(r.ex.name)}</span>
         <span class="done-num">${r.rest ? 'Rest' : (r.setsMode ? `${r.scored} set${r.scored === 1 ? '' : 's'} · ${r.total} ${escapeHtml(r.ex.unit)}` : (short ? `${r.scored} of ${r.target}` : `${r.total} ${escapeHtml(r.ex.unit)}`))}${r.timer && r.timer.finishedAt ? `<i class="done-at">${escapeHtml(formatClock(r.timer.finishedAt))}</i>` : ''}</span>
       </button>
-      ${r.rest ? '' : `<button class="done-share" data-action="share-session" data-id="${r.ex.id}" aria-label="Share ${escapeHtml(r.ex.name)}">${ICONS.share}</button>`}
+      ${r.rest ? '' : `<button class="done-share" data-action="${proofFor(state.proofLog, today, r.ex.id) ? 'share-choice' : 'share-session'}" data-id="${r.ex.id}" aria-label="Share ${escapeHtml(r.ex.name)}">${ICONS.share}</button>`}
     </div>`;
   };
 
@@ -4177,6 +4186,7 @@ function renderModal() {
   else if (m.type === 'logger') root.innerHTML = modalLogger(m.exId);
   else if (m.type === 'exerciseForm') root.innerHTML = modalExerciseForm(m.exId);
   else if (m.type === 'proof') root.innerHTML = modalProof();
+  else if (m.type === 'shareChoice') root.innerHTML = modalShareChoice();
   else if (m.type === 'notices') root.innerHTML = modalNotices();
   else if (m.type === 'confirmDeleteHabit') root.innerHTML = modalConfirmDeleteHabit(m);
   else if (m.type === 'addChoice') root.innerHTML = modalAddChoice();
@@ -4370,6 +4380,26 @@ function modalConfirmDeleteHabit(m) {
  * nobody was told about reads as the app being broken, and a rule explained
  * every single day reads as nagging.
  */
+function modalShareChoice() {
+  const ex = state.exercises.find((e) => e.id === (state.modal || {}).exId);
+  if (!ex) return '';
+  return `<div class="modal-backdrop" data-action="backdrop">
+    <div class="modal-sheet" data-stop>
+      <div class="sheet-handle"></div>
+      <div class="sheet-head">
+        <h2>Share ${escapeHtml(ex.name)}</h2>
+        <button class="sheet-close" data-action="close-modal">${ICONS.close}</button>
+      </div>
+      <button class="add-kind" data-action="share-session-only" data-id="${ex.id}">
+        <b>The card</b><span>Numbers only — the clean one.</span>
+      </button>
+      <button class="add-kind" data-action="share-proof-collage" data-id="${ex.id}">
+        <b>With your proof</b><span>Your photo above the card, story-sized.</span>
+      </button>
+    </div>
+  </div>`;
+}
+
 function modalProof() {
   const m = state.modal || {};
   const ex = state.exercises.find((e) => e.id === m.exId);
@@ -4393,7 +4423,9 @@ function modalProof() {
         <p>From now on an exercise counts as done once you have shown it. Take a picture, and your crew sees it for the day — that is the whole point of it.</p>
         <p>You get ${PROOF_MAX_RETAKES} retakes if the shot is bad. Days you finished before today are untouched.</p>
       </div>` : ''}
-      ${shot ? `<div class="proof-shot"><img src="${shot}" alt="Proof of ${escapeHtml(ex.name)}"></div>` : ''}
+      ${shot ? `<div class="proof-shot"><img src="${shot}" alt="Proof of ${escapeHtml(ex.name)}">
+        <p class="story-caption">${escapeHtml(ex.name)}</p>
+      </div>` : ''}
       <div class="field">
         <label>${escapeHtml(ex.name)}</label>
         <div class="hint">${rec
@@ -4406,7 +4438,8 @@ function modalProof() {
         <button class="primary-btn wide" data-action="pick-proof">${rec ? 'Retake' : 'Take the photo'}</button>
         <button class="secondary-btn wide" data-action="pick-proof-lib">Upload a photo</button>` : ''}
       ${m.image ? `<button class="secondary-btn wide" data-action="save-proof" data-id="${ex.id}">Use this photo</button>` : ''}
-      ${rec && img ? `<button class="secondary-btn wide" data-action="save-proof-image" data-id="${ex.id}">Save to my photos — with the share card</button>` : ''}
+      ${rec && img ? `<button class="secondary-btn wide" data-action="save-proof-image" data-id="${ex.id}">Save to my photos</button>` : ''}
+      ${rec && img ? `<button class="secondary-btn wide" data-action="share-proof-collage" data-id="${ex.id}">Share it</button>` : ''}
       ${rec ? `<div class="hint">${rec.posted
         ? 'Your crew can see this on today’s workout.'
         : (activeCrew() ? 'Not sent to your crew yet.' : 'You are not in a crew, so only you can see this.')}</div>` : ''}
@@ -5847,6 +5880,18 @@ document.addEventListener('click', async (e) => {
     case 'restore': await setArchived(btn.dataset.id, false); rerender(); break;
     case 'reorder': await reorder(btn.dataset.id, parseInt(btn.dataset.dir, 10)); rerender(); break;
     case 'toggle-archived': state.showArchived = !state.showArchived; renderView(); break;
+    case 'share-choice':
+      state.modal = { type: 'shareChoice', exId: btn.dataset.id };
+      renderModal();
+      break;
+    case 'share-proof-collage':
+      closeModal();
+      await shareProofCollage(btn.dataset.id);
+      break;
+    case 'share-session-only':
+      closeModal();
+      await shareSessionImage(btn.dataset.id);
+      break;
     case 'share-exercise':
       await shareExerciseImage(btn.dataset.id);
       break;
@@ -6118,7 +6163,7 @@ document.addEventListener('click', async (e) => {
       state.modal.tmode = to;
       let restored = (state.modal.targetBy || {})[to];
       if ((restored === undefined || restored === null || restored === '') && to === 'reps') {
-        const best = lastSessionTopSet(state.modal.exId, state.setsLog);
+        const best = bestSessionTotal(state.modal.exId, state.setsLog);
         if (best) restored = best;
       }
       state.modal.draft = { ...draft, target: restored };

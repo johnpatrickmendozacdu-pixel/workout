@@ -2357,3 +2357,12 @@
     flex:0 0 auto; width:30px; height:30px; padding:0; display:flex; align-items:center; justify-content:center;
     background:none; border:1px solid var(--accent); color:var(--accent); margin:0 8px;
   }
+
+  /* Proof reads the same to you as it does to your crew: picture, then the
+     exercise as its caption, in the story's own shape. */
+  .proof-shot{position:relative; flex-direction:column;}
+  .proof-shot .story-caption{
+    margin:0; padding:10px 12px; width:100%;
+    background:rgba(10,12,11,0.72); color:var(--text);
+    font-size:13.5px; font-weight:700;
+  }

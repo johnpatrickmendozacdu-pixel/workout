@@ -13,7 +13,7 @@ import {
   recentDayStates,
   streakTier,
   clusterByCategory,
-  lastSessionTopSet,
+  bestSessionTotal,
   flameLevel,
   dayHistory,
   trajectorySeries,
@@ -753,20 +753,20 @@ describe('clusterByCategory', () => {
   });
 });
 
-describe('lastSessionTopSet', () => {
-  it('takes the biggest set of the latest session, not the total', () => {
+describe('bestSessionTotal', () => {
+  it('takes the whole session, not the biggest set in it', () => {
     const log = { '2026-08-16': { e: [10, 8, 8, 5] } };
-    expect(lastSessionTopSet('e', log)).toBe(10);
+    expect(bestSessionTotal('e', log)).toBe(31);
   });
-  it('ignores older sessions once a newer one exists', () => {
+  it('keeps the best day even when a later day was smaller', () => {
     const log = { '2026-08-10': { e: [40] }, '2026-08-16': { e: [10, 8] } };
-    expect(lastSessionTopSet('e', log)).toBe(10);
+    expect(bestSessionTotal('e', log)).toBe(40);
   });
-  it('falls back through empty days', () => {
+  it('ignores empty days', () => {
     const log = { '2026-08-10': { e: [12] }, '2026-08-16': { e: [] } };
-    expect(lastSessionTopSet('e', log)).toBe(12);
+    expect(bestSessionTotal('e', log)).toBe(12);
   });
   it('is null when nothing was ever logged', () => {
-    expect(lastSessionTopSet('e', {})).toBe(null);
+    expect(bestSessionTotal('e', {})).toBe(null);
   });
 });

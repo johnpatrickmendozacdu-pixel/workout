@@ -585,20 +585,18 @@ export function clusterByCategory(exercises, min = 3) {
 }
 
 /**
- * The biggest single set of the most recent session that has any.
+ * The best SESSION — the highest total reps done in any single day.
  *
  * Used to prefill a reps target when an exercise has only ever had a sets
- * target: "you did four sets and your best was 10" is a number you recognise,
- * where a blank field is a question you have to answer from memory.
+ * target. A daily target is a daily total, so the number offered has to be a
+ * daily total too: the best single set would suggest a target a third the size
+ * of the work actually being done.
  */
-export function lastSessionTopSet(exId, setsLog) {
-  const dates = workoutDates(exId, setsLog);
-  for (let i = dates.length - 1; i >= 0; i--) {
-    const arr = setsLog[dates[i]][exId];
-    if (arr && arr.length) {
-      const best = Math.max(...arr.filter((v) => v > 0));
-      if (best > 0) return best;
-    }
+export function bestSessionTotal(exId, setsLog) {
+  let best = 0;
+  for (const d of workoutDates(exId, setsLog)) {
+    const total = calcTotal(setsLog[d][exId]);
+    if (total > best) best = total;
   }
-  return null;
+  return best > 0 ? best : null;
 }

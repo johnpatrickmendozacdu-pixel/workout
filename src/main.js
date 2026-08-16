@@ -2425,7 +2425,7 @@ async function saveProofCollage(exId) {
   const g = c.getContext('2d');
   paintShareBackdrop(g, '#0A0C0B', '#3EE07F');
 
-  const photoH = Math.round(SHARE_H * 0.46);
+  const photoH = Math.round(SHARE_H * 0.42);
   const scale = Math.max(SHARE_W / bitmap.width, photoH / bitmap.height);
   const dw = bitmap.width * scale, dh = bitmap.height * scale;
   g.save();
@@ -2433,15 +2433,14 @@ async function saveProofCollage(exId) {
   g.drawImage(bitmap, (SHARE_W - dw) / 2, (photoH - dh) / 2, dw, dh);
   g.restore();
 
-  // The card is drawn at full width below, scaled to whatever height is left.
+  // The card is FITTED into what is left, never cropped. Scaling it to full
+  // width overflowed the space by 883px and cut off the exercise name and the
+  // number — the two things the card exists to say.
   const cardTop = photoH;
   const cardH = SHARE_H - photoH;
-  const cScale = SHARE_W / card.width;
-  g.save();
-  g.beginPath(); g.rect(0, cardTop, SHARE_W, cardH); g.clip();
-  // Anchored to the card's own foot so the watermark always survives the crop.
-  g.drawImage(card, 0, cardTop + cardH - card.height * cScale, SHARE_W, card.height * cScale);
-  g.restore();
+  const cScale = Math.min(SHARE_W / card.width, cardH / card.height);
+  const cw = card.width * cScale, ch = card.height * cScale;
+  g.drawImage(card, (SHARE_W - cw) / 2, cardTop + (cardH - ch) / 2, cw, ch);
 
   g.strokeStyle = 'rgba(216,222,218,0.85)'; g.lineWidth = 3;
   g.beginPath(); g.moveTo(0, photoH); g.lineTo(SHARE_W, photoH); g.stroke();

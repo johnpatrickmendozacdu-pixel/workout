@@ -3319,8 +3319,7 @@ function markStorySeen(id) {
  */
 function unseenStories(m) {
   if (!m || m.isMe) return 0;
-  const list = m.stories || (m.story ? [m.story] : []);
-  return list.filter((st) => st && !st.seenByMe && !seenStories[st.id]).length;
+  return plainStories(m).filter((st) => st && !st.seenByMe && !seenStories[st.id]).length;
 }
 
 /**
@@ -3333,7 +3332,7 @@ function unseenStories(m) {
  */
 function memberFaceHtml(m, size, tappable) {
   const unseen = unseenStories(m);
-  const hasStory = !!(m.stories && m.stories.length) || !!m.story;
+  const hasStory = plainStories(m).length > 0;
   const ring = hasStory ? (unseen ? ' has-story' : ' seen-story') : '';
   const inner = m.photo
     ? `<img src="${escapeHtml(m.photo)}" alt="">`
@@ -3432,7 +3431,7 @@ function storyBarHtml(crew) {
   const me = (crew.members || []).find((m) => m.isMe);
   const others = (crew.members || []).filter((m) => !m.isMe && m.story);
   if (!me && !others.length) return '';
-  const tile = (m, label) => `<button class="story-tile" data-action="${(m.stories && m.stories.length) || m.story ? 'open-story' : 'add-story'}" data-id="${m.id}">
+  const tile = (m, label) => `<button class="story-tile" data-action="${plainStories(m).length ? 'open-story' : 'add-story'}" data-id="${m.id}">
       ${memberFaceHtml(m, 56)}
       <span>${escapeHtml(label)}</span>
       ${m.isMe && !m.story ? '<i class="story-plus">+</i>' : ''}
@@ -3515,6 +3514,39 @@ async function joinCrewByCode(raw) {
   const crew = activeCrew();
   showToast(crew ? `You're in ${crew.name}` : 'Joined');
   return true;
+}
+
+/**
+ * Proof rides the story pipe, because it is the only channel that already
+ * carries an image, expires in a day and records who looked — and it needs no
+ * Worker deploy, which would otherwise put this feature behind a Cloudflare
+ * dashboard only Johnny can reach.
+ *
+ * The caption is what separates the two. A proof shot is captioned
+ * `proof:<exercise>`, which is never shown: proof is filtered OUT of the
+ * stories row and surfaced on the exercise it belongs to instead, so it reads
+ * as evidence attached to a workout rather than as someone posting a story.
+ */
+const PROOF_TAG = 'proof:';
+
+function isProofStory(story) {
+  return !!(story && typeof story.caption === 'string' && story.caption.startsWith(PROOF_TAG));
+}
+
+function proofExerciseName(story) {
+  return isProofStory(story) ? story.caption.slice(PROOF_TAG.length) : '';
+}
+
+/** Someone's proof for one exercise today, or null. */
+function proofStoryFor(member, exerciseName) {
+  const list = (member && (member.stories || (member.story ? [member.story] : []))) || [];
+  return list.find((st) => isProofStory(st) && proofExerciseName(st) === exerciseName) || null;
+}
+
+/** The stories row shows stories. Proof is not one. */
+function plainStories(member) {
+  const list = (member && (member.stories || (member.story ? [member.story] : []))) || [];
+  return list.filter((st) => !isProofStory(st));
 }
 
 /** One story out of someone's day. Fetching the picture is what records the
@@ -4612,7 +4644,7 @@ function modalExerciseForm(exId) {
             <button type="button" class="wunit ${tUnit === 'min' ? 'on' : ''}" data-action="tunit" data-unit="min">min</button>
             <button type="button" class="wunit ${tUnit === 'hr' ? 'on' : ''}" data-action="tunit" data-unit="hr">hr</button>
           </div>
-        </div>` : `<input id="f-target" type="number" min="0" step="any" placeholder="${setsMode ? 'How many sets' : 'Leave blank for no target'}" value="${draft.target !== undefined ? escapeHtml(draft.target) : (target ? target : '')}">`}
+        </div>` : `<input id="f-target" type="number" min="0" step="any" placeholder="${setsMode ? 'How many sets' : 'Leave blank for no target'}" value="${draft.target !== undefined ? escapeHtml(draft.target == null ? '' : draft.target) : (setsMode === !!(ex && ex.targetMode === 'sets') && target ? target : '')}">`}
         <div class="hint">${timeMode ? 'How long a session should last. Reach it and you get the same choice as any target: take the win, or keep going.'
           : setsMode ? 'The day is done when you finish this many sets, whatever the reps are. 8, 8 and 15 finishes a target of 3.'
           : (editing ? 'Changing this only affects today onward — past days keep their original target.' : 'Untargeted exercises still track totals but don’t count toward your streak.')}</div>
@@ -4850,8 +4882,10 @@ function modalCrewMember() {
     const met = e.target > 0 ? e.today >= e.target : e.today > 0;
     const shown = e.unit === 'min' ? formatMinutes(e.today) : `${formatCount(e.today)} ${escapeHtml(e.unit || '')}`;
     const goal = e.target > 0 ? (e.unit === 'min' ? formatMinutes(e.target) : `${formatCount(e.target)}`) : null;
+    const proof = proofStoryFor(m, e.name);
     return `<div class="crew-day ${met ? 'met' : ''}">
       <span class="crew-day-name">${escapeHtml(e.name)}${e.doneAt ? `<i class="crew-day-at">finished ${escapeHtml(formatClock(e.doneAt))}</i>` : ''}</span>
+      ${proof ? `<button class="proof-view" data-action="open-proof-story" data-id="${m.id}" data-story="${escapeHtml(proof.id)}">View proof</button>` : ''}
       <span class="crew-day-num">${e.today > 0 ? shown : '—'}${goal ? `<i>/ ${goal}</i>` : ''}</span>
       <span class="crew-day-tick">${met ? ICONS.check : '<i class="crew-pending"></i>'}</span>
     </div>`;
@@ -5498,6 +5532,14 @@ document.addEventListener('click', async (e) => {
       renderNav(); renderTopbar(); renderView(); renderBanner();
       break;
 
+    case 'open-proof-story': {
+      const crew = activeCrew();
+      const m = crew && (crew.members || []).find((x) => x.id === btn.dataset.id);
+      const list = (m && (m.stories || (m.story ? [m.story] : []))) || [];
+      const idx = list.findIndex((st) => st.id === btn.dataset.story);
+      if (idx >= 0) await openStoryAt(m.id, idx);
+      break;
+    }
     case 'open-proof':
       state.modal = { type: 'proof', exId: btn.dataset.id, image: null };
       renderModal();
@@ -5992,10 +6034,21 @@ document.addEventListener('click', async (e) => {
       captureExerciseDraft();
       if (state.modal) { state.modal.equip = btn.dataset.equip; renderModal(); }
       break;
-    case 'target-mode':
+    case 'target-mode': {
       captureExerciseDraft();
-      if (state.modal) { state.modal.tmode = btn.dataset.mode === 'sets' ? 'sets' : 'reps'; renderModal(); }
+      if (!state.modal) break;
+      const from = state.modal.tmode === 'sets' ? 'sets' : 'reps';
+      const to = btn.dataset.mode === 'sets' ? 'sets' : 'reps';
+      if (from === to) break;
+      // Park the number under the mode it belongs to and bring back whatever
+      // that other mode last held, so toggling never carries a value across.
+      const draft = state.modal.draft || {};
+      state.modal.targetBy = { ...(state.modal.targetBy || {}), [from]: draft.target };
+      state.modal.tmode = to;
+      state.modal.draft = { ...draft, target: (state.modal.targetBy || {})[to] };
+      renderModal();
       break;
+    }
     case 'measure-mode':
       captureExerciseDraft();
       if (state.modal) { state.modal.measure = btn.dataset.mode; renderModal(); }
@@ -6444,7 +6497,7 @@ async function postProofToCrew(exId, image) {
   if (!crew || !hasSyncAccount() || !isOnline()) return;
   const ex = state.exercises.find((e) => e.id === exId);
   try {
-    await crewApi.postStory(crew.id, image, ex ? ex.name : 'Workout');
+    await crewApi.postStory(crew.id, image, PROOF_TAG + (ex ? ex.name : 'Workout'));
   } catch (e) {
     // best effort, by design
   }

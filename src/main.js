@@ -1048,6 +1048,10 @@ async function addExercise(data) {
     weightHistory: data.weight > 0 ? [{ effectiveDate: now, weight: data.weight, unit: data.weightUnit === 'lb' ? 'lb' : 'kg' }] : [],
     targetHistory: [{ effectiveDate: now, target: data.target || null }],
     targetMode: data.targetMode === 'sets' ? 'sets' : 'reps',
+    // Both numbers are kept. A reps target and a sets target describe different
+    // workouts, so switching modes must restore what that mode last held rather
+    // than inheriting a number that meant something else.
+    targetByMode: { [data.targetMode === 'sets' ? 'sets' : 'reps']: data.target || null },
   };
   state.exercises.push(ex);
   await persistExercises();
@@ -1091,7 +1095,11 @@ async function updateExercise(id, data) {
   // Not dated history like the target itself: the mode is what the number MEANS,
   // and a past day's number was always counted the way it was counted. Rewriting
   // that retroactively is the one thing dated history exists to prevent.
-  if (data.targetMode !== undefined) ex.targetMode = data.targetMode === 'sets' ? 'sets' : 'reps';
+  if (data.targetMode !== undefined) {
+    const tmode = data.targetMode === 'sets' ? 'sets' : 'reps';
+    ex.targetMode = tmode;
+    ex.targetByMode = { ...(ex.targetByMode || {}), [tmode]: data.target || null };
+  }
   applyScheduleChange(ex, data.schedule || 'daily');
   if (data.equipment !== undefined) ex.equipment = data.equipment === 'dumbbell' ? 'dumbbell' : 'bodyweight';
   if (data.weightUnit !== undefined) ex.weightUnit = data.weightUnit === 'lb' ? 'lb' : 'kg';
@@ -3213,12 +3221,12 @@ function viewToday() {
     // actions — open it, or share it. A rest day has nothing to put on a card,
     // so it keeps the row it always had and no share.
     return `<div class="done-row${short ? ' ended-early' : ''}">
+      ${proofFor(state.proofLog, today, r.ex.id) ? `<button class="done-proof" data-action="open-proof" data-id="${r.ex.id}" aria-label="View proof for ${escapeHtml(r.ex.name)}">${ICONS.camera}</button>` : ''}
       <button class="done-open" data-action="open-logger" data-id="${r.ex.id}">
         <span class="done-tick">${r.rest ? '🌙' : (short ? ICONS.flag : ICONS.check)}</span>
         <span class="done-name">${escapeHtml(r.ex.name)}</span>
         <span class="done-num">${r.rest ? 'Rest' : (r.setsMode ? `${r.scored} set${r.scored === 1 ? '' : 's'} · ${r.total} ${escapeHtml(r.ex.unit)}` : (short ? `${r.scored} of ${r.target}` : `${r.total} ${escapeHtml(r.ex.unit)}`))}${r.timer && r.timer.finishedAt ? `<i class="done-at">${escapeHtml(formatClock(r.timer.finishedAt))}</i>` : ''}</span>
       </button>
-      ${proofFor(state.proofLog, today, r.ex.id) ? `<button class="done-share" data-action="open-proof" data-id="${r.ex.id}" aria-label="View proof for ${escapeHtml(r.ex.name)}">${ICONS.camera}</button>` : ''}
       ${r.rest ? '' : `<button class="done-share" data-action="share-session" data-id="${r.ex.id}" aria-label="Share ${escapeHtml(r.ex.name)}">${ICONS.share}</button>`}
     </div>`;
   };
@@ -3764,7 +3772,9 @@ function viewPlan() {
         const catBit = categoryLabel(ex) ? `${catTagHtml(ex)} · ` : '';
         const wBit = formatWeight(ex.weight, ex.weightUnit) && ex.equipment === 'dumbbell'
           ? ` · ${escapeHtml(formatWeight(ex.weight, ex.weightUnit))}` : '';
-        const targetSub = catBit + (target ? `${target} ${escapeHtml(ex.unit)}/day` : `no target · ${escapeHtml(ex.unit)}`) + wBit;
+        // The target's own unit, not the exercise's: "4 sets/day" is what was
+        // set, and printing "4 reps/day" describes a different workout.
+        const targetSub = catBit + (target ? `${target} ${escapeHtml(targetUnit(ex))}/day` : `no target · ${escapeHtml(ex.unit)}`) + wBit;
         html += `<div class="plan-row">
           <button class="plan-row-open" data-action="open-edit-exercise" data-id="${ex.id}" aria-label="Edit ${escapeHtml(ex.name)}">
           <div class="ex-icon-badge">${exIconHtml(ex, 34)}</div>
@@ -4560,6 +4570,9 @@ function modalExerciseForm(exId) {
   const setsMode = state.modal && state.modal.tmode !== undefined
     ? state.modal.tmode === 'sets'
     : !!(ex && ex.targetMode === 'sets');
+  if (state.modal && state.modal.targetBy === undefined) {
+    state.modal.targetBy = { ...((ex && ex.targetByMode) || {}) };
+  }
   const wUnit = state.modal ? state.modal.wunit : 'kg';
   const wVal = (state.modal && state.modal.weight !== undefined)
     ? state.modal.weight
@@ -4887,8 +4900,8 @@ function modalCrewMember() {
     const proof = proofStoryFor(m, e.name);
     return `<div class="crew-day ${met ? 'met' : ''}">
       <span class="crew-day-name">${escapeHtml(e.name)}${e.doneAt ? `<i class="crew-day-at">finished ${escapeHtml(formatClock(e.doneAt))}</i>` : ''}</span>
-      ${proof ? `<button class="proof-view" data-action="open-proof-story" data-id="${m.id}" data-story="${escapeHtml(proof.id)}">View proof</button>` : ''}
       <span class="crew-day-num">${e.today > 0 ? shown : '—'}${goal ? `<i>/ ${goal}</i>` : ''}</span>
+      ${proof ? `<button class="proof-view" data-action="open-proof-story" data-id="${m.id}" data-story="${escapeHtml(proof.id)}" aria-label="View proof for ${escapeHtml(e.name)}">${ICONS.camera}</button>` : ''}
       <span class="crew-day-tick">${met ? ICONS.check : '<i class="crew-pending"></i>'}</span>
     </div>`;
   };

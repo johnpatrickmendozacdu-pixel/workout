@@ -6046,43 +6046,6 @@ document.addEventListener('click', async (e) => {
       captureExerciseDraft();
       if (state.modal) { state.modal.ptype = btn.dataset.type; renderModal(); }
       break;
-    case 'archive': await setArchived(btn.dataset.id, true); rerender(); break;
-    case 'restore': await setArchived(btn.dataset.id, false); rerender(); break;
-    case 'reorder': await reorder(btn.dataset.id, parseInt(btn.dataset.dir, 10)); rerender(); break;
-    case 'toggle-archived': state.showArchived = !state.showArchived; renderView(); break;
-    case 'share-exercise':
-      await shareExerciseImage(btn.dataset.id);
-      break;
-    case 'toggle-stat-help':
-      state.statHelp[btn.dataset.key] = !state.statHelp[btn.dataset.key];
-      renderView();
-      break;
-    case 'open-guide':
-      state.modal = { type: 'screenGuide' };
-      renderModal();
-      break;
-    case 'toggle-group': {
-      // Flip whatever is actually on screen — the rendered state carries the
-      // default (a lone group starts open), so the first tap never no-ops.
-      const k = `${btn.dataset.view}:${btn.dataset.key}`;
-      const opening = btn.dataset.open !== 'true';
-      // One step at a time in the guide. Left free to stack, twelve open
-      // sections rebuild the exact wall of text this screen exists to avoid,
-      // and you lose your place scrolling back for the next number. Plan and
-      // Progress keep stacking — there you are comparing groups, not reading.
-      if (btn.dataset.view === 'guide' && opening) {
-        GUIDE_SECTIONS.forEach((s) => { state.openGroups[`guide:${s.id}`] = false; });
-      }
-      state.openGroups[k] = opening;
-      renderView();
-      break;
-    }
-
-    case 'open-logger': state.modal = { type: 'logger', exId: btn.dataset.id }; renderModal(); break;
-    case 'plan-type':
-      captureExerciseDraft();
-      if (state.modal) { state.modal.ptype = btn.dataset.type; renderModal(); }
-      break;
     case 'equip-mode':
       captureExerciseDraft();
       if (state.modal) { state.modal.equip = btn.dataset.equip; renderModal(); }

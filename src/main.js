@@ -2962,11 +2962,14 @@ function renderTodoList(rows, cardFn) {
     if (c.type === 'one') return cardFn(byId.get(c.ex.id));
     const members = c.exercises.map((e) => byId.get(e.id)).filter(Boolean);
     if (!members.length) return '';
+    // An exercise can carry a category key this build no longer knows — art gets
+    // renamed, and old data outlives it. Fall back to the name rather than
+    // rendering a broken image and a raw key.
     const cat = CATEGORIES.find((x) => x.key === c.key);
     const open = groupOpen('cat', c.key, 0);
     const doneCount = members.filter((r) => r.done).length;
     const head = `<button class="cat-head ${open ? 'open' : ''}" data-action="toggle-group" data-view="cat" data-key="${escapeHtml(c.key)}" data-open="${open}" aria-expanded="${open}">
-      <img class="cat-head-icon" src="${categoryIconUrl(c.key)}" alt="" width="26" height="26">
+      ${cat ? `<img class="cat-head-icon" src="${categoryIconUrl(c.key)}" alt="" width="26" height="26">` : ''}
       <span class="cat-head-name">${escapeHtml(cat ? cat.label : c.key)}</span>
       <span class="cat-head-meta">${members.length - doneCount} left</span>
       <span class="group-chev ${open ? 'open' : ''}">${ICONS.chevron}</span>

@@ -3056,10 +3056,6 @@ function habitProgressHtml() {
     const head = foldHeaderHtml('hprog', h.id, `${h.emoji || '✅'} ${h.name}`, `🔥 ${s.current} · longest ${s.longest}`);
     if (!groupOpen('hprog', h.id, 0)) return head;
     return head + `<div class="habit-block">
-      <div class="habit-block-head">
-        <span class="section-label">${escapeHtml(h.emoji || '✅')} ${escapeHtml(h.name)}</span>
-        <span class="habit-tag">health habit</span>
-      </div>
       <div class="hstrip">${strip}</div>
       <div class="bmi-line">🔥 ${s.current} day${s.current === 1 ? '' : 's'} · longest ${s.longest} · ${s.cleanIn30} clean in the last 30</div>
       ${h.kind === 'meals' && s.liveRate != null ? `<div class="bmi-line">Logged in the moment — ${s.liveRate}%</div>` : ''}
@@ -3078,7 +3074,6 @@ function weighInBlockHtml() {
   const head = foldHeaderHtml('hprog', 'weight', 'Weekly weight', `${thisWeek.avg} kg${s ? ` · BMI ${s.bmi}` : ''}`);
   if (!groupOpen('hprog', 'weight', 0)) return head;
   return head + `<div class="habit-block">
-    <div class="habit-block-head"><span class="section-label">Weekly weight</span><span class="habit-tag">health habit</span></div>
     ${weightChartHtml(weeks)}
     <div class="bmi-line">This week avg ${thisWeek.avg} kg${thisWeek.isCurrent && thisWeek.count < 7 ? ' (so far)' : ''}${s ? ` · BMI ${s.bmi} · ${BMI_LABEL[s.category]}` : ''}</div>
     ${change != null ? `<div class="bmi-line ${change < 0 ? 'down' : 'up'}">${change < 0 ? '↓' : '↑'} ${Math.abs(change)} kg since ${escapeHtml(formatDisplayDate(weeks[0].weekStart, { month: 'short', day: 'numeric' }))}</div>` : ''}
@@ -6039,6 +6034,9 @@ document.addEventListener('click', async (e) => {
         GUIDE_SECTIONS.forEach((s) => { state.openGroups[`guide:${s.id}`] = false; });
       }
       state.openGroups[k] = opening;
+      // A fold can live inside a sheet (the crew member card), and the sheet is
+      // rendered by its own pass — so the view alone would leave the tap dead.
+      if (state.modal) renderModal();
       renderView();
       break;
     }

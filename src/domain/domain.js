@@ -879,6 +879,11 @@ export function resetTimer(timersLog, dateStr, exId) {
  */
 export function bumpTargetIfPR(exercise, dateStr, total) {
   const current = getEffectiveTarget(exercise, dateStr);
+  // Never in sets mode. The target counts SETS there, while `total` is reps —
+  // so two sets of three read as "6 beats a target of 3" and quietly rewrote a
+  // 3-set prescription into a 6-set one, mid-workout. A prescribed number of
+  // sets is a decision, not a record to beat.
+  if (exercise && exercise.targetMode === 'sets') return exercise;
   if (!current || total <= current) return exercise;
   const history = exercise.targetHistory.slice();
   const idx = history.findIndex((h) => h.effectiveDate === dateStr);

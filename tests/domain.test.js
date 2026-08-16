@@ -5,6 +5,8 @@ import {
   calcTotal,
   calcDayStats,
   recordProof,
+  bumpTargetIfPR,
+  getEffectiveTarget,
   retakesLeft,
   proofRequiredOn,
   calcStreakInfo,
@@ -1656,5 +1658,22 @@ describe('proof of workout', () => {
     const log = recordProof({}, '2026-08-20', 'e1', 1000);
     const stats = calcDayStats([ex], done, '2026-08-20', {}, { log, since: '2026-08-16' });
     expect(stats.allComplete).toBe(true);
+  });
+});
+
+describe('bumpTargetIfPR in sets mode', () => {
+  const setsEx = { id: 'sx', targetMode: 'sets',
+    targetHistory: [{ effectiveDate: '2026-08-01', target: 3 }] };
+
+  it('never rewrites a sets target from a rep total', () => {
+    // two sets of three: 6 reps must not beat "3 sets"
+    const after = bumpTargetIfPR(setsEx, '2026-08-16', 6);
+    expect(after).toBe(setsEx);
+    expect(getEffectiveTarget(after, '2026-08-16')).toBe(3);
+  });
+
+  it('still raises a reps target on a genuine PR', () => {
+    const repsEx = { id: 'r', targetHistory: [{ effectiveDate: '2026-08-01', target: 40 }] };
+    expect(getEffectiveTarget(bumpTargetIfPR(repsEx, '2026-08-16', 55), '2026-08-16')).toBe(55);
   });
 });

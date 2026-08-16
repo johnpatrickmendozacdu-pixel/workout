@@ -3155,6 +3155,7 @@ function viewToday() {
       ex, target, total, shown, timeMode, setsMode, scored, hasTarget, left, endedEarly,
       done: endedEarly || isBreakDay(state.streakOverrides, today, ex.id)
         || (hitNumber && !needsProof),
+      leftLabel: setsMode ? (Math.max(0, target - scored) === 1 ? 'set left' : 'sets left') : 'to go',
       rest: isBreakDay(state.streakOverrides, today, ex.id),
       pct: hasTarget ? Math.min(1, shown / target) : (shown > 0 ? 1 : 0),
       timer: t,
@@ -3182,13 +3183,18 @@ function viewToday() {
         <span class="today-name">${escapeHtml(r.ex.name)}${weightTag(r.ex)}</span>
         <span class="today-meter" aria-hidden="true"><i style="width:${Math.round(r.pct * 100)}%"></i></span>
         <span class="today-sub">${r.hasTarget
-          ? `${r.timeMode ? `<b data-elapsed-min="${r.ex.id}">${r.shown}</b>` : r.shown} of ${r.target} ${escapeHtml(targetUnit(r.ex))}${r.setsMode && r.total > 0 ? ` · ${r.total} ${escapeHtml(r.ex.unit)}` : ''}`
+          ? (r.setsMode
+              // Sets count UP — "2 sets" and how many are left — because a
+              // fraction reads like a rep score and this is not one. Reps stay
+              // beside it so the two are never confused for each other.
+              ? `<b>${r.scored} set${r.scored === 1 ? '' : 's'}</b> · ${r.total} ${escapeHtml(r.ex.unit)}`
+              : `${r.timeMode ? `<b data-elapsed-min="${r.ex.id}">${r.shown}</b>` : r.shown} of ${r.target} ${escapeHtml(targetUnit(r.ex))}`)
           : `${r.timeMode ? `<b data-elapsed-min="${r.ex.id}">${r.shown}</b>` : r.shown} ${escapeHtml(r.ex.unit)} · no target`}${categoryLabel(r.ex) ? ` · ${catTagHtml(r.ex)}` : ''}${running ? ` · <b data-elapsed="${r.ex.id}">${formatElapsed(timerElapsedMs(r.timer, Date.now()))}</b>` : ''}</span>
       </span>
       <span class="today-left">
         ${r.timeMode && !running && !r.shown ? `<b class="today-go">${ICONS.play}</b><em>start</em>`
           : r.hasTarget
-            ? `<b${r.timeMode ? ` data-elapsed-min="${r.ex.id}" data-left-of="${r.target}"` : ''}>${r.left}</b><em>${r.timeMode ? 'min left' : 'to go'}</em>`
+            ? `<b${r.timeMode ? ` data-elapsed-min="${r.ex.id}" data-left-of="${r.target}"` : ''}>${r.left}</b><em>${r.timeMode ? 'min left' : r.leftLabel}</em>`
             : `<b${r.timeMode ? ` data-elapsed-min="${r.ex.id}"` : ''}>${r.shown}</b><em>logged</em>`}
       </span>
     </button>`;
@@ -3206,7 +3212,7 @@ function viewToday() {
       <button class="done-open" data-action="open-logger" data-id="${r.ex.id}">
         <span class="done-tick">${r.rest ? '🌙' : (short ? ICONS.flag : ICONS.check)}</span>
         <span class="done-name">${escapeHtml(r.ex.name)}</span>
-        <span class="done-num">${r.rest ? 'Rest' : (short ? `${r.scored} of ${r.target}` : (r.setsMode ? `${r.scored} ${escapeHtml(targetUnit(r.ex))} · ${r.total} ${escapeHtml(r.ex.unit)}` : `${r.total} ${escapeHtml(r.ex.unit)}`))}${r.timer && r.timer.finishedAt ? `<i class="done-at">${escapeHtml(formatClock(r.timer.finishedAt))}</i>` : ''}</span>
+        <span class="done-num">${r.rest ? 'Rest' : (r.setsMode ? `${r.scored} set${r.scored === 1 ? '' : 's'} · ${r.total} ${escapeHtml(r.ex.unit)}` : (short ? `${r.scored} of ${r.target}` : `${r.total} ${escapeHtml(r.ex.unit)}`))}${r.timer && r.timer.finishedAt ? `<i class="done-at">${escapeHtml(formatClock(r.timer.finishedAt))}</i>` : ''}</span>
       </button>
       ${r.rest ? '' : `<button class="done-share" data-action="share-session" data-id="${r.ex.id}" aria-label="Share ${escapeHtml(r.ex.name)}">${ICONS.share}</button>`}
     </div>`;

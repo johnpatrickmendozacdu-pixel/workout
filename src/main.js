@@ -2432,12 +2432,17 @@ async function buildProofCollage(exId) {
     g.drawImage(im, (SHARE_W - w) / 2, top + (h - hh) / 2, w, hh);
     return { w, h: hh, y: top + (h - hh) / 2 };
   };
-  const half = SHARE_H / 2;
-  fit(bitmap, 0, half);
-  fit(card, half, half);
+  // NOT an even split. The card is 9:16 like the frame, so any height it gives
+  // up costs it width twice over — at half the frame it rendered at half width
+  // while a landscape photo filled almost all of its own half, and the card was
+  // the thing being read. The card takes the larger share; the photo keeps
+  // enough to be seen whole.
+  const photoBand = Math.round(SHARE_H * 0.32);
+  fit(bitmap, 0, photoBand);
+  fit(card, photoBand, SHARE_H - photoBand);
 
   g.strokeStyle = 'rgba(216,222,218,0.7)'; g.lineWidth = 3;
-  g.beginPath(); g.moveTo(0, half); g.lineTo(SHARE_W, half); g.stroke();
+  g.beginPath(); g.moveTo(0, photoBand); g.lineTo(SHARE_W, photoBand); g.stroke();
 
   return new Promise((res) => c.toBlob(res, 'image/png'));
 }

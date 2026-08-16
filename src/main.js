@@ -1560,8 +1560,11 @@ function exerciseHistory(ex, s) {
   const limit = state.dayLimits[ex.id] || DAY_PAGE;
   const { rows: history, remaining } = dayHistory(ex, state.setsLog, state.streakOverrides, limit);
 
+  // Editing a day's TOTAL means typing reps, which cannot be split into sets —
+  // so a sets-mode row shows its count and is not typed into.
+  const setsMode = ex.targetMode === 'sets';
   const rows = history.map((r) => {
-    const editing = state.editingDayTotal === `${r.date}|${ex.id}`;
+    const editing = !setsMode && state.editingDayTotal === `${r.date}|${ex.id}`;
     return `<div class="exday ${r.rest ? 'rest' : r.hit ? 'hit' : 'miss'}">
       <span class="exday-when">${r.isToday ? 'Today' : escapeHtml(formatDisplayDate(r.date, { weekday: 'short', day: 'numeric', month: 'short' }))}${(() => {
         // Only today carries a time. A stamp on every past row would be a
@@ -1576,10 +1579,17 @@ function exerciseHistory(ex, s) {
             <button class="mini-btn" data-action="save-day-total" data-id="${ex.id}" data-date="${r.date}" aria-label="Save">${ICONS.check}</button>
             <button class="mini-btn" data-action="cancel-day-total" aria-label="Cancel">${ICONS.close}</button>
           </span>`
-        : `<button class="day-num total" data-editable-day-total data-id="${ex.id}" data-date="${r.date}" aria-label="Edit total">${r.rest ? '🌙' : r.total}</button>
-           <span class="day-sep">/</span>
-           <button class="day-num target" data-editable-day-target data-id="${ex.id}" data-date="${r.date}" aria-label="Edit target">${r.target || '—'}</button>
-           <span class="exday-unit">${u}</span>`}
+        : setsMode
+          // Sets against a sets target, with the reps kept alongside — the work
+          // is still counted in reps everywhere else, so the row shows both.
+          ? `<span class="day-num total">${r.rest ? '🌙' : r.scored}</span>
+             <span class="day-sep">/</span>
+             <button class="day-num target" data-editable-day-target data-id="${ex.id}" data-date="${r.date}" aria-label="Edit target">${r.target || '—'}</button>
+             <span class="exday-unit">sets${r.rest ? '' : ` · ${r.total} ${escapeHtml(u)}`}</span>`
+          : `<button class="day-num total" data-editable-day-total data-id="${ex.id}" data-date="${r.date}" aria-label="Edit total">${r.rest ? '🌙' : r.total}</button>
+             <span class="day-sep">/</span>
+             <button class="day-num target" data-editable-day-target data-id="${ex.id}" data-date="${r.date}" aria-label="Edit target">${r.target || '—'}</button>
+             <span class="exday-unit">${u}</span>`}
     </div>`;
   }).join('');
 

@@ -16,6 +16,16 @@
  */
 export const NOTICES = [
   {
+    id: '2026-08-16-categories-and-sets',
+    date: '2026-08-16',
+    title: 'Categories fold, and targets can count sets',
+    body: [
+      'Have three or more of one category — skate tricks, say — and Today folds them into a single row you can open. Fewer than three and nothing changes, because two cards were never the problem.',
+      'In Plan, a target can now be counted in SETS instead of reps: three sets finishes the day whatever the reps are. 8, 8 and 15 is done.',
+      'Your totals are unchanged. Top set, best day and lifetime still count reps — only whether the day was finished follows the sets.',
+    ],
+  },
+  {
     id: '2026-08-15-arena',
     date: '2026-08-15',
     title: 'Welcome to the arena',

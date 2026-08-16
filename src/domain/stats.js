@@ -381,6 +381,10 @@ export function dayHistory(ex, setsLog, overrides, limit, todayOverride) {
           target: target || null,
           total: totalReps,
           rest: isBreakDay(overrides, cursor, ex.id),
+          // What the target is counted in on this row. In sets mode `total` is
+          // still the reps — the day list must never show reps against a sets
+          // target, which reads as "16 / 3 reps" and means nothing.
+          scored: progressValue(ex, arr),
           hit: !!target && progressValue(ex, arr) >= target,
         });
       }

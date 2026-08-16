@@ -245,7 +245,7 @@ export function exerciseStats(ex, setsLog, timersLog, todayOverride, overrides) 
     // would ratchet up set by set if shown live. That one still waits for the
     // day to seal, or every set of an open session looks like a new record.
     const provisional = d === today
-      && !workoutSealed(getTimer(timersLog || {}, d, ex.id), dayTotal, getEffectiveTarget(ex, d));
+      && !workoutSealed(getTimer(timersLog || {}, d, ex.id), progressValue(ex, arr), getEffectiveTarget(ex, d));
     if (provisional) return;
 
     if (dayTotal > maxReps) { maxReps = dayTotal; maxRepsDate = d; }

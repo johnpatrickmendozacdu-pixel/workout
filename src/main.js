@@ -983,7 +983,7 @@ function sealedToday(exId, dateStr) {
   const d = todayISO();
   const ex = state.exercises.find((e) => e.id === exId);
   if (!ex) return false;
-  return workoutSealed(getTimerPure(state.timersLog, d, exId), calcTotal(getSetsFor(exId, d)), getEffectiveTarget(ex, d));
+  return workoutSealed(getTimerPure(state.timersLog, d, exId), progressValue(ex, getSetsFor(exId, d)), getEffectiveTarget(ex, d));
 }
 
 /** The deliberate way out of a sealed day. Lands paused, keeping the time. */
@@ -3172,7 +3172,10 @@ function viewToday() {
       <div class="ex-name">${escapeHtml(r.ex.name)}</div>
       <div class="ex-sub">Done — one photo to finish it.</div>
     </div>
-    <button class="primary-btn proof-btn" data-action="open-proof" data-id="${r.ex.id}">Add proof</button>
+    <div class="proof-actions">
+      <button class="secondary-btn proof-btn" data-action="open-logger" data-id="${r.ex.id}">Keep going</button>
+      <button class="primary-btn proof-btn" data-action="open-proof" data-id="${r.ex.id}">Add proof</button>
+    </div>
   </div>`;
 
   const todoCard = (r) => {
@@ -4163,7 +4166,7 @@ function modalLogger(exId) {
   const total = calcTotal(arr);
   // A closed session is a record, not a workspace: the card still shows and
   // scrolls exactly as before, but nothing in it can be changed by accident.
-  const sealed = workoutSealed(getTimerPure(state.timersLog, today, exId), total, target);
+  const sealed = workoutSealed(getTimerPure(state.timersLog, today, exId), progressValue(ex, arr), target);
   const editIndex = state.modal && !sealed && state.modal.editIndex != null ? state.modal.editIndex : null;
   const listItems = arr.map((v, i) => ({ v, i })).reverse().map(({ v, i }) => {
     const isLatest = i === arr.length - 1;
@@ -4326,9 +4329,10 @@ function modalProof() {
           : 'A photo of the work, or of you having done it. It stays on your phone; your crew sees it for the day.'}</div>
       </div>
       <input type="file" id="proof-file" accept="image/*" capture="environment" style="display:none">
-      ${(!rec || left > 0)
-        ? `<button class="primary-btn wide" data-action="pick-proof">${rec ? 'Retake' : 'Take the photo'}</button>`
-        : ''}
+      <input type="file" id="proof-file-lib" accept="image/*" style="display:none">
+      ${(!rec || left > 0) ? `
+        <button class="primary-btn wide" data-action="pick-proof">${rec ? 'Retake' : 'Take the photo'}</button>
+        <button class="secondary-btn wide" data-action="pick-proof-lib">Upload a photo</button>` : ''}
       ${m.image ? `<button class="secondary-btn wide" data-action="save-proof" data-id="${ex.id}">Use this photo</button>` : ''}
       ${rec && img ? `<button class="secondary-btn wide" data-action="save-proof-image" data-id="${ex.id}">Save to phone</button>` : ''}
     </div>
@@ -5417,9 +5421,7 @@ function bindModalEvents() {
       }
     };
   }
-  const proofFile = document.getElementById('proof-file');
-  if (proofFile) {
-    proofFile.onchange = async (e) => {
+  const onProofPicked = async (e) => {
       const file = e.target.files[0];
       e.target.value = '';
       if (!file) return;
@@ -5431,8 +5433,11 @@ function bindModalEvents() {
       } catch (err) {
         showToast("That photo couldn't be read.");
       }
-    };
-  }
+  };
+  const proofFile = document.getElementById('proof-file');
+  if (proofFile) proofFile.onchange = onProofPicked;
+  const proofLib = document.getElementById('proof-file-lib');
+  if (proofLib) proofLib.onchange = onProofPicked;
   const storyFile = document.getElementById('story-file');
   if (storyFile) {
     storyFile.onchange = async (e) => {
@@ -5499,6 +5504,11 @@ document.addEventListener('click', async (e) => {
       break;
     case 'pick-proof': {
       const el = document.getElementById('proof-file');
+      if (el) el.click();
+      break;
+    }
+    case 'pick-proof-lib': {
+      const el = document.getElementById('proof-file-lib');
       if (el) el.click();
       break;
     }

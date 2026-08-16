@@ -2327,3 +2327,6 @@
     max-height:46vh; overflow:hidden; display:flex;
   }
   .proof-shot img{width:100%; height:auto; object-fit:contain; display:block;}
+
+  .proof-actions{display:flex; gap:8px; flex-shrink:0;}
+  .proof-actions .proof-btn{padding:10px 12px; font-size:12.5px;}

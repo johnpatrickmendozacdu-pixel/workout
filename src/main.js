@@ -5546,6 +5546,9 @@ document.addEventListener('click', async (e) => {
       state.modal = { type: 'proof', exId: btn.dataset.id, image: null };
       renderModal();
       break;
+    case 'save-proof-image':
+      await saveProofCollage(btn.dataset.id);
+      break;
     case 'pick-proof': {
       const el = document.getElementById('proof-file');
       if (el) el.click();

@@ -12,6 +12,7 @@ import {
   formatCount,
   recentDayStates,
   streakTier,
+  clusterByCategory,
   flameLevel,
   dayHistory,
   trajectorySeries,
@@ -710,5 +711,43 @@ describe('flameLevel', () => {
       expect(flameLevel(d)).toBeGreaterThanOrEqual(0);
       expect(flameLevel(d)).toBeLessThanOrEqual(4);
     });
+  });
+});
+
+describe('clusterByCategory', () => {
+  const ex = (id, category) => ({ id, category });
+
+  it('leaves a short category alone — two cards is not clutter', () => {
+    const out = clusterByCategory([ex('a', 'push'), ex('b', 'push')], 3);
+    expect(out.map((o) => o.type)).toEqual(['one', 'one']);
+  });
+
+  it('folds a category once it reaches the threshold', () => {
+    const out = clusterByCategory([ex('a', 'skate'), ex('b', 'skate'), ex('c', 'skate')], 3);
+    expect(out).toHaveLength(1);
+    expect(out[0].type).toBe('cluster');
+    expect(out[0].key).toBe('skate');
+    expect(out[0].exercises.map((e) => e.id)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('never folds exercises that have no category', () => {
+    const out = clusterByCategory([ex('a', null), ex('b', null), ex('c', null)], 3);
+    expect(out.map((o) => o.type)).toEqual(['one', 'one', 'one']);
+  });
+
+  it('holds a cluster at the position of its first member', () => {
+    const out = clusterByCategory([
+      ex('solo', 'legs'), ex('s1', 'skate'), ex('other', 'core'),
+      ex('s2', 'skate'), ex('s3', 'skate'),
+    ], 3);
+    expect(out.map((o) => (o.type === 'cluster' ? 'skate' : o.ex.id))).toEqual(['solo', 'skate', 'other']);
+  });
+
+  it('keeps two different big categories apart', () => {
+    const list = ['s1', 's2', 's3'].map((i) => ex(i, 'skate'))
+      .concat(['c1', 'c2', 'c3'].map((i) => ex(i, 'core')));
+    const out = clusterByCategory(list, 3);
+    expect(out).toHaveLength(2);
+    expect(out.map((o) => o.key)).toEqual(['skate', 'core']);
   });
 });

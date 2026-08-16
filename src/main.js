@@ -17,6 +17,8 @@ import {
   setDayOverride,
   migrateOverrides,
   calcTotal,
+  progressValue,
+  targetUnit,
   calcDayStats,
   calcStreakInfo,
   calcWeeklyCompletion,
@@ -71,7 +73,7 @@ import { GUIDE_SECTIONS, GUIDE_INTRO } from './guide.js';
 import { CATEGORIES, categoryOf, categoryLabel, categoryIconUrl } from './categories.js';
 import * as gsync from './sync/googleSync.js';
 import * as crewApi from './sync/crew.js';
-import { allStats, exerciseStats, recentDayStates, workoutDates, streakTier, flameLevel, dayHistory, trajectorySeries, formatDuration, formatTotalDuration, formatMinutes, formatCount, buildCrewCard, formatClock, groupBySchedule, comboTimes } from './domain/stats.js';
+import { allStats, exerciseStats, recentDayStates, workoutDates, streakTier, flameLevel, clusterByCategory, dayHistory, trajectorySeries, formatDuration, formatTotalDuration, formatMinutes, formatCount, buildCrewCard, formatClock, groupBySchedule, comboTimes } from './domain/stats.js';
 
 // Every number is on screen — no hunting, no typing. One tap applies it in
 // whichever direction the lever is set to.
@@ -741,10 +743,12 @@ async function logSet(exId, value) {
   if (!(value > 0)) return;
   if (sealedToday(exId)) return;
   const d = todayISO();
-  const prevTotal = calcTotal(getSetsFor(exId, d));
+  const prevArr = getSetsFor(exId, d);
   state.setsLog = addSetPure(state.setsLog, d, exId, value);
   const ex = state.exercises.find((e) => e.id === exId);
   const total = calcTotal(getSetsFor(exId, d));
+  const prevScore = progressValue(ex, prevArr);
+  const score = progressValue(ex, getSetsFor(exId, d));
   const now = Date.now();
 
   // First logged set of the day for this exercise auto-starts its timer.
@@ -764,7 +768,7 @@ async function logSet(exId, value) {
   // Prompt only on the crossing — the set that takes the total from below the
   // target to at or above it. Stateless, so it can't double-prompt while
   // someone keeps going, and it re-arms correctly if sets are removed later.
-  const crossed = targetNow && prevTotal < targetNow && total >= targetNow;
+  const crossed = targetNow && prevScore < targetNow && score >= targetNow;
   if (crossed) {
     state.timersLog = pauseTimerPure(state.timersLog, d, exId, now);
     // The clock stopping is also the day being finished, and that time is what
@@ -999,6 +1003,7 @@ async function addExercise(data) {
     weightUnit: data.weightUnit === 'lb' ? 'lb' : 'kg',
     weightHistory: data.weight > 0 ? [{ effectiveDate: now, weight: data.weight, unit: data.weightUnit === 'lb' ? 'lb' : 'kg' }] : [],
     targetHistory: [{ effectiveDate: now, target: data.target || null }],
+    targetMode: data.targetMode === 'sets' ? 'sets' : 'reps',
   };
   state.exercises.push(ex);
   await persistExercises();
@@ -1039,6 +1044,10 @@ async function updateExercise(id, data) {
   if (data.category !== undefined) ex.category = data.category;
   ex.unit = (data.unit || 'reps').trim();
   if (data.mode !== undefined) ex.mode = data.mode === 'time' ? 'time' : 'count';
+  // Not dated history like the target itself: the mode is what the number MEANS,
+  // and a past day's number was always counted the way it was counted. Rewriting
+  // that retroactively is the one thing dated history exists to prevent.
+  if (data.targetMode !== undefined) ex.targetMode = data.targetMode === 'sets' ? 'sets' : 'reps';
   applyScheduleChange(ex, data.schedule || 'daily');
   if (data.equipment !== undefined) ex.equipment = data.equipment === 'dumbbell' ? 'dumbbell' : 'bodyweight';
   if (data.weightUnit !== undefined) ex.weightUnit = data.weightUnit === 'lb' ? 'lb' : 'kg';
@@ -2235,7 +2244,7 @@ async function shareDayImage() {
       const ms = timerElapsedMs(timer, Date.now());
       return {
         ex, total, ms,
-        short: !!(target > 0 && total < target),
+        short: !!(target > 0 && progressValue(ex, arr) < target),
         value: isTimeMode(ex) ? formatMinutes(total) : `${formatCount(total)} ${ex.unit}`,
         pct: target > 0 ? Math.min(1, total / target) : 1,
         // Only used when the rows are tall enough to read it.
@@ -2935,6 +2944,43 @@ function weighInBlockHtml() {
   </div>`;
 }
 
+/**
+ * Eight skate tricks is a wall; two push exercises is not. So a category only
+ * folds once it has enough members to actually be clutter, and everything else
+ * renders exactly as it always did — no header, no extra tap, no change.
+ *
+ * A folded category shows its own progress on the header, so you can see where
+ * you are without opening it. Open it and the tricks are compact rows rather
+ * than full cards: inside a category you are picking from a list you already
+ * know, not reading each one.
+ */
+function renderTodoList(rows, cardFn) {
+  const clusters = clusterByCategory(rows.map((r) => r.ex), 3);
+  if (clusters.every((c) => c.type === 'one')) return rows.map(cardFn).join('');
+  const byId = new Map(rows.map((r) => [r.ex.id, r]));
+  return clusters.map((c) => {
+    if (c.type === 'one') return cardFn(byId.get(c.ex.id));
+    const members = c.exercises.map((e) => byId.get(e.id)).filter(Boolean);
+    if (!members.length) return '';
+    const cat = CATEGORIES.find((x) => x.key === c.key);
+    const open = groupOpen('cat', c.key, 0);
+    const doneCount = members.filter((r) => r.done).length;
+    const head = `<button class="cat-head ${open ? 'open' : ''}" data-action="toggle-group" data-view="cat" data-key="${escapeHtml(c.key)}" data-open="${open}" aria-expanded="${open}">
+      <img class="cat-head-icon" src="${categoryIconUrl(c.key)}" alt="" width="26" height="26">
+      <span class="cat-head-name">${escapeHtml(cat ? cat.label : c.key)}</span>
+      <span class="cat-head-meta">${members.length - doneCount} left</span>
+      <span class="group-chev ${open ? 'open' : ''}">${ICONS.chevron}</span>
+    </button>`;
+    if (!open) return head;
+    const list = members.map((r) => `<button class="cat-row ${r.done ? 'done' : ''}" data-action="open-logger" data-id="${r.ex.id}">
+      <span class="cat-row-name">${escapeHtml(r.ex.name)}</span>
+      <span class="cat-row-num">${r.hasTarget ? `${r.shown} / ${r.target}` : `${r.shown}`}</span>
+      ${r.done ? `<span class="cat-row-tick">${ICONS.check}</span>` : ''}
+    </button>`).join('');
+    return head + `<div class="cat-body">${list}</div>`;
+  }).join('');
+}
+
 function viewToday() {
   const today = todayISO();
   const all = state.exercises.filter((e) => e.active).sort((a, b) => a.order - b.order);
@@ -2956,6 +3002,10 @@ function viewToday() {
     const target = getEffectiveTarget(ex, today);
     const arr = getSetsFor(ex.id, today);
     const total = calcTotal(arr);
+    // What the target is measured in: reps for most, sets for a "3 sets to
+    // failure" exercise. Everything the row shows and judges reads this.
+    const scored = progressValue(ex, arr);
+    const setsMode = ex.targetMode === 'sets';
     const hasTarget = !!target && target > 0;
     // A time exercise banks its minutes when the clock stops, so mid-session the
     // log is behind the clock. What is DONE follows the banked number (the same
@@ -2963,14 +3013,14 @@ function viewToday() {
     // reading "0 of 30" would be a lie about the last twelve minutes.
     const timeMode = isTimeMode(ex);
     const t = getTimerPure(state.timersLog, today, ex.id);
-    const shown = timeMode ? Math.max(total, minutesFromMs(timerElapsedMs(t, now))) : total;
+    const shown = timeMode ? Math.max(total, minutesFromMs(timerElapsedMs(t, now))) : (setsMode ? scored : total);
     const left = hasTarget ? Math.max(0, target - shown) : 0;
     // A session you deliberately ended is not work still owing. Today answers
     // "what's left"; it should not keep asking for reps you already declined.
     const endedEarly = timerPhase(getTimerPure(state.timersLog, today, ex.id)) === 'gaveup';
     return {
-      ex, target, total, shown, timeMode, hasTarget, left, endedEarly,
-      done: endedEarly || isBreakDay(state.streakOverrides, today, ex.id) || (hasTarget ? total >= target : total > 0),
+      ex, target, total, shown, timeMode, setsMode, scored, hasTarget, left, endedEarly,
+      done: endedEarly || isBreakDay(state.streakOverrides, today, ex.id) || (hasTarget ? scored >= target : total > 0),
       rest: isBreakDay(state.streakOverrides, today, ex.id),
       pct: hasTarget ? Math.min(1, shown / target) : (shown > 0 ? 1 : 0),
       timer: t,
@@ -2990,7 +3040,7 @@ function viewToday() {
         <span class="today-name">${escapeHtml(r.ex.name)}${weightTag(r.ex)}</span>
         <span class="today-meter" aria-hidden="true"><i style="width:${Math.round(r.pct * 100)}%"></i></span>
         <span class="today-sub">${r.hasTarget
-          ? `${r.timeMode ? `<b data-elapsed-min="${r.ex.id}">${r.shown}</b>` : r.shown} of ${r.target} ${escapeHtml(r.ex.unit)}`
+          ? `${r.timeMode ? `<b data-elapsed-min="${r.ex.id}">${r.shown}</b>` : r.shown} of ${r.target} ${escapeHtml(targetUnit(r.ex))}${r.setsMode && r.total > 0 ? ` · ${r.total} ${escapeHtml(r.ex.unit)}` : ''}`
           : `${r.timeMode ? `<b data-elapsed-min="${r.ex.id}">${r.shown}</b>` : r.shown} ${escapeHtml(r.ex.unit)} · no target`}${categoryLabel(r.ex) ? ` · ${catTagHtml(r.ex)}` : ''}${running ? ` · <b data-elapsed="${r.ex.id}">${formatElapsed(timerElapsedMs(r.timer, Date.now()))}</b>` : ''}</span>
       </span>
       <span class="today-left">
@@ -3014,7 +3064,7 @@ function viewToday() {
       <button class="done-open" data-action="open-logger" data-id="${r.ex.id}">
         <span class="done-tick">${r.rest ? '🌙' : (short ? ICONS.flag : ICONS.check)}</span>
         <span class="done-name">${escapeHtml(r.ex.name)}</span>
-        <span class="done-num">${r.rest ? 'Rest' : (short ? `${r.total} of ${r.target}` : `${r.total} ${escapeHtml(r.ex.unit)}`)}${r.timer && r.timer.finishedAt ? `<i class="done-at">${escapeHtml(formatClock(r.timer.finishedAt))}</i>` : ''}</span>
+        <span class="done-num">${r.rest ? 'Rest' : (short ? `${r.scored} of ${r.target}` : (r.setsMode ? `${r.scored} ${escapeHtml(targetUnit(r.ex))} · ${r.total} ${escapeHtml(r.ex.unit)}` : `${r.total} ${escapeHtml(r.ex.unit)}`))}${r.timer && r.timer.finishedAt ? `<i class="done-at">${escapeHtml(formatClock(r.timer.finishedAt))}</i>` : ''}</span>
       </button>
       ${r.rest ? '' : `<button class="done-share" data-action="share-session" data-id="${r.ex.id}" aria-label="Share ${escapeHtml(r.ex.name)}">${ICONS.share}</button>`}
     </div>`;
@@ -3024,7 +3074,7 @@ function viewToday() {
 
   if (todo.length) {
     html += `<div class="section-label">To do${todo.length > 1 ? ` · ${todo.length}` : ''}</div>`;
-    html += todo.map(todoCard).join('');
+    html += renderTodoList(todo, todoCard);
   } else if (scheduled.length) {
     // The day's own card hangs off the moment the day is declared over, so it
     // needs no row of its own on a screen whose whole job is what is left.
@@ -4266,6 +4316,9 @@ function modalExerciseForm(exId) {
   const tUnit = state.modal ? state.modal.tunit : 'min';
   const targetShown = target ? (tUnit === 'hr' ? Math.round((target / 60) * 100) / 100 : target) : null;
   const isDumbbell = state.modal ? state.modal.equip === 'dumbbell' : false;
+  const setsMode = state.modal && state.modal.tmode !== undefined
+    ? state.modal.tmode === 'sets'
+    : !!(ex && ex.targetMode === 'sets');
   const wUnit = state.modal ? state.modal.wunit : 'kg';
   const wVal = (state.modal && state.modal.weight !== undefined)
     ? state.modal.weight
@@ -4342,14 +4395,19 @@ function modalExerciseForm(exId) {
       </div>
       <div class="field">
         <label>Daily target${timeMode ? '' : ' (optional)'}</label>
+        ${timeMode ? '' : `<div class="sched-modes">
+          <button type="button" class="sched-mode ${setsMode ? '' : 'on'}" data-action="target-mode" data-mode="reps">Reps</button>
+          <button type="button" class="sched-mode ${setsMode ? 'on' : ''}" data-action="target-mode" data-mode="sets">Sets</button>
+        </div>`}
         ${timeMode ? `<div class="time-target">
           <input id="f-target" type="number" min="0" step="any" inputmode="decimal" placeholder="30" value="${draft.target !== undefined ? escapeHtml(draft.target) : (targetShown != null ? targetShown : '')}">
           <div class="wunit-toggle">
             <button type="button" class="wunit ${tUnit === 'min' ? 'on' : ''}" data-action="tunit" data-unit="min">min</button>
             <button type="button" class="wunit ${tUnit === 'hr' ? 'on' : ''}" data-action="tunit" data-unit="hr">hr</button>
           </div>
-        </div>` : `<input id="f-target" type="number" min="0" step="any" placeholder="Leave blank for no target" value="${draft.target !== undefined ? escapeHtml(draft.target) : (target ? target : '')}">`}
+        </div>` : `<input id="f-target" type="number" min="0" step="any" placeholder="${setsMode ? 'How many sets' : 'Leave blank for no target'}" value="${draft.target !== undefined ? escapeHtml(draft.target) : (target ? target : '')}">`}
         <div class="hint">${timeMode ? 'How long a session should last. Reach it and you get the same choice as any target: take the win, or keep going.'
+          : setsMode ? 'The day is done when you finish this many sets, whatever the reps are. 8, 8 and 15 finishes a target of 3.'
           : (editing ? 'Changing this only affects today onward — past days keep their original target.' : 'Untargeted exercises still track totals but don’t count toward your streak.')}</div>
       </div>
       <div class="form-actions">
@@ -5377,8 +5435,10 @@ document.addEventListener('click', async (e) => {
       const weight = equipment === 'dumbbell' && wParsed > 0 ? Math.round(wParsed * 10) / 10 : null;
       const equip = { equipment, weight, weightUnit };
       const mode = timeMode ? 'time' : 'count';
-      if (id) await updateExercise(id, { name, unit, target, category, schedule, mode, ...equip });
-      else await addExercise({ name, unit, target, category, schedule, mode, ...equip,
+      // A timed exercise counts minutes, so counting sets would be meaningless.
+      const targetMode = (!timeMode && state.modal && state.modal.tmode === 'sets') ? 'sets' : 'reps';
+      if (id) await updateExercise(id, { name, unit, target, category, schedule, mode, targetMode, ...equip });
+      else await addExercise({ name, unit, target, category, schedule, mode, targetMode, ...equip,
         oneTimeDate: oneTime ? todayISO() : null });
       closeModal(); rerender();
       break;
@@ -5673,6 +5733,10 @@ document.addEventListener('click', async (e) => {
     case 'equip-mode':
       captureExerciseDraft();
       if (state.modal) { state.modal.equip = btn.dataset.equip; renderModal(); }
+      break;
+    case 'target-mode':
+      captureExerciseDraft();
+      if (state.modal) { state.modal.tmode = btn.dataset.mode === 'sets' ? 'sets' : 'reps'; renderModal(); }
       break;
     case 'measure-mode':
       captureExerciseDraft();

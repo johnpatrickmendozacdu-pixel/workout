@@ -195,6 +195,33 @@ export function setDayOverride(overrides, dateStr, exId, value) {
   return next;
 }
 
+/**
+ * What a day's work counts as, measured against its own target.
+ *
+ * Reps mode counts reps. Sets mode counts SETS: three sets of anything finish a
+ * target of three, which is how most strength work is actually prescribed —
+ * "3 sets to failure" has no rep number to hit.
+ *
+ * Every completion test in the app routes through here. Eleven places used to
+ * compare calcTotal() against the target directly, and eleven copies of a rule
+ * is eleven chances for the streak, the day list, the charts and the share card
+ * to disagree about whether you finished.
+ */
+export function progressValue(exercise, arr) {
+  const list = Array.isArray(arr) ? arr : [];
+  return exercise && exercise.targetMode === 'sets' ? list.length : calcTotal(list);
+}
+
+/** The unit a target is counted in — for labels, never for maths. */
+export function targetUnit(exercise) {
+  if (exercise && exercise.targetMode === 'sets') return 'sets';
+  return (exercise && exercise.unit) || 'reps';
+}
+
+export function targetMet(exercise, arr, target) {
+  return !!(target > 0) && progressValue(exercise, arr) >= target;
+}
+
 export function calcDayStats(exercises, setsLog, dateStr, overrides) {
   let targetedCount = 0;
   let completedCount = 0;
@@ -212,6 +239,7 @@ export function calcDayStats(exercises, setsLog, dateStr, overrides) {
     if (!isScheduledOn(ex, dateStr) && arr.length === 0) continue;
     const target = getEffectiveTarget(ex, dateStr);
     const total = calcTotal(arr);
+    const scored = progressValue(ex, arr);
     const hasTarget = !!target && target > 0;
 
     const ov = getDayOverride(overrides, dateStr, ex.id);
@@ -224,7 +252,7 @@ export function calcDayStats(exercises, setsLog, dateStr, overrides) {
       counts = true;
       // completedCount stays truthful — it reports what was actually logged, so
       // "3/5" never lies. Only `effective` (what the streak sees) is overridden.
-      complete = hasTarget ? total >= target : false;
+      complete = hasTarget ? scored >= target : false;
       if (complete) completedCount++;
     }
     const effective = ov != null ? (exBreak ? true : !!ov) : complete;

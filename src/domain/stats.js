@@ -5,7 +5,7 @@
 // change, and no possibility of stats drifting out of step with the logs they
 // describe: editing a past day recomputes the truth for free.
 
-import { calcTotal, getTimer, getEffectiveTarget, workoutSealed, addDays, todayISO, isScheduledOn, isBreakDay } from './domain.js';
+import { calcTotal, getTimer, getEffectiveTarget, workoutSealed, addDays, todayISO, isScheduledOn, isBreakDay, progressValue } from './domain.js';
 
 /** Days (sorted) on which this exercise has any logged set. */
 export function workoutDates(exId, setsLog) {
@@ -126,14 +126,15 @@ export function streakInfo(ex, setsLog, todayOverride, overrides) {
 
   while (cursor <= today && guard < 20000) {
     const target = getEffectiveTarget(ex, cursor);
-    const total = calcTotal((setsLog[cursor] && setsLog[cursor][ex.id]) || []);
+    const arr = (setsLog[cursor] && setsLog[cursor][ex.id]) || [];
+    const total = calcTotal(arr);
     // A day you trained counts even if today's schedule no longer lists it —
     // history is immutable. Only an empty unscheduled day is a rest day.
     if (target && target > 0 && (isScheduledOn(ex, cursor) || total > 0)) {
       tracked++;
       // A claimed rest day keeps the run alive, and is counted as one of its days.
       if (isBreakDay(overrides, cursor, ex.id)) { run++; breaks++; if (run > best) best = run; }
-      else if (total >= target) {
+      else if (progressValue(ex, arr) >= target) {
         run++;
         if (run > best) best = run;
       } else {
@@ -165,7 +166,8 @@ export function recentDayStates(ex, setsLog, overrides, n = 7, todayOverride) {
   const out = [];
   for (let i = n - 1; i >= 0; i--) {
     const date = addDays(today, -i);
-    const total = calcTotal((setsLog[date] && setsLog[date][ex.id]) || []);
+    const arr = (setsLog[date] && setsLog[date][ex.id]) || [];
+    const total = calcTotal(arr);
     let state;
     if (ex.createdDate && date < ex.createdDate) state = 'none';
     // A trained day is never a rest day — it shows what happened, whatever the
@@ -175,7 +177,7 @@ export function recentDayStates(ex, setsLog, overrides, n = 7, todayOverride) {
     else {
       const target = getEffectiveTarget(ex, date);
       if (!target || target <= 0) state = 'none';
-      else state = total >= target ? 'hit' : 'miss';
+      else state = progressValue(ex, arr) >= target ? 'hit' : 'miss';
     }
     out.push({ date, state, isToday: date === today });
   }
@@ -339,7 +341,8 @@ export function trajectorySeries(ex, setsLog, windowDays, todayOverride) {
     const target = getEffectiveTarget(ex, d);
     // Whole days between the window start and this date.
     const dayIndex = Math.round((Date.parse(d + 'T00:00:00') - Date.parse(start + 'T00:00:00')) / 86400000);
-    points.push({ date: d, dayIndex, total, target: target || null, hit: !!(target > 0 && total >= target) });
+    points.push({ date: d, dayIndex, total, target: target || null,
+      hit: !!(target > 0 && progressValue(ex, setsLog[d][ex.id]) >= target) });
     maxY = Math.max(maxY, total, target || 0);
     minY = Math.min(minY, total, target > 0 ? target : total);
   });
@@ -364,7 +367,8 @@ export function dayHistory(ex, setsLog, overrides, limit, todayOverride) {
   let guard = 0;
 
   while (cursor >= first && guard < 20000) {
-    const totalReps = calcTotal((setsLog[cursor] && setsLog[cursor][ex.id]) || []);
+    const arr = (setsLog[cursor] && setsLog[cursor][ex.id]) || [];
+    const totalReps = calcTotal(arr);
     // A trained day belongs in the history whether or not the schedule lists it
     // now — otherwise switching days makes days you did disappear from view.
     if (isScheduledOn(ex, cursor) || totalReps > 0) {
@@ -377,7 +381,7 @@ export function dayHistory(ex, setsLog, overrides, limit, todayOverride) {
           target: target || null,
           total: totalReps,
           rest: isBreakDay(overrides, cursor, ex.id),
-          hit: !!target && totalReps >= target,
+          hit: !!target && progressValue(ex, arr) >= target,
         });
       }
     }
@@ -538,4 +542,40 @@ export function flameLevel(days) {
   if (d < 7) return 2;
   if (d < 30) return 3;
   return 4;
+}
+
+/**
+ * Cluster exercises by category, but only where clustering earns its keep.
+ *
+ * A category with one or two members is not clutter — it is two cards, and
+ * hiding them behind a header costs a tap to see what you already could. Eight
+ * skate tricks IS clutter, and that is the case worth folding. So a category
+ * only becomes a group once it reaches `min`; everything else stays loose and
+ * renders exactly as it did.
+ *
+ * Order is preserved: a cluster takes the position of its first member, so
+ * nothing jumps around the screen when a third trick tips it into a group.
+ */
+export function clusterByCategory(exercises, min = 3) {
+  const counts = new Map();
+  for (const ex of exercises) {
+    const key = ex.category || null;
+    if (key) counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  const out = [];
+  const made = new Map();
+  for (const ex of exercises) {
+    const key = ex.category || null;
+    if (!key || (counts.get(key) || 0) < min) {
+      out.push({ type: 'one', ex });
+      continue;
+    }
+    if (!made.has(key)) {
+      const cluster = { type: 'cluster', key, exercises: [] };
+      made.set(key, cluster);
+      out.push(cluster);
+    }
+    made.get(key).exercises.push(ex);
+  }
+  return out;
 }

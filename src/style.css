@@ -2277,3 +2277,36 @@
   @media (prefers-reduced-motion: reduce){
     .nav-btn svg{filter:none;}
   }
+
+  /* ---------- category clusters ----------
+     A folded category is one row until you open it, and its rows are compact —
+     inside a category you are picking from a list you already know, not reading
+     each card. Same visual weight as a card so the screen keeps one rhythm. */
+  .cat-head{
+    display:flex; align-items:center; gap:12px; width:100%; min-height:56px;
+    background:var(--bg-card); border:2px solid var(--border); color:var(--text);
+    padding:12px 14px; margin-bottom:10px; text-align:left;
+  }
+  .cat-head.open{margin-bottom:0; border-bottom-width:0;}
+  .cat-head-icon{display:block; flex:0 0 auto;}
+  .cat-head-name{flex:1; font-weight:700; font-size:15px;}
+  .cat-head-meta{
+    font-family:var(--font-mono); font-size:11px; letter-spacing:0.06em;
+    text-transform:uppercase; color:var(--accent);
+  }
+  .cat-body{
+    border:2px solid var(--border); border-top:1px solid var(--border);
+    background:var(--bg-card); margin-bottom:10px;
+  }
+  .cat-row{
+    display:flex; align-items:center; gap:12px; width:100%; min-height:48px;
+    padding:10px 14px; background:none; border:none; border-top:1px solid var(--border);
+    color:var(--text); text-align:left;
+  }
+  .cat-row:first-child{border-top:none;}
+  .cat-row-name{flex:1; font-size:14px;}
+  .cat-row-num{font-family:var(--font-num); font-size:13px; color:var(--text-dim);}
+  .cat-row.done .cat-row-name{color:var(--text-faint);}
+  .cat-row.done .cat-row-num{color:var(--accent);}
+  .cat-row-tick{display:flex; color:var(--accent);}
+  .cat-row-tick svg{width:16px; height:16px;}

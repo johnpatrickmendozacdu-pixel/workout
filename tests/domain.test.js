@@ -47,6 +47,10 @@ import {
   mergeBackup,
   buildBackup,
   mergeSyncSnapshots,
+  progressValue,
+  targetMet,
+  targetUnit,
+  calcDayStats,
   mergeHabitLogs,
   SNAPSHOT_DATA_KEYS,
   storedTokenUsable,
@@ -1563,5 +1567,47 @@ describe('habits in the sync snapshot', () => {
     const out = mergeSyncSnapshots(old, old);
     expect(out.habits).toEqual([]);
     expect(out.habitLog).toEqual({});
+  });
+});
+
+describe('sets as the target, not reps', () => {
+  const repsEx = { id: 'r', active: true, createdDate: '2026-08-01', schedule: 'daily',
+    targetHistory: [{ effectiveDate: '2026-08-01', target: 40 }] };
+  const setsEx = { id: 's', active: true, createdDate: '2026-08-01', schedule: 'daily',
+    targetMode: 'sets', targetHistory: [{ effectiveDate: '2026-08-01', target: 3 }] };
+
+  it('counts reps in reps mode and sets in sets mode', () => {
+    expect(progressValue(repsEx, [8, 8, 15])).toBe(31);
+    expect(progressValue(setsEx, [8, 8, 15])).toBe(3);
+  });
+
+  it('treats a missing mode as reps, so nothing already logged changes meaning', () => {
+    expect(progressValue({}, [10, 10])).toBe(20);
+    expect(progressValue(undefined, [10, 10])).toBe(20);
+  });
+
+  it('finishes three sets of anything', () => {
+    // the user's own example: 8, 8, 15 against a target of 3 sets
+    expect(targetMet(setsEx, [8, 8, 15], 3)).toBe(true);
+    expect(targetMet(setsEx, [8, 8], 3)).toBe(false);
+  });
+
+  it('does not finish on reps alone in sets mode', () => {
+    // 500 reps in two sets is still two sets
+    expect(targetMet(setsEx, [250, 250], 3)).toBe(false);
+  });
+
+  it('drives the streak, not just the label', () => {
+    const log = { '2026-08-10': { s: [8, 8, 15] } };
+    const stats = calcDayStats([setsEx], log, '2026-08-10', {});
+    expect(stats.allComplete).toBe(true);
+    const short = calcDayStats([setsEx], { '2026-08-10': { s: [8, 8] } }, '2026-08-10', {});
+    expect(short.allComplete).toBe(false);
+  });
+
+  it('reports the unit it is counted in', () => {
+    expect(targetUnit(setsEx)).toBe('sets');
+    expect(targetUnit({ unit: 'reps' })).toBe('reps');
+    expect(targetUnit({ unit: 'km' })).toBe('km');
   });
 });

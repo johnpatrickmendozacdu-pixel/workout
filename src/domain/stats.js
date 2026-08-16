@@ -583,3 +583,22 @@ export function clusterByCategory(exercises, min = 3) {
   }
   return out;
 }
+
+/**
+ * The biggest single set of the most recent session that has any.
+ *
+ * Used to prefill a reps target when an exercise has only ever had a sets
+ * target: "you did four sets and your best was 10" is a number you recognise,
+ * where a blank field is a question you have to answer from memory.
+ */
+export function lastSessionTopSet(exId, setsLog) {
+  const dates = workoutDates(exId, setsLog);
+  for (let i = dates.length - 1; i >= 0; i--) {
+    const arr = setsLog[dates[i]][exId];
+    if (arr && arr.length) {
+      const best = Math.max(...arr.filter((v) => v > 0));
+      if (best > 0) return best;
+    }
+  }
+  return null;
+}

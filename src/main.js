@@ -78,7 +78,7 @@ import { GUIDE_SECTIONS, GUIDE_INTRO } from './guide.js';
 import { CATEGORIES, categoryOf, categoryLabel, categoryIconUrl } from './categories.js';
 import * as gsync from './sync/googleSync.js';
 import * as crewApi from './sync/crew.js';
-import { allStats, exerciseStats, recentDayStates, workoutDates, streakTier, flameLevel, clusterByCategory, dayHistory, trajectorySeries, formatDuration, formatTotalDuration, formatMinutes, formatCount, buildCrewCard, formatClock, groupBySchedule, comboTimes } from './domain/stats.js';
+import { allStats, exerciseStats, recentDayStates, workoutDates, streakTier, flameLevel, clusterByCategory, lastSessionTopSet, dayHistory, trajectorySeries, formatDuration, formatTotalDuration, formatMinutes, formatCount, buildCrewCard, formatClock, groupBySchedule, comboTimes } from './domain/stats.js';
 
 // Every number is on screen — no hunting, no typing. One tap applies it in
 // whichever direction the lever is set to.
@@ -2374,63 +2374,89 @@ async function offerImage(blob, ex, suffix) {
  */
 async function saveProofCollage(exId) {
   const ex = state.exercises.find((e) => e.id === exId);
-  const today = todayISO();
-  const img = (state.proofImages[today] || {})[exId];
+  const d = todayISO();
+  const img = (state.proofImages[d] || {})[exId];
   if (!ex || !img) { showToast('No proof saved for this one.'); return; }
   showToast('Building…');
-  const bitmap = await new Promise((res, rej) => {
+
+  const bitmap = await new Promise((res) => {
     const i = new Image();
     i.onload = () => res(i);
-    i.onerror = rej;
+    i.onerror = () => res(null);
     i.src = img;
-  }).catch(() => null);
+  });
   if (!bitmap) { showToast("That photo couldn't be read."); return; }
 
+  // The card half is the REAL share image — the same buildSessionImage every
+  // Share button uses. Drawing a second, similar-looking card by hand is how
+  // the two drift apart until the keepsake stops matching what you shared.
+  const arr = getSetsFor(exId, d);
+  const total = calcTotal(arr);
+  const target = getEffectiveTarget(ex, d);
+  const timer = getTimerPure(state.timersLog, d, exId);
+  const st = exerciseStats(ex, state.setsLog, state.timersLog, null, state.streakOverrides);
+  let cardBlob = null;
+  try {
+    cardBlob = await buildSessionImage(ex, {
+      total, target,
+      timeMode: isTimeMode(ex),
+      sets: arr.length,
+      streak: st.currentStreak,
+      elapsed: formatDuration(timerElapsedMs(timer, Date.now())),
+      pct: target > 0 ? Math.min(1, progressValue(ex, arr) / target) : 1,
+      short: false,
+      dateLabel: formatDisplayDate(d, { weekday: 'short', day: 'numeric', month: 'short' }),
+      headline: target > 0 ? 'Target met' : 'Session complete',
+    });
+  } catch (e) { cardBlob = null; }
+  if (!cardBlob) { showToast("Couldn't build the image."); return; }
+  const card = await new Promise((res) => {
+    const i = new Image();
+    i.onload = () => res(i);
+    i.onerror = () => res(null);
+    i.src = URL.createObjectURL(cardBlob);
+  });
+  if (!card) { showToast("Couldn't build the image."); return; }
+
+  // Proof on top, card beneath, one story-shaped frame: the picture is the
+  // evidence and the card is the caption, in that reading order.
   const c = document.createElement('canvas');
   c.width = SHARE_W; c.height = SHARE_H;
   const g = c.getContext('2d');
   paintShareBackdrop(g, '#0A0C0B', '#3EE07F');
 
-  // The photo sits in the upper two thirds, cropped to fill rather than
-  // squashed — a stretched proof shot looks like a mistake.
-  const box = { x: 60, y: 300, w: SHARE_W - 120, h: 1000 };
-  const scale = Math.max(box.w / bitmap.width, box.h / bitmap.height);
+  const photoH = Math.round(SHARE_H * 0.46);
+  const scale = Math.max(SHARE_W / bitmap.width, photoH / bitmap.height);
   const dw = bitmap.width * scale, dh = bitmap.height * scale;
   g.save();
-  g.beginPath(); g.rect(box.x, box.y, box.w, box.h); g.clip();
-  g.drawImage(bitmap, box.x + (box.w - dw) / 2, box.y + (box.h - dh) / 2, dw, dh);
+  g.beginPath(); g.rect(0, 0, SHARE_W, photoH); g.clip();
+  g.drawImage(bitmap, (SHARE_W - dw) / 2, (photoH - dh) / 2, dw, dh);
   g.restore();
-  g.strokeStyle = '#D8DEDA'; g.lineWidth = 4;
-  g.strokeRect(box.x, box.y, box.w, box.h);
 
-  const arr = getSetsFor(exId, today);
-  const target = getEffectiveTarget(ex, today);
-  const scored = progressValue(ex, arr);
-  g.fillStyle = '#3EE07F';
-  g.font = '700 34px "JetBrains Mono", monospace';
-  g.fillText('PROOF OF WORKOUT', box.x, 220);
-  g.fillStyle = '#EEF2EF';
-  g.font = '800 78px Manrope, system-ui, sans-serif';
-  g.fillText(ex.name, box.x, 1420);
-  g.fillStyle = '#9AA5A0';
-  g.font = '500 40px "JetBrains Mono", monospace';
-  g.fillText(target > 0 ? `${scored} of ${target} ${targetUnit(ex)}` : `${calcTotal(arr)} ${ex.unit}`, box.x, 1490);
-  g.fillText(formatDisplayDate(today, { weekday: 'long', day: 'numeric', month: 'long' }), box.x, 1550);
-  g.fillStyle = '#3EE07F';
-  g.font = '700 30px "JetBrains Mono", monospace';
-  g.fillText('Sets · sets-workout.vercel.app', box.x, 1640);
+  // The card is drawn at full width below, scaled to whatever height is left.
+  const cardTop = photoH;
+  const cardH = SHARE_H - photoH;
+  const cScale = SHARE_W / card.width;
+  g.save();
+  g.beginPath(); g.rect(0, cardTop, SHARE_W, cardH); g.clip();
+  // Anchored to the card's own foot so the watermark always survives the crop.
+  g.drawImage(card, 0, cardTop + cardH - card.height * cScale, SHARE_W, card.height * cScale);
+  g.restore();
+
+  g.strokeStyle = 'rgba(216,222,218,0.85)'; g.lineWidth = 3;
+  g.beginPath(); g.moveTo(0, photoH); g.lineTo(SHARE_W, photoH); g.stroke();
 
   const blob = await new Promise((res) => c.toBlob(res, 'image/png'));
   if (!blob) { showToast("Couldn't build the image."); return; }
-  // Straight to the camera roll: no share sheet, so this never reaches a story
-  // by accident.
+  // Straight to the roll: never the share sheet, so this cannot reach a story
+  // by accident. Sharing stays the clean card.
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   const slug = (v) => String(v || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-  a.href = url; a.download = `sets-proof-${slug(ex.name)}-${today}.png`;
+  a.href = url; a.download = `sets-proof-${slug(ex.name)}-${d}.png`;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
-  showToast('Saved to your phone');
+  showToast('Saved to your photos');
 }
 
 /** Today's session, from the finished card it was tapped on. */
@@ -4381,7 +4407,11 @@ function modalProof() {
         <button class="primary-btn wide" data-action="pick-proof">${rec ? 'Retake' : 'Take the photo'}</button>
         <button class="secondary-btn wide" data-action="pick-proof-lib">Upload a photo</button>` : ''}
       ${m.image ? `<button class="secondary-btn wide" data-action="save-proof" data-id="${ex.id}">Use this photo</button>` : ''}
-      ${rec && img ? `<button class="secondary-btn wide" data-action="save-proof-image" data-id="${ex.id}">Save to phone</button>` : ''}
+      ${rec && img ? `<button class="secondary-btn wide" data-action="save-proof-image" data-id="${ex.id}">Save to my photos — with the share card</button>` : ''}
+      ${rec ? `<div class="hint">${rec.posted
+        ? 'Your crew can see this on today’s workout.'
+        : (activeCrew() ? 'Not sent to your crew yet.' : 'You are not in a crew, so only you can see this.')}</div>` : ''}
+      ${rec && img && !rec.posted && activeCrew() ? `<button class="secondary-btn wide" data-action="repost-proof" data-id="${ex.id}">Send to my crew</button>` : ''}
     </div>
   </div>`;
 }
@@ -5591,6 +5621,20 @@ document.addEventListener('click', async (e) => {
       state.modal = { type: 'proof', exId: btn.dataset.id, image: null };
       renderModal();
       break;
+    case 'repost-proof': {
+      const today2 = todayISO();
+      const image = (state.proofImages[today2] || {})[btn.dataset.id];
+      if (!image) break;
+      showToast('Sending…');
+      const posted = await postProofToCrew(btn.dataset.id, image);
+      state.proofLog = { ...state.proofLog,
+        [today2]: { ...(state.proofLog[today2] || {}),
+          [btn.dataset.id]: { ...(state.proofLog[today2] || {})[btn.dataset.id], posted } } };
+      await persistProof();
+      renderModal(); renderView();
+      showToast(posted ? 'Sent to your crew' : "Couldn't send — try again later");
+      break;
+    }
     case 'save-proof-image':
       await saveProofCollage(btn.dataset.id);
       break;
@@ -5622,7 +5666,13 @@ document.addEventListener('click', async (e) => {
       showToast('Proof saved — that one is finished.');
       // The crew half is best effort by design: the day is already complete
       // locally, so a train tunnel cannot un-finish a workout you did.
-      postProofToCrew(exId, img).catch(() => {});
+      postProofToCrew(exId, img).then((posted) => {
+        state.proofLog = { ...state.proofLog,
+          [today]: { ...(state.proofLog[today] || {}),
+            [exId]: { ...(state.proofLog[today] || {})[exId], posted: !!posted } } };
+        persistProof();
+        renderView();
+      }).catch(() => {});
       break;
     }
       state.modal = { type: 'notices' };
@@ -6067,7 +6117,12 @@ document.addEventListener('click', async (e) => {
       const draft = state.modal.draft || {};
       state.modal.targetBy = { ...(state.modal.targetBy || {}), [from]: draft.target };
       state.modal.tmode = to;
-      state.modal.draft = { ...draft, target: (state.modal.targetBy || {})[to] };
+      let restored = (state.modal.targetBy || {})[to];
+      if ((restored === undefined || restored === null || restored === '') && to === 'reps') {
+        const best = lastSessionTopSet(state.modal.exId, state.setsLog);
+        if (best) restored = best;
+      }
+      state.modal.draft = { ...draft, target: restored };
       renderModal();
       break;
     }
@@ -6516,12 +6571,13 @@ async function forceUpdate() {
  */
 async function postProofToCrew(exId, image) {
   const crew = activeCrew();
-  if (!crew || !hasSyncAccount() || !isOnline()) return;
+  if (!crew || !hasSyncAccount() || !isOnline()) return false;
   const ex = state.exercises.find((e) => e.id === exId);
   try {
-    await crewApi.postStory(crew.id, image, PROOF_TAG + (ex ? ex.name : 'Workout'));
+    const res = await crewApi.postStory(crew.id, image, PROOF_TAG + (ex ? ex.name : 'Workout'));
+    return !!(res && res.ok !== false);
   } catch (e) {
-    // best effort, by design
+    return false;
   }
 }
 

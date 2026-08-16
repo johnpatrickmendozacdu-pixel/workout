@@ -13,6 +13,7 @@ import {
   recentDayStates,
   streakTier,
   clusterByCategory,
+  lastSessionTopSet,
   flameLevel,
   dayHistory,
   trajectorySeries,
@@ -749,5 +750,23 @@ describe('clusterByCategory', () => {
     const out = clusterByCategory(list, 3);
     expect(out).toHaveLength(2);
     expect(out.map((o) => o.key)).toEqual(['skate', 'core']);
+  });
+});
+
+describe('lastSessionTopSet', () => {
+  it('takes the biggest set of the latest session, not the total', () => {
+    const log = { '2026-08-16': { e: [10, 8, 8, 5] } };
+    expect(lastSessionTopSet('e', log)).toBe(10);
+  });
+  it('ignores older sessions once a newer one exists', () => {
+    const log = { '2026-08-10': { e: [40] }, '2026-08-16': { e: [10, 8] } };
+    expect(lastSessionTopSet('e', log)).toBe(10);
+  });
+  it('falls back through empty days', () => {
+    const log = { '2026-08-10': { e: [12] }, '2026-08-16': { e: [] } };
+    expect(lastSessionTopSet('e', log)).toBe(12);
+  });
+  it('is null when nothing was ever logged', () => {
+    expect(lastSessionTopSet('e', {})).toBe(null);
   });
 });

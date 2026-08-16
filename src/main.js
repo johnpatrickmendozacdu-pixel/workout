@@ -3049,7 +3049,13 @@ function habitProgressHtml() {
     }).join('');
     const worst = Object.entries(s.breaksBySlot).sort((a, b) => b[1] - a[1])[0];
     const worstSlot = worst ? HABIT_SLOTS.find((x) => x.key === worst[0]) : null;
-    return `<div class="habit-block">
+    // A 30-day strip and three lines of prose per habit is the top half of
+    // Progress spent before you reach a single exercise. The streak is the
+    // number anyone came for, so it rides on the header and the rest folds.
+    // Its own view key, not `habit`: Today's habit card folds independently.
+    const head = foldHeaderHtml('hprog', h.id, `${h.emoji || '✅'} ${h.name}`, `🔥 ${s.current} · longest ${s.longest}`);
+    if (!groupOpen('hprog', h.id, 0)) return head;
+    return head + `<div class="habit-block">
       <div class="habit-block-head">
         <span class="section-label">${escapeHtml(h.emoji || '✅')} ${escapeHtml(h.name)}</span>
         <span class="habit-tag">health habit</span>
@@ -3069,7 +3075,9 @@ function weighInBlockHtml() {
   const s = bmiSummary(p);
   const thisWeek = weeks[weeks.length - 1];
   const change = weeks.length >= 2 ? Math.round((thisWeek.avg - weeks[0].avg) * 10) / 10 : null;
-  return `<div class="habit-block">
+  const head = foldHeaderHtml('hprog', 'weight', 'Weekly weight', `${thisWeek.avg} kg${s ? ` · BMI ${s.bmi}` : ''}`);
+  if (!groupOpen('hprog', 'weight', 0)) return head;
+  return head + `<div class="habit-block">
     <div class="habit-block-head"><span class="section-label">Weekly weight</span><span class="habit-tag">health habit</span></div>
     ${weightChartHtml(weeks)}
     <div class="bmi-line">This week avg ${thisWeek.avg} kg${thisWeek.isCurrent && thisWeek.count < 7 ? ' (so far)' : ''}${s ? ` · BMI ${s.bmi} · ${BMI_LABEL[s.category]}` : ''}</div>
@@ -4942,6 +4950,21 @@ function modalCrewMember() {
       : m.restingToday ? 'They are resting today. Their streak holds, so there is nothing to nudge.'
       : 'They have not trained yet. A nudge shows on their card.'} Everyone in the crew sees it.</p>`;
 
+  // Their whole history — a strip and five figures per exercise — is the wall
+  // that made this card unreadable. Today is why you opened it, so Today stays;
+  // the rest is one line until asked for. Keyed by member so opening one
+  // person's history does not open everyone's.
+  const bestStreak = allTime.reduce((n, e) => Math.max(n, e.streak || 0), 0);
+  const progFold = foldHeaderHtml('member', `${m.id}:prog`, 'Their progress',
+    `${allTime.length} exercise${allTime.length === 1 ? '' : 's'}${bestStreak ? ` · best ${bestStreak}d` : ''}`)
+    + (groupOpen('member', `${m.id}:prog`, 0)
+      ? `<div class="crew-progs">${allTime.map(progressRow).join('')}</div>` : '');
+
+  // Twenty icon buttons only the leader can press, and only rarely. Folded,
+  // with the two titles that are actually set shown on the header.
+  const rankSummary = [(roleInfo(m.role) || {}).label, (classInfo(m.klass) || {}).label].filter(Boolean).join(' · ') || 'not set';
+  const rankOpen = groupOpen('member', `${m.id}:rank`, 0);
+
   return `<div class="modal-backdrop" data-action="backdrop">
     <div class="modal-sheet" data-stop>
       <div class="sheet-handle"></div>
@@ -4965,9 +4988,7 @@ function modalCrewMember() {
         ? `<div class="crew-days">${due.map(dayRow).join('')}</div>`
         : '<p class="hint">Nothing scheduled for them today.</p>'}
 
-      ${allTime.length ? `<div class="section-label">Their progress</div>
-        <div class="crew-progs">${allTime.map(progressRow).join('')}</div>`
-        : '<p class="hint">Nothing published yet — they have not opened Sets since joining.</p>'}
+      ${allTime.length ? progFold : '<p class="hint">Nothing published yet — they have not opened Sets since joining.</p>'}
 
       ${mine && (m.profileViewers || []).length ? `<div class="react-list">
         <div class="react-line">
@@ -4980,7 +5001,8 @@ function modalCrewMember() {
       </div>` : ''}
       ${reactionDetailHtml(m, crew)}
       ${reactRow}
-      ${iOwn ? `<div class="rank-set">
+      ${iOwn ? foldHeaderHtml('member', `${m.id}:rank`, 'Role & class', rankSummary) : ''}
+      ${iOwn && rankOpen ? `<div class="rank-set">
         <div class="section-label">Role</div>
         <div class="rank-picks">
           ${CREW_ROLES.map((r) => `<button class="rank-pick ${m.role === r.key ? 'on' : ''}" data-action="set-role" data-id="${m.id}" data-role="${r.key}">
@@ -5146,6 +5168,21 @@ function groupHeaderHtml(view, g, groupCount, summary) {
   const open = groupOpen(view, g.key, groupCount);
   const label = scheduleLabel({ schedule: g.days });
   return `<button class="group-head" data-action="toggle-group" data-view="${view}" data-key="${escapeHtml(g.key)}" data-open="${open}" aria-expanded="${open}">
+      <span class="group-head-label">${escapeHtml(label)}</span>
+      <span class="group-head-meta">${open ? '' : escapeHtml(summary)}</span>
+      <span class="group-chev ${open ? 'open' : ''}">${ICONS.chevron}</span>
+    </button>`;
+}
+
+/**
+ * The same `.group-head` fold for things that are not schedule groups — a
+ * plain label instead of a day combo. Shut by default (groupCount 0 is never
+ * 1), which is the whole point: the summary is on the header, so nothing is
+ * lost while it is closed.
+ */
+function foldHeaderHtml(view, key, label, summary) {
+  const open = groupOpen(view, key, 0);
+  return `<button class="group-head" data-action="toggle-group" data-view="${view}" data-key="${escapeHtml(key)}" data-open="${open}" aria-expanded="${open}">
       <span class="group-head-label">${escapeHtml(label)}</span>
       <span class="group-head-meta">${open ? '' : escapeHtml(summary)}</span>
       <span class="group-chev ${open ? 'open' : ''}">${ICONS.chevron}</span>
@@ -6055,7 +6092,13 @@ document.addEventListener('click', async (e) => {
     case 'target-mode': {
       captureExerciseDraft();
       if (!state.modal) break;
-      const from = state.modal.tmode === 'sets' ? 'sets' : 'reps';
+      // tmode is only set once a mode button has been pressed, so on first open
+      // it is undefined and the exercise's own mode is the truth. Reading it as
+      // "reps" made the first tap on Reps a no-op for a sets exercise.
+      const exNow = state.exercises.find((e) => e.id === state.modal.exId);
+      const from = state.modal.tmode !== undefined
+        ? state.modal.tmode
+        : ((exNow && exNow.targetMode === 'sets') ? 'sets' : 'reps');
       const to = btn.dataset.mode === 'sets' ? 'sets' : 'reps';
       if (from === to) break;
       // Park the number under the mode it belongs to and bring back whatever

@@ -4,6 +4,9 @@ import {
   getEffectiveTarget,
   calcTotal,
   calcDayStats,
+  recordProof,
+  retakesLeft,
+  proofRequiredOn,
   calcStreakInfo,
   calcWeeklyCompletion,
   addSet,
@@ -1609,5 +1612,49 @@ describe('sets as the target, not reps', () => {
     expect(targetUnit(setsEx)).toBe('sets');
     expect(targetUnit({ unit: 'reps' })).toBe('reps');
     expect(targetUnit({ unit: 'km' })).toBe('km');
+  });
+});
+
+describe('proof of workout', () => {
+  const ex = { id: 'e1', active: true, createdDate: '2026-08-01', schedule: 'daily',
+    targetHistory: [{ effectiveDate: '2026-08-01', target: 10 }] };
+  const done = { '2026-08-20': { e1: [10] } };
+
+  it('leaves days before the rule alone', () => {
+    const old = { '2026-08-05': { e1: [10] } };
+    const stats = calcDayStats([ex], old, '2026-08-05', {}, { log: {}, since: '2026-08-16' });
+    expect(stats.allComplete).toBe(true);
+  });
+
+  it('withholds completion once the rule applies and there is no photo', () => {
+    const stats = calcDayStats([ex], done, '2026-08-20', {}, { log: {}, since: '2026-08-16' });
+    expect(stats.allComplete).toBe(false);
+    expect(stats.completedCount).toBe(0);
+  });
+
+  it('completes once proof is recorded', () => {
+    const log = recordProof({}, '2026-08-20', 'e1', 1000);
+    const stats = calcDayStats([ex], done, '2026-08-20', {}, { log, since: '2026-08-16' });
+    expect(stats.allComplete).toBe(true);
+  });
+
+  it('never gates when no proof rule is passed at all', () => {
+    expect(calcDayStats([ex], done, '2026-08-20', {}).allComplete).toBe(true);
+  });
+
+  it('counts retakes and stops at three', () => {
+    let log = recordProof({}, '2026-08-20', 'e1', 1);
+    expect(retakesLeft(log, '2026-08-20', 'e1')).toBe(3);
+    for (let i = 0; i < 3; i++) log = recordProof(log, '2026-08-20', 'e1', i + 2);
+    expect(retakesLeft(log, '2026-08-20', 'e1')).toBe(0);
+    const frozen = recordProof(log, '2026-08-20', 'e1', 99);
+    expect(frozen).toBe(log);
+  });
+
+  it('keeps the day finished even when the picture is gone', () => {
+    // a new phone has the record but no images — history must survive
+    const log = recordProof({}, '2026-08-20', 'e1', 1000);
+    const stats = calcDayStats([ex], done, '2026-08-20', {}, { log, since: '2026-08-16' });
+    expect(stats.allComplete).toBe(true);
   });
 });

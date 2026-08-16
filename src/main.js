@@ -19,6 +19,11 @@ import {
   calcTotal,
   progressValue,
   targetUnit,
+  proofRequiredOn,
+  proofFor,
+  recordProof,
+  retakesLeft,
+  PROOF_MAX_RETAKES,
   calcDayStats,
   calcStreakInfo,
   calcWeeklyCompletion,
@@ -94,6 +99,11 @@ const state = {
   habitLog: {},
   noticesSeen: [],
   autoUpdated: false,
+  /** The record of what was photographed — small, and synced. */
+  proofLog: {},
+  /** The pictures themselves — local only, never in a Drive snapshot. */
+  proofImages: {},
+  autoUpdated2: false,
   deletedExercises: {},
   storageError: false,
   updateAvailable: false,
@@ -195,7 +205,7 @@ async function restoreNamespace() {
 }
 
 async function loadAll() {
-  const [exercises, setsLog, meta, timersLog, profile, streakOverrides, deletedExercises, habits, habitLog, noticesSeen] = await Promise.all([
+  const [exercises, setsLog, meta, timersLog, profile, streakOverrides, deletedExercises, habits, habitLog, noticesSeen, proofLog, proofImages] = await Promise.all([
     db.getItem('exercises'),
     db.getItem('sets-log'),
     db.getItem('app-meta'),
@@ -206,6 +216,8 @@ async function loadAll() {
     db.getItem('habits'),
     db.getItem('habit-log'),
     db.getItem('notices-seen'),
+    db.getItem('proof-log'),
+    db.getItem('proof-images'),
   ]);
 
   state.exercises = exercises || [];
@@ -218,6 +230,22 @@ async function loadAll() {
   // Absent reads as empty. Optional data must never be able to kill a screen.
   state.habits = habits || [];
   state.habitLog = habitLog || {};
+  state.proofLog = proofLog || {};
+  state.proofImages = proofImages || {};
+  // The rule starts the first time this build runs, so everything already
+  // finished stays finished. Written once and never moved.
+  if (!state.meta.proofSince) {
+    state.meta.proofSince = todayISO();
+    db.setItem('app-meta', state.meta).catch(() => {});
+  }
+  // Pictures are the artifact, not the record: two days is long enough to look
+  // back at one, and keeping them longer would fill the phone for nothing.
+  const proofCutoff = addDays(todayISO(), -2);
+  let prunedProof = false;
+  for (const d in state.proofImages) {
+    if (d < proofCutoff) { delete state.proofImages[d]; prunedProof = true; }
+  }
+  if (prunedProof) db.setItem('proof-images', state.proofImages).catch(() => {});
   // A genuinely fresh install starts with everything read: greeting a first-time
   // user with a backlog about features they have never not had is noise.
   //
@@ -333,6 +361,19 @@ async function persistStreakOverrides() {
     return false;
   }
 }
+async function persistProof() {
+  try {
+    await db.setItem('proof-log', state.proofLog);
+    // Images are saved beside the record but deliberately kept out of the sync
+    // snapshot — see the note on proofLog in domain.js.
+    await db.setItem('proof-images', state.proofImages);
+    markDirty();
+    return true;
+  } catch (e) {
+    state.storageError = true;
+    return false;
+  }
+}
 async function persistHabits() {
   try {
     await db.setItem('habits', state.habits);
@@ -368,6 +409,7 @@ function buildSyncSnapshot() {
     streakOverrides: state.streakOverrides,
     habits: state.habits,
     habitLog: state.habitLog,
+    proofLog: state.proofLog,
   };
 }
 
@@ -383,6 +425,7 @@ async function applyMergedSnapshot(merged) {
   state.streakOverrides = merged.streakOverrides || {};
   state.habits = merged.habits || [];
   state.habitLog = merged.habitLog || {};
+  state.proofLog = merged.proofLog || {};
   state.meta.updatedAt = merged.updatedAt || Date.now();
   await Promise.all([
     db.setItem('exercises', state.exercises),
@@ -393,6 +436,7 @@ async function applyMergedSnapshot(merged) {
     db.setItem('streak-overrides', state.streakOverrides),
     db.setItem('habits', state.habits),
     db.setItem('habit-log', state.habitLog),
+    db.setItem('proof-log', state.proofLog),
     db.setItem('app-meta', state.meta),
   ]);
   applyingRemote = false;
@@ -2310,6 +2354,76 @@ async function offerImage(blob, ex, suffix) {
   showToast('Image saved');
 }
 
+/**
+ * The proof, collaged onto a Sets card and saved to the phone.
+ *
+ * Deliberately NOT what the Share buttons send: sharing to a story stays the
+ * clean card, because the picture of you mid-set is for the crew and for your
+ * own roll, not for a public feed. This is the keepsake version — the shot with
+ * the day's numbers under it — and it downloads rather than opening the share
+ * sheet, so the two paths can never be confused.
+ */
+async function saveProofCollage(exId) {
+  const ex = state.exercises.find((e) => e.id === exId);
+  const today = todayISO();
+  const img = (state.proofImages[today] || {})[exId];
+  if (!ex || !img) { showToast('No proof saved for this one.'); return; }
+  showToast('Building…');
+  const bitmap = await new Promise((res, rej) => {
+    const i = new Image();
+    i.onload = () => res(i);
+    i.onerror = rej;
+    i.src = img;
+  }).catch(() => null);
+  if (!bitmap) { showToast("That photo couldn't be read."); return; }
+
+  const c = document.createElement('canvas');
+  c.width = SHARE_W; c.height = SHARE_H;
+  const g = c.getContext('2d');
+  paintShareBackdrop(g, '#0A0C0B', '#3EE07F');
+
+  // The photo sits in the upper two thirds, cropped to fill rather than
+  // squashed — a stretched proof shot looks like a mistake.
+  const box = { x: 60, y: 300, w: SHARE_W - 120, h: 1000 };
+  const scale = Math.max(box.w / bitmap.width, box.h / bitmap.height);
+  const dw = bitmap.width * scale, dh = bitmap.height * scale;
+  g.save();
+  g.beginPath(); g.rect(box.x, box.y, box.w, box.h); g.clip();
+  g.drawImage(bitmap, box.x + (box.w - dw) / 2, box.y + (box.h - dh) / 2, dw, dh);
+  g.restore();
+  g.strokeStyle = '#D8DEDA'; g.lineWidth = 4;
+  g.strokeRect(box.x, box.y, box.w, box.h);
+
+  const arr = getSetsFor(exId, today);
+  const target = getEffectiveTarget(ex, today);
+  const scored = progressValue(ex, arr);
+  g.fillStyle = '#3EE07F';
+  g.font = '700 34px "JetBrains Mono", monospace';
+  g.fillText('PROOF OF WORKOUT', box.x, 220);
+  g.fillStyle = '#EEF2EF';
+  g.font = '800 78px Manrope, system-ui, sans-serif';
+  g.fillText(ex.name, box.x, 1420);
+  g.fillStyle = '#9AA5A0';
+  g.font = '500 40px "JetBrains Mono", monospace';
+  g.fillText(target > 0 ? `${scored} of ${target} ${targetUnit(ex)}` : `${calcTotal(arr)} ${ex.unit}`, box.x, 1490);
+  g.fillText(formatDisplayDate(today, { weekday: 'long', day: 'numeric', month: 'long' }), box.x, 1550);
+  g.fillStyle = '#3EE07F';
+  g.font = '700 30px "JetBrains Mono", monospace';
+  g.fillText('Sets · sets-workout.vercel.app', box.x, 1640);
+
+  const blob = await new Promise((res) => c.toBlob(res, 'image/png'));
+  if (!blob) { showToast("Couldn't build the image."); return; }
+  // Straight to the camera roll: no share sheet, so this never reaches a story
+  // by accident.
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const slug = (v) => String(v || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  a.href = url; a.download = `sets-proof-${slug(ex.name)}-${today}.png`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  showToast('Saved to your phone');
+}
+
 /** Today's session, from the finished card it was tapped on. */
 async function shareSessionImage(exId) {
   const ex = state.exercises.find((e) => e.id === exId);
@@ -3031,9 +3145,16 @@ function viewToday() {
     // A session you deliberately ended is not work still owing. Today answers
     // "what's left"; it should not keep asking for reps you already declined.
     const endedEarly = timerPhase(getTimerPure(state.timersLog, today, ex.id)) === 'gaveup';
+    // Hit the number but not yet photographed: the work is done, the day is not.
+    const needsProof = proofRequiredOn(today, state.meta.proofSince)
+      && !proofFor(state.proofLog, today, ex.id);
+    const hitNumber = hasTarget ? scored >= target : total > 0;
     return {
+      needsProof: needsProof && hitNumber && !endedEarly && !isBreakDay(state.streakOverrides, today, ex.id),
+      hitNumber,
       ex, target, total, shown, timeMode, setsMode, scored, hasTarget, left, endedEarly,
-      done: endedEarly || isBreakDay(state.streakOverrides, today, ex.id) || (hasTarget ? scored >= target : total > 0),
+      done: endedEarly || isBreakDay(state.streakOverrides, today, ex.id)
+        || (hitNumber && !needsProof),
       rest: isBreakDay(state.streakOverrides, today, ex.id),
       pct: hasTarget ? Math.min(1, shown / target) : (shown > 0 ? 1 : 0),
       timer: t,
@@ -3041,10 +3162,18 @@ function viewToday() {
   };
 
   const rows = scheduled.map(read);
-  const todo = rows.filter((r) => !r.done);
   const done = rows.filter((r) => r.done);
 
   /* What is left to do, largest thing on the row. One tap starts it. */
+  const proofCard = (r) => `<div class="ex-card needs-proof">
+    <div class="ex-icon-badge">${exIconHtml(r.ex, 34)}</div>
+    <div class="ex-body">
+      <div class="ex-name">${escapeHtml(r.ex.name)}</div>
+      <div class="ex-sub">Done — one photo to finish it.</div>
+    </div>
+    <button class="primary-btn proof-btn" data-action="open-proof" data-id="${r.ex.id}">Add proof</button>
+  </div>`;
+
   const todoCard = (r) => {
     const running = r.timer && r.timer.status === 'running';
     return `<button class="today-card" data-action="open-logger" data-id="${r.ex.id}">
@@ -3085,6 +3214,15 @@ function viewToday() {
 
   let html = tipHtml('open-ex', 'Tap an exercise to log reps.');
 
+  // Anything waiting on a photo is lifted above the rest: it is the shortest
+  // path to finishing the day, and burying it under work you have not started
+  // would be the surest way to leave the day unfinished.
+  const awaiting = rows.filter((r) => r.needsProof);
+  if (awaiting.length) {
+    html += `<div class="section-label">Needs proof · ${awaiting.length}</div>`;
+    html += awaiting.map(proofCard).join('');
+  }
+  const todo = rows.filter((r) => !r.done && !r.needsProof);
   if (todo.length) {
     html += `<div class="section-label">To do${todo.length > 1 ? ` · ${todo.length}` : ''}</div>`;
     html += renderTodoList(todo, todoCard);
@@ -3957,6 +4095,7 @@ function renderModal() {
   else if (m.type === 'weighin') root.innerHTML = modalWeighIn();
   else if (m.type === 'logger') root.innerHTML = modalLogger(m.exId);
   else if (m.type === 'exerciseForm') root.innerHTML = modalExerciseForm(m.exId);
+  else if (m.type === 'proof') root.innerHTML = modalProof();
   else if (m.type === 'notices') root.innerHTML = modalNotices();
   else if (m.type === 'confirmDeleteHabit') root.innerHTML = modalConfirmDeleteHabit(m);
   else if (m.type === 'addChoice') root.innerHTML = modalAddChoice();
@@ -4141,6 +4280,51 @@ function modalConfirmDeleteHabit(m) {
         <button class="secondary-btn" data-action="close-modal">Cancel</button>
         <button class="primary-btn" style="background:var(--danger);color:#fff" data-action="delete-habit" data-id="${escapeHtml(m.habitId || '')}">Delete</button>
       </div>
+    </div>
+  </div>`;
+}
+
+/**
+ * The proof sheet. It explains itself the first time and never again — a rule
+ * nobody was told about reads as the app being broken, and a rule explained
+ * every single day reads as nagging.
+ */
+function modalProof() {
+  const m = state.modal || {};
+  const ex = state.exercises.find((e) => e.id === m.exId);
+  if (!ex) return '';
+  const today = todayISO();
+  const rec = proofFor(state.proofLog, today, ex.id);
+  const img = (state.proofImages[today] || {})[ex.id] || null;
+  const left = retakesLeft(state.proofLog, today, ex.id);
+  const explained = !!state.meta.proofExplained;
+
+  const shot = m.image || img;
+  return `<div class="modal-backdrop" data-action="backdrop">
+    <div class="modal-sheet" data-stop>
+      <div class="sheet-handle"></div>
+      <div class="sheet-head">
+        <h2>${rec ? 'Your proof' : 'Proof of workout'}</h2>
+        <button class="sheet-close" data-action="close-modal">${ICONS.close}</button>
+      </div>
+      ${!explained && !rec ? `<div class="proof-rule">
+        <b>New: finish it with a photo.</b>
+        <p>From now on an exercise counts as done once you have shown it. Take a picture, and your crew sees it for the day — that is the whole point of it.</p>
+        <p>You get ${PROOF_MAX_RETAKES} retakes if the shot is bad. Days you finished before today are untouched.</p>
+      </div>` : ''}
+      ${shot ? `<div class="proof-shot"><img src="${shot}" alt="Proof of ${escapeHtml(ex.name)}"></div>` : ''}
+      <div class="field">
+        <label>${escapeHtml(ex.name)}</label>
+        <div class="hint">${rec
+          ? (left > 0 ? `${left} retake${left === 1 ? '' : 's'} left.` : 'No retakes left — this one stands.')
+          : 'A photo of the work, or of you having done it. It stays on your phone; your crew sees it for the day.'}</div>
+      </div>
+      <input type="file" id="proof-file" accept="image/*" capture="environment" style="display:none">
+      ${(!rec || left > 0)
+        ? `<button class="primary-btn wide" data-action="pick-proof">${rec ? 'Retake' : 'Take the photo'}</button>`
+        : ''}
+      ${m.image ? `<button class="secondary-btn wide" data-action="save-proof" data-id="${ex.id}">Use this photo</button>` : ''}
+      ${rec && img ? `<button class="secondary-btn wide" data-action="save-proof-image" data-id="${ex.id}">Save to phone</button>` : ''}
     </div>
   </div>`;
 }
@@ -5227,6 +5411,22 @@ function bindModalEvents() {
       }
     };
   }
+  const proofFile = document.getElementById('proof-file');
+  if (proofFile) {
+    proofFile.onchange = async (e) => {
+      const file = e.target.files[0];
+      e.target.value = '';
+      if (!file) return;
+      try {
+        // Same 800px shrink stories use — a phone photo is a megabyte and a
+        // proof shot does not need to be.
+        state.modal.image = await fileToStoryDataUrl(file);
+        renderModal();
+      } catch (err) {
+        showToast("That photo couldn't be read.");
+      }
+    };
+  }
   const storyFile = document.getElementById('story-file');
   if (storyFile) {
     storyFile.onchange = async (e) => {
@@ -5287,7 +5487,36 @@ document.addEventListener('click', async (e) => {
       renderNav(); renderTopbar(); renderView(); renderBanner();
       break;
 
-    case 'open-notices':
+    case 'open-proof':
+      state.modal = { type: 'proof', exId: btn.dataset.id, image: null };
+      renderModal();
+      break;
+    case 'pick-proof': {
+      const el = document.getElementById('proof-file');
+      if (el) el.click();
+      break;
+    }
+    case 'save-proof': {
+      const exId = btn.dataset.id;
+      const today = todayISO();
+      const img = state.modal && state.modal.image;
+      if (!img) break;
+      const before = state.proofLog;
+      state.proofLog = recordProof(before, today, exId, Date.now());
+      if (state.proofLog === before) { showToast('No retakes left.'); break; }
+      state.proofImages = { ...state.proofImages, [today]: { ...(state.proofImages[today] || {}), [exId]: img } };
+      // Explained once, on the first one ever taken.
+      if (!state.meta.proofExplained) { state.meta.proofExplained = true; }
+      await persistProof();
+      await persistMeta();
+      closeModal();
+      rerender();
+      showToast('Proof saved — that one is finished.');
+      // The crew half is best effort by design: the day is already complete
+      // locally, so a train tunnel cannot un-finish a workout you did.
+      postProofToCrew(exId, img).catch(() => {});
+      break;
+    }
       state.modal = { type: 'notices' };
       // Opening is reading. The badge clears now rather than on close, so
       // dismissing the sheet cannot leave a count for something already seen.
@@ -6182,6 +6411,27 @@ async function forceUpdate() {
     // best effort — reload regardless
   }
   location.reload();
+}
+
+/**
+ * Proof reaches the crew as a story: an image with a caption that expires in a
+ * day and records who looked. That is precisely what was asked for, and it
+ * needs no new endpoint, no new table and no Worker deploy — the one part of
+ * this app that cannot be shipped without Johnny at a Cloudflare dashboard.
+ *
+ * Failure is silent on purpose. The workout is already finished locally; a
+ * crew that is offline, or a crew you are not in, must never be able to take
+ * that away.
+ */
+async function postProofToCrew(exId, image) {
+  const crew = activeCrew();
+  if (!crew || !hasSyncAccount() || !isOnline()) return;
+  const ex = state.exercises.find((e) => e.id === exId);
+  try {
+    await crewApi.postStory(crew.id, image, ex ? ex.name : 'Workout');
+  } catch (e) {
+    // best effort, by design
+  }
 }
 
 /* ============================= PWA UPDATE PROMPT ============================= */

@@ -2310,3 +2310,20 @@
   .cat-row.done .cat-row-num{color:var(--accent);}
   .cat-row-tick{display:flex; color:var(--accent);}
   .cat-row-tick svg{width:16px; height:16px;}
+
+  /* ---------- proof of workout ---------- */
+  .ex-card.needs-proof{border-color:var(--accent);}
+  .ex-card.needs-proof .ex-sub{color:var(--accent); font-size:12.5px;}
+  .proof-btn{white-space:nowrap; padding:10px 14px; font-size:13px; min-height:44px;}
+  .proof-rule{
+    border:1px solid var(--accent); background:rgba(62,224,127,0.07);
+    padding:14px; margin-bottom:14px;
+  }
+  .proof-rule b{display:block; color:var(--accent); margin-bottom:6px; font-size:14.5px;}
+  .proof-rule p{margin:0 0 8px; font-size:13px; line-height:1.55; color:var(--text-dim);}
+  .proof-rule p:last-child{margin-bottom:0;}
+  .proof-shot{
+    border:2px solid var(--ink); margin-bottom:14px; background:var(--bg);
+    max-height:46vh; overflow:hidden; display:flex;
+  }
+  .proof-shot img{width:100%; height:auto; object-fit:contain; display:block;}

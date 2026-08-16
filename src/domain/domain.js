@@ -222,7 +222,54 @@ export function targetMet(exercise, arr, target) {
   return !!(target > 0) && progressValue(exercise, arr) >= target;
 }
 
-export function calcDayStats(exercises, setsLog, dateStr, overrides) {
+/* ============================ PROOF OF WORKOUT ============================
+ * A finished exercise is only accomplished once there is a picture of it.
+ *
+ * Two stores, deliberately. `proofLog` is the RECORD — a timestamp and a retake
+ * count per exercise per day — and it syncs, because it is what decides whether
+ * a day counted. The picture itself lives only on the phone and never enters a
+ * Drive snapshot: a photo per exercise per day would turn a small backup into
+ * an enormous one within a month.
+ *
+ * That split is what keeps history safe. If completion checked for the picture,
+ * then signing in on a new phone — where no picture exists — would retroactively
+ * un-finish every day you ever did and take the streak with it. The record
+ * survives; the image is allowed not to.
+ */
+
+/** Proof is only asked of days from the moment the rule arrived. Everything
+ *  logged before that was finished under the old rule and stays finished. */
+export function proofRequiredOn(dateStr, since) {
+  return !!since && dateStr >= since;
+}
+
+export function proofFor(proofLog, dateStr, exId) {
+  const day = proofLog && proofLog[dateStr];
+  return (day && day[exId]) || null;
+}
+
+export const PROOF_MAX_RETAKES = 3;
+
+/** Retakes left, floored at zero. The first shot is not a retake. */
+export function retakesLeft(proofLog, dateStr, exId) {
+  const rec = proofFor(proofLog, dateStr, exId);
+  const used = (rec && rec.retakes) || 0;
+  return Math.max(0, PROOF_MAX_RETAKES - used);
+}
+
+/** Pure: records proof, counting a retake only when one already existed. */
+export function recordProof(proofLog, dateStr, exId, nowMs) {
+  const log = proofLog || {};
+  const prev = proofFor(log, dateStr, exId);
+  if (prev && retakesLeft(log, dateStr, exId) <= 0) return log;
+  const next = { ...log };
+  const day = { ...(next[dateStr] || {}) };
+  day[exId] = { at: nowMs, retakes: prev ? (prev.retakes || 0) + 1 : 0 };
+  next[dateStr] = day;
+  return next;
+}
+
+export function calcDayStats(exercises, setsLog, dateStr, overrides, proof) {
   let targetedCount = 0;
   let completedCount = 0;
   const details = [];
@@ -253,6 +300,12 @@ export function calcDayStats(exercises, setsLog, dateStr, overrides) {
       // completedCount stays truthful — it reports what was actually logged, so
       // "3/5" never lies. Only `effective` (what the streak sees) is overridden.
       complete = hasTarget ? scored >= target : false;
+      // Hitting the number is no longer the end of it: from the day the rule
+      // arrived, an exercise is finished when the work is done AND photographed.
+      if (complete && proof && proofRequiredOn(dateStr, proof.since)
+          && !proofFor(proof.log, dateStr, ex.id)) {
+        complete = false;
+      }
       if (complete) completedCount++;
     }
     const effective = ov != null ? (exBreak ? true : !!ov) : complete;
@@ -1040,7 +1093,10 @@ export function deepEqual(a, b) {
 // key is what actually bins those entries: the merge was a union by id, so
 // clearing them locally would have let the next Drive sync hand them straight
 // back. Old snapshots still carry the field; nothing reads it.
-export const SNAPSHOT_DATA_KEYS = ['exercises', 'deletedExercises', 'setsLog', 'timersLog', 'profile', 'streakOverrides', 'habits', 'habitLog'];
+// proofLog is here; proofImages deliberately is NOT. The record of what was
+// photographed is a few bytes a day and must survive a new phone; the pictures
+// would add megabytes to every backup for something already 48 hours stale.
+export const SNAPSHOT_DATA_KEYS = ['exercises', 'deletedExercises', 'setsLog', 'timersLog', 'profile', 'streakOverrides', 'habits', 'habitLog', 'proofLog'];
 export function sameSnapshotData(a, b) {
   if (!a || !b) return false;
   return SNAPSHOT_DATA_KEYS.every((k) => deepEqual(a[k] ?? null, b[k] ?? null));
@@ -1070,6 +1126,7 @@ export function mergeSyncSnapshots(local, remote) {
     // union by id is the whole story.
     habits: mergeExerciseLists(winner.habits, loser.habits),
     habitLog: mergeHabitLogs(winner.habitLog, loser.habitLog),
+    proofLog: mergeByDayKey(winner.proofLog, loser.proofLog),
   };
 }
 

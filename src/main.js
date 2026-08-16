@@ -2398,7 +2398,7 @@ async function saveProofCollage(exId) {
   let cardBlob = null;
   try {
     cardBlob = await buildSessionImage(ex, {
-      total, target,
+      total: progressValue(ex, arr), target,
       timeMode: isTimeMode(ex),
       sets: arr.length,
       streak: st.currentStreak,
@@ -2474,12 +2474,12 @@ async function shareSessionImage(exId) {
   let blob;
   try {
     blob = await buildSessionImage(ex, {
-      total, target,
+      total: progressValue(ex, arr), target,
       timeMode: isTimeMode(ex),
       sets: arr.length,
       streak: s.currentStreak,
       elapsed: formatDuration(timerElapsedMs(timer, Date.now())),
-      pct: target > 0 ? Math.min(1, total / target) : 1,
+      pct: target > 0 ? Math.min(1, progressValue(ex, arr) / target) : 1,
       short,
       dateLabel: formatDisplayDate(d, { weekday: 'short', day: 'numeric', month: 'short' }),
       headline: short ? 'Ended early — it still counts'

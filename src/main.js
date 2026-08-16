@@ -3173,7 +3173,7 @@ function viewToday() {
       <div class="ex-sub">Done — one photo to finish it.</div>
     </div>
     <div class="proof-actions">
-      <button class="secondary-btn proof-btn" data-action="open-logger" data-id="${r.ex.id}">Keep going</button>
+      <button class="secondary-btn proof-btn" data-action="keep-going" data-id="${r.ex.id}">Keep going</button>
       <button class="primary-btn proof-btn" data-action="open-proof" data-id="${r.ex.id}">Add proof</button>
     </div>
   </div>`;

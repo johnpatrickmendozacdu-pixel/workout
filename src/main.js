@@ -1227,6 +1227,7 @@ const ICONS = {
   close: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`,
   plus: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>`,
   bell: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 8-3 8h18s-3-1-3-8M13.7 21a2 2 0 0 1-3.4 0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  camera: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M4 8h3.2l1.4-2h6.8l1.4 2H20v11H4z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="miter"/><circle cx="12" cy="13" r="3.3" stroke="currentColor" stroke-width="1.8"/></svg>`,
   chevron: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
   trash: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M4 7h16M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m-9 0l1 12a1 1 0 001 1h6a1 1 0 001-1l1-12" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
   up: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M6 15l6-6 6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
@@ -3217,6 +3218,7 @@ function viewToday() {
         <span class="done-name">${escapeHtml(r.ex.name)}</span>
         <span class="done-num">${r.rest ? 'Rest' : (r.setsMode ? `${r.scored} set${r.scored === 1 ? '' : 's'} · ${r.total} ${escapeHtml(r.ex.unit)}` : (short ? `${r.scored} of ${r.target}` : `${r.total} ${escapeHtml(r.ex.unit)}`))}${r.timer && r.timer.finishedAt ? `<i class="done-at">${escapeHtml(formatClock(r.timer.finishedAt))}</i>` : ''}</span>
       </button>
+      ${proofFor(state.proofLog, today, r.ex.id) ? `<button class="done-share" data-action="open-proof" data-id="${r.ex.id}" aria-label="View proof for ${escapeHtml(r.ex.name)}">${ICONS.camera}</button>` : ''}
       ${r.rest ? '' : `<button class="done-share" data-action="share-session" data-id="${r.ex.id}" aria-label="Share ${escapeHtml(r.ex.name)}">${ICONS.share}</button>`}
     </div>`;
   };

@@ -2189,7 +2189,13 @@
      Every duration is different and none is a multiple of another, so the whole
      row never returns to the same arrangement twice. */
   .fire-band{ background:none; }
+  /* Three textures dealt across the seven clusters. One tile repeated is found
+     out by the eye however the phases are staggered — fire2 is a dense wall,
+     fire1 a fat turbulent body, fire3 a thin wispy lick, and mixing them is
+     what stops the row reading as one animation seven times. */
   .fire-band i{ background-image:url('/fire-band.webp'); }
+  .fire-band.t-body i{ background-image:url('/fire-body.webp'); }
+  .fire-band.t-wisp i{ background-image:url('/fire-column.webp'); }
 
   /* Anchored by their BASE, not their top. Every cluster stands on the same
      floor line and climbs its own height from it, which is how fire behaves and
@@ -2428,18 +2434,22 @@
      state and their border carries trained-today, and a third meaning on the
      same circle is one too many. */
   .avatar-chip.has-photo, .profile-avatar-big.has-photo{ position:relative; }
+
+  /* A plain stretched background, NOT border-image.
+     border-image was the elegant answer and it did not paint on the phone,
+     while working perfectly in the dev browser — a difference I cannot test
+     from here, which makes it the wrong tool however neat it is. Both of these
+     boxes are square, so the nine-slice is done once in tools/fire-sheets.py
+     instead: corners at native scale, edges stretched, baked into a square
+     picture. What ships is background-size:100% 100% on a square box, which
+     has no compatibility question left in it. */
   .avatar-chip.has-photo::before, .profile-avatar-big.has-photo::before{
     content:""; position:absolute; inset:0; pointer-events:none; z-index:2;
-    border-style:solid; border-color:transparent;
-    border-image:url('/fire-frame.webp') 37 36 fill / 1 / 0 stretch;
-    /* A still frame beside a burning room looks dead, so it breathes. Two
-       periods that do not divide each other, as everywhere else here. */
+    background:url('/fire-frame.webp') 0 0 / 100% 100% no-repeat;
+    /* A still frame beside a burning room looks dead, so it breathes. */
     animation:frame-breathe 3.4s ease-in-out infinite;
   }
   @keyframes frame-breathe{ 0%,100%{opacity:0.82;} 50%{opacity:1;} }
-
-  .avatar-chip.has-photo::before{ border-width:7px; }
-  .profile-avatar-big.has-photo::before{ border-width:14px; }
 
   /* The green rings this replaces — two frames on one photo is one too many. */
   .avatar-chip.has-photo{ border:0; box-shadow:none; }
@@ -2448,9 +2458,8 @@
   html.idle .avatar-chip.has-photo::before,
   html.idle .profile-avatar-big.has-photo::before{ animation-play-state:paused; }
   @media (prefers-reduced-motion: reduce){
-    .avatar-chip.has-photo::before, .profile-avatar-big.has-photo::before{
-      animation:none !important; opacity:0.92;
-    }
+    .avatar-chip.has-photo::before{ animation:none; opacity:0.92; }
+    .profile-avatar-big.has-photo::before{ animation:none; opacity:0.92; }
   }
 
   /* ---------- stencil in the nav ----------

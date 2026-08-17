@@ -2501,8 +2501,13 @@ async function offerImage(blob, ex, suffix, mime = 'image/png') {
  * cannot: a recorder yielding zero bytes, a stream that never started, and a
  * duration coming back Infinity, which is a real and common Chromium bug and
  * which Instagram rejects anyway.
+ *
+ * minSec is why this is not just "duration > 0". A stalled draw loop yields a
+ * perfectly valid MP4 holding ONE frame — right container, right dimensions,
+ * 0.03 seconds long. That passed the first version of this check, which is
+ * precisely the artifact it exists to reject.
  */
-function playableVideoBlob(blob) {
+function playableVideoBlob(blob, minSec) {
   return new Promise((resolve) => {
     if (!blob || blob.size < 1024) { resolve(false); return; }
     const url = URL.createObjectURL(blob);
@@ -2516,7 +2521,7 @@ function playableVideoBlob(blob) {
       URL.revokeObjectURL(url);
       resolve(ok);
     };
-    v.onloadedmetadata = () => done(Number.isFinite(v.duration) && v.duration > 0);
+    v.onloadedmetadata = () => done(Number.isFinite(v.duration) && v.duration >= (minSec || 0.5));
     v.onerror = () => done(false);
     setTimeout(() => done(false), 5000);
     v.src = url;
@@ -2645,19 +2650,26 @@ async function buildProofVideoCollage(exId) {
     const vw = vid.videoWidth * sc, vh = vid.videoHeight * sc;
     const vx = (SHARE_W - vw) / 2, vy = (SHARE_H - vh) / 2;
 
-    let raf = 0;
+    // A timer, NOT requestAnimationFrame. rAF stops dead the moment the page
+    // is not visible — and the share sheet opening over the app, a glance at a
+    // notification, or the screen dimming all do that mid-build. The recording
+    // then holds a single frame: a valid MP4, right size, 0.03 seconds long.
+    // A timer keeps firing while hidden (throttled, so choppier), which is a
+    // worse video and not a broken one.
+    let ticker = 0;
     const draw = () => {
       g.drawImage(vid, vx, vy, vw, vh);
       g.drawImage(card, 0, 0);
-      raf = requestAnimationFrame(draw);
     };
 
     rec.start();
     await vid.play();
     draw();
-    stopEarly = () => { cancelAnimationFrame(raf); try { rec.stop(); } catch (e) { /* already stopped */ } };
+    ticker = setInterval(draw, 1000 / 30);
+    stopEarly = () => { clearInterval(ticker); try { rec.stop(); } catch (e) { /* already stopped */ } };
+    const wantMs = Math.min(COLLAGE_MAX_MS, vid.duration * 1000);
     await new Promise((res) => {
-      const t = setTimeout(res, Math.min(COLLAGE_MAX_MS, vid.duration * 1000));
+      const t = setTimeout(res, wantMs);
       vid.onended = () => { clearTimeout(t); res(); };
     });
     stopEarly();
@@ -2665,7 +2677,9 @@ async function buildProofVideoCollage(exId) {
     await finished;
 
     const blob = new Blob(chunks, { type: rec.mimeType || mime || 'video/mp4' });
-    if (!await playableVideoBlob(blob)) return null;
+    // Half of what was asked for, floored at half a second: enough slack for a
+    // throttled tab, tight enough that a one-frame file can never pass.
+    if (!await playableVideoBlob(blob, Math.max(0.5, (wantMs / 1000) * 0.5))) return null;
     return { blob, mime: blob.type };
   } catch (e) {
     return null;

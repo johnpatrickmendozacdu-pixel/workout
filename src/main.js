@@ -2574,7 +2574,15 @@ async function buildProofCollage(exId) {
   }
 }
 
-const COLLAGE_MAX_MS = 8000;
+// The clip runs to its end. Compositing is real time, so a minute-long proof
+// costs a minute of waiting — measured, the recorder writes roughly wall-clock
+// duration whatever frame rate the canvas manages, and the same at 720p as at
+// 1080p, so there is nothing to buy by shrinking it. The wait is the price of
+// keeping the whole clip, which is what was asked for.
+// Read at call time, not here: PROOF_VIDEO_MAX_SEC is declared further down
+// the file, and a const initialiser that reaches forward throws on load —
+// taking the whole app with it, silently past both the tests and the build.
+const collageSafetyMs = () => (PROOF_VIDEO_MAX_SEC + 5) * 1000;
 // MP4 first, because it is the only container every story sheet accepts. This
 // picks a preference order; it never gates the button. The verdict is
 // playableVideoBlob, on the file that comes out.
@@ -2588,11 +2596,8 @@ const RECORDER_TYPES = [
 /**
  * The same card, with the clip as its moving ground.
  *
- * Eight seconds, because compositing runs in real time — there is no
- * fast-forward without an encoder this app refuses to carry — so the clip's
- * length is the user's wait. Eight seconds with a toast is a wait; fifteen is
- * a hang. The raw-video button is instant and carries the whole clip, so
- * nothing is lost by capping this one.
+ * The whole clip, end to end. It used to stop at eight seconds, which quietly
+ * threw away most of a longer proof.
  *
  * Silent by design. A gym clip's audio is noise, and muxing a second track
  * doubles the failure surface for something nobody asked for.
@@ -2677,9 +2682,16 @@ async function buildProofVideoCollage(exId) {
     draw();
     ticker = setInterval(draw, 1000 / 30);
     stopEarly = () => { clearInterval(ticker); try { rec.stop(); } catch (e) { /* already stopped */ } };
-    const wantMs = Math.min(COLLAGE_MAX_MS, vid.duration * 1000);
+    // The clip ending is what stops it. The timeout is only a backstop for a
+    // duration that never arrives or a playback that stalls — never the thing
+    // that decides the length, which is how the eight-second cap used to cut a
+    // long proof short.
+    const safetyMs = collageSafetyMs();
+    const wantMs = Number.isFinite(vid.duration) && vid.duration > 0
+      ? vid.duration * 1000
+      : safetyMs;
     await new Promise((res) => {
-      const t = setTimeout(res, wantMs);
+      const t = setTimeout(res, Math.min(wantMs + 1500, safetyMs));
       vid.onended = () => { clearTimeout(t); res(); };
     });
     stopEarly();
@@ -2713,7 +2725,7 @@ async function buildProofVideoCollage(exId) {
 async function buildCollageFor(exId) {
   const d = todayISO();
   if (hasProofVideo(d, exId)) {
-    showToast('Building your video… about 8 seconds.');
+    showToast('Building your video — it runs the whole clip through, so give it about as long as the clip.');
     const made = await buildProofVideoCollage(exId);
     if (made) return made;
     showToast("Your phone couldn't make the video card — here is the photo one.");
@@ -4711,7 +4723,7 @@ function modalShareReady() {
         <button class="sheet-close" data-action="close-modal">${ICONS.close}</button>
       </div>
       ${m.building
-        ? `<div class="field"><div class="hint">Drawing your card over the clip — about eight seconds. Keep this open.</div></div>`
+        ? `<div class="field"><div class="hint">Drawing your card over the clip, start to finish. It takes about as long as the clip itself — keep this open.</div></div>`
         : m.built
           ? `<div class="field"><div class="hint">${escapeHtml(ex.name)}, story-sized with your clip behind the numbers.</div></div>
              <button class="primary-btn wide" data-action="share-built">Share it</button>`

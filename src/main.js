@@ -4785,7 +4785,7 @@ function modalProof() {
       ${(!rec || left > 0) ? `
         <button class="primary-btn wide" data-action="pick-proof">${rec ? 'Retake' : 'Take a photo or video'}</button>
         <button class="secondary-btn wide" data-action="pick-proof-lib">Upload a photo or video</button>
-        <div class="hint">A clip can be up to ${PROOF_VIDEO_MAX_SEC} seconds.</div>` : ''}
+        <div class="hint">A clip can be up to ${PROOF_VIDEO_MAX_SEC} seconds, at whatever quality your camera shoots.</div>` : ''}
       ${m.image ? `<button class="secondary-btn wide" data-action="save-proof" data-id="${ex.id}">Use this ${m.video ? 'video' : 'photo'}</button>` : ''}
       ${rec && img ? `<button class="secondary-btn wide" data-action="save-proof-image" data-id="${ex.id}">Save to my photos</button>` : ''}
       ${rec ? `<div class="hint">${rec.posted
@@ -5865,17 +5865,39 @@ function fileToStoryDataUrl(file) {
   });
 }
 
-const PROOF_VIDEO_MAX_SEC = 15;
-const PROOF_VIDEO_MAX_BYTES = 60 * 1024 * 1024;
+const PROOF_VIDEO_MAX_SEC = 60;
+
+/**
+ * Will this clip fit, really?
+ *
+ * There used to be a 60MB constant here and it was invented — a number with
+ * nothing behind it, which refused perfectly storable 4K clips. Measured on a
+ * phone-sized quota: a 398MB blob writes in 2ms, because IndexedDB keeps a
+ * blob by reference on disk rather than copying it into the database.
+ *
+ * So the real limit is the origin's quota, and the browser will tell us what
+ * that is. Ask it, leaving a tenth of the quota clear so that storing a clip
+ * can never be what stops a workout being logged. Where the estimate is not
+ * available, allow it and let the write itself be the judge — a refusal
+ * invented up front is worse than a failure reported honestly.
+ */
+async function videoFits(bytes) {
+  try {
+    if (!navigator.storage || !navigator.storage.estimate) return true;
+    const { quota, usage } = await navigator.storage.estimate();
+    if (!quota) return true;
+    return (usage || 0) + bytes < quota * 0.9;
+  } catch (e) { return true; }
+}
 
 /**
  * A clip, checked and given a still frame, or a refusal saying which rule it
  * broke.
  *
- * The size cap is not tidiness. The clip is stored as it arrived — trimming or
- * shrinking it would mean re-encoding, which means a multi-megabyte encoder
- * this app does not carry — so the cap is the only thing between a phone
- * shooting 4K and an IndexedDB store nobody can clear.
+ * The clip is stored exactly as it arrived, full quality and full length —
+ * trimming or shrinking it would mean re-encoding, which means a
+ * multi-megabyte encoder this app does not carry. Nothing is capped but the
+ * duration and what the phone can actually hold; see videoFits.
  *
  * The poster frame at 0.5s is what makes everything else work untouched: the
  * Done row, the crew story and the still collage all read proofImages and
@@ -5884,7 +5906,6 @@ const PROOF_VIDEO_MAX_BYTES = 60 * 1024 * 1024;
 function readVideoFile(file) {
   return new Promise((resolve, reject) => {
     if (!file.type || !file.type.startsWith('video/')) { reject(new Error('not-a-video')); return; }
-    if (file.size > PROOF_VIDEO_MAX_BYTES) { reject(new Error('too-big')); return; }
     const url = URL.createObjectURL(file);
     const v = document.createElement('video');
     v.muted = true;
@@ -5991,6 +6012,7 @@ function bindModalEvents() {
   const takeVideo = async (file) => {
     showToast('Reading the clip…');
     try {
+      if (!await videoFits(file.size)) throw new Error('no-room');
       const got = await readVideoFile(file);
       if (state.modal.videoUrl) URL.revokeObjectURL(state.modal.videoUrl);
       state.modal.video = got;
@@ -6001,7 +6023,7 @@ function bindModalEvents() {
       const why = err && err.message;
       showToast(
         why === 'too-long' ? `That clip is over ${PROOF_VIDEO_MAX_SEC} seconds — try a shorter one.`
-        : why === 'too-big' ? 'That clip is too large — try a shorter one, or a lower camera quality.'
+        : why === 'no-room' ? "Your phone is out of space for a clip this size."
         : "That video couldn't be read."
       );
     }
@@ -6148,15 +6170,30 @@ document.addEventListener('click', async (e) => {
       const today = todayISO();
       const img = state.modal && state.modal.image;
       if (!img) break;
+      // Retakes are checked before anything is written and the clip is stored
+      // before the record is made, so a write that fails cannot cost a retake
+      // or leave a proof whose clip never arrived.
+      const prev = proofFor(state.proofLog, today, exId);
+      if (prev && retakesLeft(state.proofLog, today, exId) <= 0) { showToast('No retakes left.'); break; }
+      // A clip is stored beside its poster, never instead of it. Everything
+      // else in the app reads the poster and needs no knowledge of video.
+      const clip = state.modal && state.modal.video;
+      if (clip) {
+        try {
+          await saveProofVideo(today, exId, clip.blob);
+        } catch (err) {
+          // QuotaExceededError, almost always. videoFits asked before the clip
+          // was ever shown, but an estimate is a snapshot and the write is the
+          // truth.
+          showToast("Your phone is out of space for that clip — nothing was saved.");
+          break;
+        }
+      }
       const before = state.proofLog;
       state.proofLog = recordProof(before, today, exId, Date.now());
       if (state.proofLog === before) { showToast('No retakes left.'); break; }
       state.proofImages = { ...state.proofImages, [today]: { ...(state.proofImages[today] || {}), [exId]: img } };
-      // A clip is stored beside its poster, never instead of it. Everything
-      // else in the app reads the poster and needs no knowledge of video.
-      const clip = state.modal && state.modal.video;
-      if (clip) await saveProofVideo(today, exId, clip.blob);
-      else if (hasProofVideo(today, exId)) {
+      if (!clip && hasProofVideo(today, exId)) {
         // A retake with a photo replaces a clip: leaving the old one would
         // mean the sheet plays a video the record no longer describes.
         await db.removeItem(videoKey(today, exId)).catch(() => {});

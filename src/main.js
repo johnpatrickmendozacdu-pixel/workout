@@ -4244,7 +4244,11 @@ function modalConfirmBreak() {
   </div>`;
 }
 
-function closeModal() { state.modal = null; renderModal(); }
+function closeModal() {
+  if (state.modal && state.modal.videoUrl) URL.revokeObjectURL(state.modal.videoUrl);
+  state.modal = null;
+  renderModal();
+}
 let lastModalKey = null;
 function renderModal() {
   const root = document.getElementById('modal-root');
@@ -4483,6 +4487,9 @@ function modalProof() {
   const explained = !!state.meta.proofExplained;
 
   const shot = m.image || img;
+  // An object URL for the sheet only. Revoked when the sheet closes, in
+  // closeModal — a URL held past its element is the classic leak here.
+  const clip = m.videoUrl || null;
   return `<div class="modal-backdrop" data-action="backdrop">
     <div class="modal-sheet" data-stop>
       <div class="sheet-handle"></div>
@@ -4495,7 +4502,10 @@ function modalProof() {
         <p>From now on an exercise counts as done once you have shown it. Take a picture, and your crew sees it for the day — that is the whole point of it.</p>
         <p>You get ${PROOF_MAX_RETAKES} retakes if the shot is bad. Days you finished before today are untouched.</p>
       </div>` : ''}
-      ${shot ? `<div class="proof-shot"><img src="${shot}" alt="Proof of ${escapeHtml(ex.name)}">
+      ${shot ? `<div class="proof-shot">
+        ${clip
+          ? `<video src="${clip}" poster="${shot}" controls playsinline muted loop preload="metadata"></video>`
+          : `<img src="${shot}" alt="Proof of ${escapeHtml(ex.name)}">`}
         <p class="story-caption">${escapeHtml(ex.name)}</p>
       </div>` : ''}
       <div class="field">
@@ -4506,9 +4516,14 @@ function modalProof() {
       </div>
       <input type="file" id="proof-file" accept="image/*" capture="environment" style="display:none">
       <input type="file" id="proof-file-lib" accept="image/*" style="display:none">
+      <input type="file" id="proof-video" accept="video/*" capture="environment" style="display:none">
+      <input type="file" id="proof-video-lib" accept="video/*" style="display:none">
       ${(!rec || left > 0) ? `
         <button class="primary-btn wide" data-action="pick-proof">${rec ? 'Retake' : 'Take the photo'}</button>
-        <button class="secondary-btn wide" data-action="pick-proof-lib">Upload a photo</button>` : ''}
+        <button class="secondary-btn wide" data-action="pick-proof-lib">Upload a photo</button>
+        <button class="secondary-btn wide" data-action="pick-video">${rec ? 'Record again' : 'Record a video'}</button>
+        <button class="secondary-btn wide" data-action="pick-video-lib">Upload a video</button>
+        <div class="hint">A clip can be up to ${PROOF_VIDEO_MAX_SEC} seconds.</div>` : ''}
       ${m.image ? `<button class="secondary-btn wide" data-action="save-proof" data-id="${ex.id}">Use this photo</button>` : ''}
       ${rec && img ? `<button class="secondary-btn wide" data-action="save-proof-image" data-id="${ex.id}">Save to my photos</button>` : ''}
       ${rec && img ? `<button class="secondary-btn wide" data-action="share-proof-collage" data-id="${ex.id}">Share it</button>` : ''}
@@ -5588,6 +5603,57 @@ function fileToStoryDataUrl(file) {
   });
 }
 
+const PROOF_VIDEO_MAX_SEC = 15;
+const PROOF_VIDEO_MAX_BYTES = 60 * 1024 * 1024;
+
+/**
+ * A clip, checked and given a still frame, or a refusal saying which rule it
+ * broke.
+ *
+ * The size cap is not tidiness. The clip is stored as it arrived — trimming or
+ * shrinking it would mean re-encoding, which means a multi-megabyte encoder
+ * this app does not carry — so the cap is the only thing between a phone
+ * shooting 4K and an IndexedDB store nobody can clear.
+ *
+ * The poster frame at 0.5s is what makes everything else work untouched: the
+ * Done row, the crew story and the still collage all read proofImages and
+ * neither know nor care that the proof moves.
+ */
+function readVideoFile(file) {
+  return new Promise((resolve, reject) => {
+    if (!file.type || !file.type.startsWith('video/')) { reject(new Error('not-a-video')); return; }
+    if (file.size > PROOF_VIDEO_MAX_BYTES) { reject(new Error('too-big')); return; }
+    const url = URL.createObjectURL(file);
+    const v = document.createElement('video');
+    v.muted = true;
+    v.playsInline = true;
+    v.setAttribute('playsinline', '');
+    v.preload = 'metadata';
+    const fail = (why) => { URL.revokeObjectURL(url); reject(new Error(why)); };
+    v.onerror = () => fail('decode-failed');
+    v.onloadedmetadata = () => {
+      if (!Number.isFinite(v.duration) || v.duration <= 0) { fail('decode-failed'); return; }
+      if (v.duration > PROOF_VIDEO_MAX_SEC + 0.5) { fail('too-long'); return; }
+      // Half a second in: frame zero of a phone clip is very often the lens
+      // still opening up.
+      v.onseeked = () => {
+        try {
+          const side = Math.min(1, 800 / Math.max(v.videoWidth, v.videoHeight));
+          const c = document.createElement('canvas');
+          c.width = Math.round(v.videoWidth * side);
+          c.height = Math.round(v.videoHeight * side);
+          c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+          const poster = c.toDataURL('image/jpeg', 0.68);
+          URL.revokeObjectURL(url);
+          resolve({ blob: file, poster });
+        } catch (e) { fail('decode-failed'); }
+      };
+      v.currentTime = Math.min(0.5, v.duration / 2);
+    };
+    v.src = url;
+  });
+}
+
 async function setAvatarHandler(file) {
   try {
     const dataUrl = await fileToAvatarDataUrl(file);
@@ -5653,6 +5719,31 @@ function bindModalEvents() {
   if (proofFile) proofFile.onchange = onProofPicked;
   const proofLib = document.getElementById('proof-file-lib');
   if (proofLib) proofLib.onchange = onProofPicked;
+  const onVideoPicked = async (e) => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    showToast('Reading the clip…');
+    try {
+      const got = await readVideoFile(file);
+      if (state.modal.videoUrl) URL.revokeObjectURL(state.modal.videoUrl);
+      state.modal.video = got;
+      state.modal.videoUrl = URL.createObjectURL(got.blob);
+      state.modal.image = got.poster;
+      renderModal();
+    } catch (err) {
+      const why = err && err.message;
+      showToast(
+        why === 'too-long' ? `That clip is over ${PROOF_VIDEO_MAX_SEC} seconds — try a shorter one.`
+        : why === 'too-big' ? 'That clip is too large — try a shorter one, or a lower camera quality.'
+        : "That video couldn't be read."
+      );
+    }
+  };
+  const proofVideo = document.getElementById('proof-video');
+  if (proofVideo) proofVideo.onchange = onVideoPicked;
+  const proofVideoLib = document.getElementById('proof-video-lib');
+  if (proofVideoLib) proofVideoLib.onchange = onVideoPicked;
   const storyFile = document.getElementById('story-file');
   if (storyFile) {
     storyFile.onchange = async (e) => {
@@ -5721,10 +5812,21 @@ document.addEventListener('click', async (e) => {
       if (idx >= 0) await openStoryAt(m.id, idx);
       break;
     }
-    case 'open-proof':
-      state.modal = { type: 'proof', exId: btn.dataset.id, image: null };
+    case 'open-proof': {
+      const exId2 = btn.dataset.id;
+      state.modal = { type: 'proof', exId: exId2, image: null };
       renderModal();
+      const d = todayISO();
+      const existing = await loadProofVideo(d, exId2);
+      // The sheet may have been closed, or reopened on a different exercise,
+      // while the read was in flight — attaching the URL to the wrong modal
+      // (or a gone one) would leak it, since only closeModal revokes.
+      if (existing && state.modal && state.modal.type === 'proof' && state.modal.exId === exId2) {
+        state.modal.videoUrl = URL.createObjectURL(existing);
+        renderModal();
+      }
       break;
+    }
     case 'repost-proof': {
       const today2 = todayISO();
       const image = (state.proofImages[today2] || {})[btn.dataset.id];
@@ -5752,6 +5854,16 @@ document.addEventListener('click', async (e) => {
       if (el) el.click();
       break;
     }
+    case 'pick-video': {
+      const el = document.getElementById('proof-video');
+      if (el) el.click();
+      break;
+    }
+    case 'pick-video-lib': {
+      const el = document.getElementById('proof-video-lib');
+      if (el) el.click();
+      break;
+    }
     case 'save-proof': {
       const exId = btn.dataset.id;
       const today = todayISO();
@@ -5761,6 +5873,20 @@ document.addEventListener('click', async (e) => {
       state.proofLog = recordProof(before, today, exId, Date.now());
       if (state.proofLog === before) { showToast('No retakes left.'); break; }
       state.proofImages = { ...state.proofImages, [today]: { ...(state.proofImages[today] || {}), [exId]: img } };
+      // A clip is stored beside its poster, never instead of it. Everything
+      // else in the app reads the poster and needs no knowledge of video.
+      const clip = state.modal && state.modal.video;
+      if (clip) await saveProofVideo(today, exId, clip.blob);
+      else if (hasProofVideo(today, exId)) {
+        // A retake with a photo replaces a clip: leaving the old one would
+        // mean the sheet plays a video the record no longer describes.
+        await db.removeItem(videoKey(today, exId)).catch(() => {});
+        // dropFromByDay, NOT purgeExerciseFromByDay: only today's key was
+        // deleted, so purging every day would leave yesterday's blob orphaned
+        // under a key no index can ever name again.
+        state.proofVideos = dropFromByDay(state.proofVideos, [{ date: today, exId }]);
+        await db.setItem('proof-videos', state.proofVideos);
+      }
       // Explained once, on the first one ever taken.
       if (!state.meta.proofExplained) { state.meta.proofExplained = true; }
       await persistProof();

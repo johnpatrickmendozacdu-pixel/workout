@@ -11,6 +11,27 @@ or `index.js`, then run `node tools/bundle-worker.mjs` and paste the result.
 
 ## One-time deploy (Cloudflare, free)
 
+## Where the entry file is
+
+Straight to the editor (Cloudflare fills in the account from your login):
+
+    https://dash.cloudflare.com/?to=/:account/workers/services/edit/sets-broker/production
+
+Manual route: dash.cloudflare.com -> Compute (Workers) -> **sets-broker** ->
+**Edit code**.
+
+The entry file is the one already open when the editor loads — the one carrying
+the entry-point marker, not a file you add. Select all, paste
+`worker/deploy-this.js` over it, Deploy. Pasting as a NEW file leaves the entry
+point untouched and Deploy stays greyed out; that has cost time twice.
+
+Confirm the paste landed — `/crew/version` is pre-auth precisely so this is
+answerable from outside:
+
+    curl -s -X POST -H 'Origin: https://sets-workout.vercel.app' \
+      -H 'Content-Type: application/json' \
+      https://sets-broker.johnpatrickmendoza-cdu.workers.dev/crew/version -d '{}'
+
 1. Create a free account at **cloudflare.com** → **Workers & Pages** → **Create** →
    **Create Worker**. Give it a name (e.g. `sets-broker`) and deploy the starter.
 2. **Edit code**: paste the contents of `broker.js` and then `index.js` into the editor

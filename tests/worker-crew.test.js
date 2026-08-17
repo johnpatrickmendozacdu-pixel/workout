@@ -216,6 +216,11 @@ describe('stories', () => {
     expect(storyImageOk('https://evil.example/x.jpg')).toBe(false);
     expect(storyImageOk('data:text/html,<script>')).toBe(false);
     expect(storyImageOk('data:image/jpeg;base64,' + 'A'.repeat(MAX_STORY_BYTES))).toBe(false);
+    // Proof can be a clip, and a clip the crew cannot play proves nothing.
+    expect(storyImageOk('data:video/mp4;base64,AAA')).toBe(true);
+    expect(storyImageOk('data:video/mp4;base64,' + 'A'.repeat(MAX_STORY_BYTES))).toBe(false);
+    // Still under D1's ceiling on one value — the wall this cap exists to respect.
+    expect(MAX_STORY_BYTES).toBeLessThan(1000000);
   });
 
   it('is over when its time is up, with nothing scheduled to end it', () => {

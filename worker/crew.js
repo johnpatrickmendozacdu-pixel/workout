@@ -259,9 +259,16 @@ export function cleanReaction(kind, emoji) {
  * in a day would be a second thing to keep alive forever.
  */
 
-/** 240 KB of base64. The app publishes an 800px JPEG, which lands well inside
- *  it; this is the wall for a client that does not. */
-export const MAX_STORY_BYTES = 240000;
+/**
+ * 900 KB of base64 — deliberately just under D1's 1,000,000-byte ceiling on a
+ * single value, which is the real wall here and not one we chose.
+ *
+ * It was 240 KB, sized for an 800px JPEG. Proof can be a video now, and a
+ * video the crew cannot play is not proof of anything, so the app composites a
+ * small copy — downscaled, bitrate-budgeted — to land inside this. The
+ * full-quality original never leaves the phone that shot it.
+ */
+export const MAX_STORY_BYTES = 900000;
 export const STORY_LIFE_MS = 24 * 60 * 60 * 1000;
 
 export function cleanCaption(raw) {
@@ -269,10 +276,11 @@ export function cleanCaption(raw) {
   return raw.replace(/\s+/g, ' ').trim().slice(0, 140);
 }
 
-/** An image the Worker is willing to store: a data URL, an image, small enough. */
+/** What the Worker is willing to store: a data URL, a picture or a clip, small
+ *  enough to be one D1 value. */
 export function storyImageOk(image) {
   return typeof image === 'string'
-    && image.startsWith('data:image/')
+    && (image.startsWith('data:image/') || image.startsWith('data:video/'))
     && image.length <= MAX_STORY_BYTES;
 }
 

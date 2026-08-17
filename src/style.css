@@ -1631,7 +1631,7 @@
     width:100%; aspect-ratio:4/5; background:var(--bg-elevated); border:1px solid var(--border);
     display:flex; align-items:center; justify-content:center; overflow:hidden; margin-bottom:12px;
   }
-  .story-frame img{width:100%; height:100%; object-fit:cover; display:block;}
+  .story-frame img, .story-frame video{width:100%; height:100%; object-fit:cover; display:block;}
   .story-frame.loading{color:var(--text-faint); font-size:13px;}
   .story-caption{margin:0 0 8px; font-size:14.5px; line-height:1.45; color:var(--text);}
   .story-meta{font-family:var(--font-mono); font-size:11px; color:var(--text-faint);

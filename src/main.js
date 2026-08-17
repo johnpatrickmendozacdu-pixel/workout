@@ -2607,7 +2607,10 @@ const RECORDER_TYPES = [
  * Instagram rejects. The upgrade, if it ever actually bites, is WebCodecs
  * VideoEncoder with a vendored MP4 muxer. Not worth a second encoder today.
  */
-async function buildProofVideoCollage(exId) {
+async function buildProofVideoCollage(exId, opts) {
+  const W = (opts && opts.width) || SHARE_W;
+  const H = (opts && opts.height) || SHARE_H;
+  const bitsPerSec = (opts && opts.bitsPerSec) || 4000000;
   const ex = state.exercises.find((e) => e.id === exId);
   const d = todayISO();
   const raw = ex && await loadProofVideo(d, exId);
@@ -2650,20 +2653,20 @@ async function buildProofVideoCollage(exId) {
     });
 
     const c = document.createElement('canvas');
-    c.width = SHARE_W; c.height = SHARE_H;
+    c.width = W; c.height = H;
     const g = c.getContext('2d');
     const stream = c.captureStream(30);
     const mime = RECORDER_TYPES.find((t) => {
       try { return MediaRecorder.isTypeSupported(t); } catch (e) { return false; }
     });
-    const rec = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: 4000000 } : {});
+    const rec = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: bitsPerSec } : {});
     const chunks = [];
     rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
     const finished = new Promise((res) => { rec.onstop = res; });
 
-    const sc = Math.max(SHARE_W / vid.videoWidth, SHARE_H / vid.videoHeight);
+    const sc = Math.max(W / vid.videoWidth, H / vid.videoHeight);
     const vw = vid.videoWidth * sc, vh = vid.videoHeight * sc;
-    const vx = (SHARE_W - vw) / 2, vy = (SHARE_H - vh) / 2;
+    const vx = (W - vw) / 2, vy = (H - vh) / 2;
 
     // A timer, NOT requestAnimationFrame. rAF stops dead the moment the page
     // is not visible — and the share sheet opening over the app, a glance at a
@@ -2674,7 +2677,7 @@ async function buildProofVideoCollage(exId) {
     let ticker = 0;
     const draw = () => {
       g.drawImage(vid, vx, vy, vw, vh);
-      g.drawImage(card, 0, 0);
+      g.drawImage(card, 0, 0, W, H);
     };
 
     rec.start();
@@ -3656,6 +3659,18 @@ function memberInitial(m) {
  */
 let seenStories = {};
 
+/** The clip behind one of your own proof stories, if this phone still has it. */
+async function ownProofClip(story) {
+  if (!story || !story.mine || !isProofStory(story)) return null;
+  const name = proofExerciseName(story);
+  const ex = state.exercises.find((e) => e.name === name);
+  if (!ex) return null;
+  const day = story.expiresAt
+    ? new Date(story.expiresAt - 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+    : todayISO();
+  return (await loadProofVideo(day, ex.id)) || (await loadProofVideo(todayISO(), ex.id));
+}
+
 function markStorySeen(id) {
   if (!id || seenStories[id]) return;
   seenStories[id] = Date.now();
@@ -3900,6 +3915,25 @@ function proofStoryFor(member, exerciseName) {
 }
 
 /** The stories row shows stories. Proof is not one. */
+/**
+ * What a caption says out loud.
+ *
+ * `proof:Dips` is plumbing — it is how proof rides the story pipe without a
+ * new endpoint — and it leaked onto the screen the moment proof became
+ * openable from the crew's day list. The exercise name is the useful half.
+ */
+/** A story payload that is a clip rather than a picture. */
+function isVideoPayload(src) {
+  return typeof src === 'string' && src.startsWith('data:video/');
+}
+
+function storyCaptionText(caption) {
+  if (!caption) return '';
+  return isProofStory({ caption })
+    ? `Proof · ${proofExerciseName({ caption })}`
+    : caption;
+}
+
 function plainStories(member) {
   const list = (member && (member.stories || (member.story ? [member.story] : []))) || [];
   return list.filter((st) => !isProofStory(st));
@@ -3929,6 +3963,15 @@ async function openStoryAt(memberId, index) {
   if (res.ok) { state.modal.image = res.image; state.modal.caption = res.caption || ''; }
   else state.modal.error = res.error;
   renderModal();
+  // Your own proof has its clip on this phone, so play that rather than the
+  // still the crew gets. The day comes off the story's own expiry so a proof
+  // posted last night still finds its clip this morning.
+  const localClip = await ownProofClip(story);
+  if (localClip && state.modal && state.modal.type === 'story' && state.modal.memberId === memberId) {
+    if (state.modal.clipUrl) URL.revokeObjectURL(state.modal.clipUrl);
+    state.modal.clipUrl = URL.createObjectURL(localClip);
+    renderModal();
+  }
   refreshCrews().catch(() => {});
 }
 
@@ -4492,6 +4535,7 @@ function modalConfirmBreak() {
 
 function closeModal() {
   if (state.modal && state.modal.videoUrl) URL.revokeObjectURL(state.modal.videoUrl);
+  if (state.modal && state.modal.clipUrl) URL.revokeObjectURL(state.modal.clipUrl);
   state.modal = null;
   renderModal();
 }
@@ -5471,8 +5515,13 @@ function modalStory() {
       </div>
       ${m.loading ? '<div class="story-frame loading">Loading…</div>'
         : m.error ? `<div class="story-frame loading">${escapeHtml(crewApi.crewErrorText(m.error))}</div>`
-        : `<div class="story-frame"><img src="${escapeHtml(m.image || '')}" alt=""></div>`}
-      ${m.caption ? `<p class="story-caption">${escapeHtml(m.caption)}</p>` : ''}
+        : (m.clipUrl || isVideoPayload(m.image))
+          // Your own proof plays from this phone at full quality; everyone
+          // else's plays the small copy the story carries. Either way a clip
+          // plays as a clip and a picture shows as a picture.
+          ? `<div class="story-frame"><video src="${m.clipUrl || escapeHtml(m.image)}" controls autoplay playsinline muted loop></video></div>`
+          : `<div class="story-frame"><img src="${escapeHtml(m.image || '')}" alt=""></div>`}
+      ${storyCaptionText(m.caption) ? `<p class="story-caption">${escapeHtml(storyCaptionText(m.caption))}</p>` : ''}
       ${list.length > 1 ? `<div class="story-steps">
         <button class="story-step" data-action="story-step" data-index="${(m.index || 0) - 1}" ${(m.index || 0) === 0 ? 'disabled' : ''} aria-label="Previous">‹</button>
         <span class="story-dots">${list.map((_, i) => `<i class="${i === (m.index || 0) ? 'on' : ''}"></i>`).join('')}</span>
@@ -5879,6 +5928,18 @@ function fileToStoryDataUrl(file) {
 
 const PROOF_VIDEO_MAX_SEC = 60;
 
+/** Sampled sparsely — this only has to tell a real frame from an empty one,
+ *  and reading every pixel of a 4K frame to do it would be absurd. */
+function isBlankCanvas(c) {
+  try {
+    const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    for (let i = 0; i < d.length; i += 4 * 331) {
+      if (d[i] > 8 || d[i + 1] > 8 || d[i + 2] > 8) return false;
+    }
+    return true;
+  } catch (e) { return false; }
+}
+
 /**
  * Will this clip fit, really?
  *
@@ -5931,13 +5992,26 @@ function readVideoFile(file) {
       if (v.duration > PROOF_VIDEO_MAX_SEC + 0.5) { fail('too-long'); return; }
       // Half a second in: frame zero of a phone clip is very often the lens
       // still opening up.
-      v.onseeked = () => {
+      v.onseeked = async () => {
         try {
           const side = Math.min(1, 800 / Math.max(v.videoWidth, v.videoHeight));
           const c = document.createElement('canvas');
           c.width = Math.round(v.videoWidth * side);
           c.height = Math.round(v.videoHeight * side);
-          c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+          const g = c.getContext('2d');
+          g.drawImage(v, 0, 0, c.width, c.height);
+          // iOS hands back a BLACK frame when the video has been seeked but
+          // never actually played — the frame is sought but not decoded. That
+          // is what made a proof turn up as a black rectangle in the crew's
+          // story. Playing it for a moment forces a real decode; the frame is
+          // checked rather than assumed, so the workaround only runs when the
+          // problem is actually there.
+          if (isBlankCanvas(c)) {
+            await v.play().catch(() => {});
+            await new Promise((r) => setTimeout(r, 260));
+            g.drawImage(v, 0, 0, c.width, c.height);
+            v.pause();
+          }
           const poster = c.toDataURL('image/jpeg', 0.68);
           URL.revokeObjectURL(url);
           resolve({ blob: file, poster });
@@ -7175,12 +7249,77 @@ async function postProofToCrew(exId, image) {
   const crew = activeCrew();
   if (!crew || !hasSyncAccount() || !isOnline()) return false;
   const ex = state.exercises.find((e) => e.id === exId);
+  let payload = image;
+  if (hasProofVideo(todayISO(), exId)) {
+    const clip = await buildCrewClip(exId);
+    if (clip) payload = clip;
+    // No clip small enough, or the phone could not make one: the still frame
+    // still goes. A crew seeing the moment as a picture beats seeing nothing.
+  }
   try {
-    const res = await crewApi.postStory(crew.id, image, PROOF_TAG + (ex ? ex.name : 'Workout'));
+    const res = await crewApi.postStory(crew.id, payload, PROOF_TAG + (ex ? ex.name : 'Workout'));
     return !!(res && res.ok !== false);
   } catch (e) {
     return false;
   }
+}
+
+// One D1 value is capped at 1,000,000 bytes and the Worker will not take more
+// than 900,000, so this is the budget in BINARY bytes — base64 costs a third
+// on top, and the rest is the data-URL preamble.
+const CREW_CLIP_BYTES = 640000;
+const CREW_CLIP_W = 480, CREW_CLIP_H = 854;
+
+/**
+ * The crew's copy: same card over the same clip, small enough to be one row.
+ *
+ * The bitrate is computed from the clip's own length rather than fixed, so a
+ * short proof looks as good as the budget allows and a long one still fits
+ * instead of being refused. Floored, because below about 120 kbps the picture
+ * stops carrying information and a smaller file is no longer worth having —
+ * past that floor the still frame is the better story.
+ *
+ * The full-quality original never leaves this phone. What the crew gets is a
+ * copy sized for a database row, and that is the whole reason it can be free.
+ */
+async function buildCrewClip(exId) {
+  const raw = await loadProofVideo(todayISO(), exId);
+  if (!raw) return null;
+  const seconds = await clipSeconds(raw);
+  if (!seconds) return null;
+  const bitsPerSec = Math.floor((CREW_CLIP_BYTES * 8) / seconds);
+  if (bitsPerSec < 120000) return null;
+  const made = await buildProofVideoCollage(exId, {
+    width: CREW_CLIP_W, height: CREW_CLIP_H, bitsPerSec,
+  });
+  if (!made || !made.blob) return null;
+  // MediaRecorder treats a bitrate as a hint, not a contract, so the file is
+  // measured rather than trusted.
+  if (made.blob.size > CREW_CLIP_BYTES) return null;
+  return await blobToDataUrl(made.blob);
+}
+
+function clipSeconds(blob) {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(blob);
+    const v = document.createElement('video');
+    v.preload = 'metadata';
+    v.muted = true;
+    const done = (n) => { URL.revokeObjectURL(url); resolve(n); };
+    v.onloadedmetadata = () => done(Number.isFinite(v.duration) && v.duration > 0 ? v.duration : 0);
+    v.onerror = () => done(0);
+    setTimeout(() => done(0), 5000);
+    v.src = url;
+  });
+}
+
+function blobToDataUrl(blob) {
+  return new Promise((resolve) => {
+    const r = new FileReader();
+    r.onload = () => resolve(typeof r.result === 'string' ? r.result : null);
+    r.onerror = () => resolve(null);
+    r.readAsDataURL(blob);
+  });
 }
 
 /* ============================= PWA UPDATE PROMPT ============================= */

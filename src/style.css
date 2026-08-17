@@ -2185,25 +2185,25 @@
   .fire-band{ background:none; }
   .fire-band i{ background-image:url('/fire-band.webp'); }
 
-  .fire-band.s1{ left:-3%;  width:22%; top:55%;   height:8.5%;  opacity:0.34; }
+  .fire-band.s1{ left:-3%;  width:22%; top:81%;   height:8%;   opacity:0.34; }
   .fire-band.s1 i{ animation-duration:1.9s; }
-  .fire-band.s2{ left:14%;  width:15%; top:56.5%; height:6.5%;  opacity:0.26; transform:scaleX(-1); }
+  .fire-band.s2{ left:14%;  width:15%; top:83.5%; height:6%;   opacity:0.26; transform:scaleX(-1); }
   .fire-band.s2 i{ animation-duration:2.3s;  animation-delay:-0.8s; }
-  .fire-band.s3{ left:31%;  width:19%; top:54.5%; height:9.5%;  opacity:0.4;  }
+  .fire-band.s3{ left:31%;  width:19%; top:80.5%; height:9%;   opacity:0.4;  }
   .fire-band.s3 i{ animation-duration:1.75s; animation-delay:-1.4s; }
-  .fire-band.s4{ left:47%;  width:13%; top:57%;   height:6%;    opacity:0.22; transform:scaleX(-1); }
+  .fire-band.s4{ left:47%;  width:13%; top:84%;   height:5.5%; opacity:0.22; transform:scaleX(-1); }
   .fire-band.s4 i{ animation-duration:2.55s; animation-delay:-0.35s; }
-  .fire-band.s5{ left:58%;  width:20%; top:55%;   height:9%;    opacity:0.36; }
+  .fire-band.s5{ left:58%;  width:20%; top:81%;   height:8.5%; opacity:0.36; }
   .fire-band.s5 i{ animation-duration:2.05s; animation-delay:-1.9s; }
-  .fire-band.s6{ left:76%;  width:14%; top:56.5%; height:6.5%;  opacity:0.24; transform:scaleX(-1); }
+  .fire-band.s6{ left:76%;  width:14%; top:83.5%; height:6%;   opacity:0.24; transform:scaleX(-1); }
   .fire-band.s6 i{ animation-duration:1.65s; animation-delay:-0.55s; }
-  .fire-band.s7{ left:87%;  width:18%; top:55.5%; height:8%;    opacity:0.32; }
+  .fire-band.s7{ left:87%;  width:18%; top:82%;   height:7.5%; opacity:0.32; }
   .fire-band.s7 i{ animation-duration:2.45s; animation-delay:-1.1s; }
 
   /* Three braziers, each on its own clock and none of the durations a multiple
      of another — three flames rising in step reads as one animation repeated,
      which is exactly what a fire is not. */
-  .fire-brazier{ width:8%; height:9%; bottom:38.5%; opacity:0.5; }
+  .fire-brazier{ width:7%; height:10%; bottom:11%; opacity:0.42; }
   .fire-brazier i{ background-image:url('/fire-column.webp'); }
   .fire-brazier.b1{ left:20.5%; animation-duration:0s; }
   .fire-brazier.b1 i{ animation-duration:1.7s; }
@@ -2216,7 +2216,7 @@
      Two breaths at 7s and 11s: coprime enough that the pair never repeats
      inside a session, which is what stops a pulse reading as a metronome. */
   .firelight{
-    position:absolute; left:-10%; right:-10%; top:44%; height:56%;
+    position:absolute; left:-10%; right:-10%; top:70%; height:30%;
     background:radial-gradient(ellipse 60% 70% at 50% 0%,
       rgba(120,224,40,0.13) 0%, rgba(120,224,40,0.06) 38%, rgba(120,224,40,0) 72%);
     mix-blend-mode:screen; pointer-events:none;
@@ -2389,11 +2389,53 @@
     background:linear-gradient(180deg, rgba(62,224,127,0.20), transparent 42%);
   }
 
-  /* The topbar chip is the same frame at small size — one ring, no glow, or it
-     would smear against the four chips beside it. */
-  .avatar-chip.has-photo{
-    border:2px solid var(--ink);
-    box-shadow:0 0 0 2px rgba(62,224,127,0.7);
+  /* ---------- the fire frame ----------
+     The source art is a rectangle, and so is every avatar here — the profile
+     photo is square on purpose, being the last rounded thing in a zero-radius
+     design. So the frame goes on as it was drawn rather than being reinvented
+     as a ring.
+
+     border-image is what makes one 368x207 picture fit any box: it cuts the
+     art into nine, pins the four corners and stretches only the edges, so the
+     flame never squashes however square or wide the frame gets.
+
+     Transparency is baked into the file — luminance became alpha in
+     tools/, so the black drops out with no blend mode. That matters
+     because both of these have overflow:hidden, and mix-blend-mode inside a
+     clipped, transformed box is an argument with the stacking context nobody
+     wins. It also means the frame is correct over a photo, over the arena, and
+     over a sheet, without knowing what is behind it.
+
+     It sits INSIDE the box, overlapping the photo's outer edge, which is both
+     what a frame does and what keeps overflow:hidden from clipping it away.
+
+     Crew faces deliberately do not get this: their ring already carries story
+     state and their border carries trained-today, and a third meaning on the
+     same circle is one too many. */
+  .avatar-chip.has-photo, .profile-avatar-big.has-photo{ position:relative; }
+  .avatar-chip.has-photo::before, .profile-avatar-big.has-photo::before{
+    content:""; position:absolute; inset:0; pointer-events:none; z-index:2;
+    border-style:solid; border-color:transparent;
+    border-image:url('/fire-frame.webp') 37 36 fill / 1 / 0 stretch;
+    /* A still frame beside a burning room looks dead, so it breathes. Two
+       periods that do not divide each other, as everywhere else here. */
+    animation:frame-breathe 3.4s ease-in-out infinite;
+  }
+  @keyframes frame-breathe{ 0%,100%{opacity:0.82;} 50%{opacity:1;} }
+
+  .avatar-chip.has-photo::before{ border-width:7px; }
+  .profile-avatar-big.has-photo::before{ border-width:14px; }
+
+  /* The green rings this replaces — two frames on one photo is one too many. */
+  .avatar-chip.has-photo{ border:0; box-shadow:none; }
+  .profile-avatar-big.has-photo{ border:0; box-shadow:none; }
+
+  html.idle .avatar-chip.has-photo::before,
+  html.idle .profile-avatar-big.has-photo::before{ animation-play-state:paused; }
+  @media (prefers-reduced-motion: reduce){
+    .avatar-chip.has-photo::before, .profile-avatar-big.has-photo::before{
+      animation:none !important; opacity:0.92;
+    }
   }
 
   /* ---------- stencil in the nav ----------

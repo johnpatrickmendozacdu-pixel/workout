@@ -69,5 +69,30 @@ def build(name, src, count, height):
     return width, height, count
 
 
+def build_frame():
+    """The profile frame. Not a sheet — one still picture, used as a
+    border-image so a single 282x183 rectangle fits any box: nine slices, four
+    corners pinned, only the edges stretched.
+
+    Two things are done to it here rather than in CSS. The dead black margin is
+    cropped away, or that padding eats the border slice and the flame lands
+    well inside the photo instead of framing it. And luminance becomes alpha,
+    so the black drops out with no blend mode — both avatars have
+    overflow:hidden, and mix-blend-mode inside a clipped box is an argument
+    with the stacking context nobody wins.
+    """
+    im = Image.open(ROOT / 'fireframe.png').convert('RGB')
+    box = im.convert('L').point(lambda p: 255 if p > 26 else 0).getbbox()
+    im = im.crop(box)
+    im = im.resize((im.width // 2, im.height // 2), Image.LANCZOS)
+    im.putalpha(im.convert('L').point(lambda p: min(255, int(p * 1.45))))
+    path = OUT / 'fire-frame.webp'
+    im.save(path, 'WEBP', quality=82, method=6)
+    print(f'{path.name}: {im.width}x{im.height}, '
+          f'{path.stat().st_size / 1024:.0f} KB '
+          f'(border-image-slice 37 36 — retune if this crop changes)')
+
+
 for name, (src, count, height) in JOBS.items():
     build(name, src, count, height)
+build_frame()

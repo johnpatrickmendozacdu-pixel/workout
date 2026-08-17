@@ -134,7 +134,10 @@ path if it ever actually bites. Not worth a second encoder today.
 ## 6. Expiry and deletion
 
 - **Proof media prunes at 24 hours**, photos and videos alike, down from the
-  current 48. One cutoff, both stores.
+  current 48. One cutoff, both stores. The video prune walks the index, calls
+  `removeItem` on each blob key it drops, then writes the shrunken index — a
+  dropped index entry without its blob key removed is a leak the next startup
+  can never find.
 - **Deleting an exercise purges its proof media and its `proofLog` entries**
   across every day. This is a real gap today: `deleteExerciseHandler` leaves
   both behind.

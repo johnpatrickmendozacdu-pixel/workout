@@ -2066,17 +2066,13 @@
      at risk is loose text, and a shadow protects that far more cheaply than
      drowning the whole picture. --paper underneath is what shows before the
      image decodes, so nothing ever flashes white. */
-  html{
-    background:
-      linear-gradient(180deg,
-        rgba(10,12,11,0.42) 0%,
-        rgba(10,12,11,0.58) 40%,
-        rgba(10,12,11,0.62) 60%,
-        rgba(10,12,11,0.40) 100%),
-      url('/arena.jpg') center center / cover no-repeat,
-      var(--paper);
-    background-color:var(--paper);
-  }
+  /* The arena picture used to live here, on the canvas. It had to move into
+     #arena: mix-blend-mode blends with the backdrop inside its own stacking
+     context, and the page canvas is outside every one of them — the flames
+     would have screened against nothing and painted their own black frames
+     over the photo. Photo, fire and scrim are one stack now. --paper stays so
+     nothing flashes before the image decodes. */
+  html{ background:var(--paper); background-color:var(--paper); }
   body, #app{background:transparent;}
 
   .streak-pill svg{transform-origin:50% 88%; will-change:transform;}
@@ -2101,6 +2097,134 @@
 
   /* Off-screen app, nothing moving. */
   html.idle #embers i, html.idle .streak-pill svg{animation-play-state:paused;}
+
+  /* ---------- the arena burns ----------
+     arena.jpg is a picture of a fire that was not lit. It already holds the
+     two things this layer animates: a line of flame behind the weapon rack at
+     roughly 52-60% down, and three braziers at roughly 25%, 57% and 76%
+     across. Nothing here is invented — the sheets are laid exactly over what
+     the artwork already draws, which is why it reads as the room coming alive
+     rather than as an effect placed on top of a photo.
+
+     mix-blend-mode:screen is what makes it possible at all. The source clips
+     are composited on black, not transparent, and screen throws black away and
+     keeps only light. It is also physically the right operator: fire ADDS
+     light to a scene, it does not cover it.
+
+     Sprite sheets rather than the GIFs they came from. A GIF cannot be paused,
+     so html.idle below would not stop it and it would keep decoding in a
+     pocket; a GIF cannot rest for prefers-reduced-motion either; and the three
+     sources weigh 6.9 MB against a 156 KB arena. These are 167 KB the whole
+     way, and they are ordinary CSS animations, so every rule that already
+     governs motion in this app governs them too. Rebuild with
+     tools/fire-sheets.py. */
+  #arena{
+    position:fixed; inset:0; z-index:-1; overflow:hidden; pointer-events:none;
+  }
+
+  /* Reproduces background-size:cover for an 852x1847 image, so the flames sit
+     on the features they belong to at any viewport rather than only at the one
+     the numbers were read off. A phone is within a fraction of a percent of
+     this ratio anyway; this is what keeps a tablet honest. */
+  .arena-stage{
+    position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+    width:100%; height:100%;
+    min-width:calc(100dvh * 852 / 1847);
+    min-height:calc(100vw * 1847 / 852);
+    background:url('/arena.jpg') 0 0 / 100% 100% no-repeat;
+  }
+
+  /* The same four stops the canvas used to carry, now ABOVE the fire — the
+     flames are part of the picture and get dimmed with it, rather than
+     burning through the layer that makes text readable. */
+  .arena-scrim{
+    position:absolute; inset:0; pointer-events:none;
+    background:linear-gradient(180deg,
+      rgba(10,12,11,0.42) 0%,
+      rgba(10,12,11,0.58) 40%,
+      rgba(10,12,11,0.62) 60%,
+      rgba(10,12,11,0.40) 100%);
+  }
+
+  .fire-band, .fire-brazier{
+    position:absolute; overflow:hidden;
+    mix-blend-mode:screen; pointer-events:none;
+    /* Screen ADDS light, and the picture is already bright exactly where these
+       sit — so the two glows summed to white and the whole band came out as
+       fog. Saturating pulls it back to green instead of letting it wash out,
+       and the mask drops the sprite's own dense base so what is added is the
+       tongues of flame rising out of the glow the artwork already draws,
+       rather than a second glow laid over the first. The mask is also what
+       removes the hard rectangular edges. */
+    filter:saturate(1.6) contrast(1.1);
+    -webkit-mask-image:linear-gradient(to top, transparent 0%, #000 34%, #000 76%, transparent 100%);
+    mask-image:linear-gradient(to top, transparent 0%, #000 34%, #000 76%, transparent 100%);
+  }
+  /* The sheet is one row of 24 frames. The inner element is 2400% wide and
+     walks left by exactly its own width in 24 steps, so each step lands on a
+     frame edge — no interpolation, no half-frames. Doing it with a transform
+     rather than background-position keeps it on the compositor. */
+  .fire-band i, .fire-brazier i{
+    display:block; width:2400%; height:100%;
+    background-repeat:no-repeat; background-size:100% 100%;
+    will-change:transform;
+    animation:fire-strip steps(24) infinite;
+  }
+  @keyframes fire-strip{ from{transform:translateX(0);} to{transform:translateX(-100%);} }
+
+  /* Four segments, not one stretched frame. A frame is 222x176; stretching one
+     across the whole width is a 4x horizontal smear, and smeared fire reads as
+     fog — which is exactly how the first attempt looked. At a quarter each the
+     flames keep their own proportions. Alternate segments are mirrored and all
+     four run on different clocks, so nothing gives away that it is one tile
+     four times. */
+  .fire-band{ top:49%; height:12%; width:26%; opacity:0.6; }
+  .fire-band i{ background-image:url('/fire-band.webp'); }
+  .fire-band.s1{ left:-1%; }
+  .fire-band.s1 i{ animation-duration:1.9s; }
+  .fire-band.s2{ left:25%; transform:scaleX(-1); }
+  .fire-band.s2 i{ animation-duration:2.2s; animation-delay:-0.8s; }
+  .fire-band.s3{ left:50%; }
+  .fire-band.s3 i{ animation-duration:1.75s; animation-delay:-1.4s; }
+  .fire-band.s4{ left:75%; transform:scaleX(-1); }
+  .fire-band.s4 i{ animation-duration:2.35s; animation-delay:-0.35s; }
+
+  /* Three braziers, each on its own clock and none of the durations a multiple
+     of another — three flames rising in step reads as one animation repeated,
+     which is exactly what a fire is not. */
+  .fire-brazier{ width:9%; height:12%; bottom:38.5%; opacity:0.75; }
+  .fire-brazier i{ background-image:url('/fire-column.webp'); }
+  .fire-brazier.b1{ left:20.5%; animation-duration:0s; }
+  .fire-brazier.b1 i{ animation-duration:1.7s; }
+  .fire-brazier.b2{ left:52.5%; width:10%; height:12.5%; }
+  .fire-brazier.b2 i{ animation-duration:2.3s; animation-delay:-0.7s; }
+  .fire-brazier.b3{ left:71.5%; }
+  .fire-brazier.b3 i{ animation-duration:2.05s; animation-delay:-1.3s; }
+
+  /* The light the fire throws, on the wet floor it is already reflected in.
+     Two breaths at 7s and 11s: coprime enough that the pair never repeats
+     inside a session, which is what stops a pulse reading as a metronome. */
+  .firelight{
+    position:absolute; left:-10%; right:-10%; top:44%; height:56%;
+    background:radial-gradient(ellipse 60% 70% at 50% 0%,
+      rgba(120,224,40,0.20) 0%, rgba(120,224,40,0.09) 38%, rgba(120,224,40,0) 72%);
+    mix-blend-mode:screen; pointer-events:none;
+    animation:breathe-a 7s ease-in-out infinite, breathe-b 11s ease-in-out infinite;
+  }
+  @keyframes breathe-a{ 0%,100%{opacity:0.72;} 50%{opacity:1;} }
+  @keyframes breathe-b{ 0%,100%{transform:scaleY(1);} 50%{transform:scaleY(1.06);} }
+
+  /* Off-screen app, nothing burning either. */
+  html.idle #arena i, html.idle .firelight{animation-play-state:paused;}
+
+  /* A resting state, not a deleted one. The global 0.001ms rule would freeze
+     each strip on whatever frame it happened to hold; pinning them to frame
+     one and dropping the light to a steady glow leaves a lit room that simply
+     does not move. */
+  @media (prefers-reduced-motion: reduce){
+    #arena i{animation:none !important; transform:translateX(0) !important;}
+    .firelight{animation:none !important; opacity:0.85;}
+  }
 
   /* ---------- embers ----------
      Sparks off the same fire the streak burns with. Six of them, each a blurred

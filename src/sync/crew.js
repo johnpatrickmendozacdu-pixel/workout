@@ -107,6 +107,9 @@ export function postStory(crewId, image, caption) {
 }
 export function recordView(crewId, subject) { return post('/crew/view', { crewId, subject }); }
 
+/** Take one back. Owner-only, enforced by the Worker's WHERE clause. */
+export function deleteStory(storyId) { return post('/crew/story/delete', { storyId }); }
+
 /** The picture itself, fetched only when someone opens it — and the act of
  *  fetching is the view. Returns the raw payload rather than a crew list,
  *  because this is the one call that is not about the roster. */

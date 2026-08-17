@@ -36,8 +36,8 @@ import { jsonResponse, GOOGLE_USERINFO } from './broker.js';
  */
 /** Bumped whenever this file gains something the app depends on, so a single
  *  curl says whether the dashboard paste actually landed. */
-export const CREW_BUILD = '2026-08-12.10';
-export const CREW_FEATURES = ['peek', 'isMe', 'target-due', 'days-strip', 'photo-24k', 'stories', 'views', 'roles', 'classes', 'crew-logo', 'multi-story', 'rest-days', 'motto', 'member-since'];
+export const CREW_BUILD = '2026-08-17.11';
+export const CREW_FEATURES = ['peek', 'isMe', 'target-due', 'days-strip', 'photo-24k', 'stories', 'views', 'roles', 'classes', 'crew-logo', 'multi-story', 'rest-days', 'motto', 'member-since', 'story-delete'];
 
 const GOOGLE_DRIVE_ABOUT = 'https://www.googleapis.com/drive/v3/about?fields=user(emailAddress,permissionId)';
 const identityCache = new Map();
@@ -354,6 +354,29 @@ export async function crewRoute(path, body, env, cors) {
         `INSERT INTO stories (id, crew_id, user_id, image, caption, created_at, expires_at)
          VALUES (?, ?, ?, ?, ?, ?, ?)`
       ).bind(crypto.randomUUID(), body.crewId, user.id, body.image, cleanCaption(body.caption), now, now + STORY_LIFE_MS).run();
+    } catch (e) {
+      return jsonResponse({ error: 'needs-story-table' }, 503, cors);
+    }
+    return jsonResponse({ crews: await crewsFor(env, user.id) }, 200, cors);
+  }
+
+  /**
+   * Take one back.
+   *
+   * Only the author: the WHERE clause carries `user_id = ?`, so ownership is
+   * enforced by the statement rather than by a check that a later edit could
+   * forget to make. A story that is not yours, or already gone, answers the
+   * same 404 — there is nothing to learn from the difference.
+   *
+   * A hard DELETE, not an expiry brought forward: the row holds the picture,
+   * and "gone" should mean the bytes are gone.
+   */
+  if (path === '/crew/story/delete') {
+    try {
+      const res = await env.DB.prepare(
+        `DELETE FROM stories WHERE id = ? AND user_id = ?`
+      ).bind(body.storyId, user.id).run();
+      if (!res.meta || !res.meta.changes) return jsonResponse({ error: 'story-gone' }, 404, cors);
     } catch (e) {
       return jsonResponse({ error: 'needs-story-table' }, 503, cors);
     }

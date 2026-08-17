@@ -5455,6 +5455,7 @@ function modalStory() {
         <div class="section-label">Seen by ${viewers.length}</div>
         ${viewers.length ? `<p class="hint">${escapeHtml(viewers.map(nameOf).join(', '))}</p>` : '<p class="hint">Nobody yet.</p>'}
         <button class="secondary-btn wide" data-action="add-story" data-id="${author.id}">Replace it</button>
+        <button class="secondary-btn wide danger-btn" data-action="delete-story" data-id="${escapeHtml(story.id)}">${ICONS.trash} Delete it</button>
       </div>` : ''}
     </div>
   </div>`;
@@ -6055,6 +6056,32 @@ document.addEventListener('click', async (e) => {
       const list = (m && (m.stories || (m.story ? [m.story] : []))) || [];
       const idx = list.findIndex((st) => st.id === btn.dataset.story);
       if (idx >= 0) await openStoryAt(m.id, idx);
+      break;
+    }
+    /**
+     * Take a story back — the row and its picture, not just this screen.
+     *
+     * The Worker enforces ownership in the DELETE's WHERE clause, so a card
+     * that is not yours cannot be removed however the button is reached. The
+     * roster comes back in the response, so the crew view is correct the moment
+     * the sheet closes rather than after the next sync.
+     */
+    case 'delete-story': {
+      const storyId = btn.dataset.id;
+      showToast('Deleting…');
+      const res = await crewApi.deleteStory(storyId);
+      if (res && res.ok !== false) {
+        markStorySeen(storyId);
+        applyCrewResult(res, { toast: true });
+        closeModal();
+        renderView();
+        showToast('Deleted — nobody can open it now.');
+      } else {
+        // 'story-gone' means it already went, which is the outcome asked for.
+        const why = res && res.error;
+        if (why === 'story-gone') { closeModal(); refreshCrews().catch(() => {}); showToast('That one is already gone.'); }
+        else showToast(crewApi.crewErrorText(why));
+      }
       break;
     }
     case 'open-proof': {

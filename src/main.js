@@ -1090,6 +1090,9 @@ async function deleteExerciseHandler(id) {
   ]);
   closeModal();
   rerender();
+  // Push the card straight away so the crew stops listing the exercise — and
+  // with it the proof camera button — instead of waiting for the next sync.
+  refreshCrews().catch(() => {});
 }
 async function addExercise(data) {
   const now = todayISO();
@@ -2717,6 +2720,19 @@ async function buildCollageFor(exId) {
 async function saveProofCollage(exId) {
   const ex = state.exercises.find((e) => e.id === exId);
   if (!ex) return;
+  // A clip goes out through the share sheet, not a download link: on iOS the
+  // sheet is the only route to the camera roll, and a link just opens a file
+  // page. Same two-step reason as share-proof-collage.
+  if (hasProofVideo(todayISO(), exId)) {
+    state.modal = { type: 'shareReady', exId, building: true, built: null };
+    renderModal();
+    const madeV = await buildCollageFor(exId);
+    if (!state.modal || state.modal.type !== 'shareReady' || state.modal.exId !== exId) return;
+    state.modal.building = false;
+    state.modal.built = madeV && madeV.blob ? madeV : null;
+    renderModal();
+    return;
+  }
   const made = await buildCollageFor(exId);
   const blob = made.blob;
   if (!blob) { showToast("Couldn't build the image."); return; }
@@ -3747,15 +3763,18 @@ function viewSocial() {
  */
 function storyBarHtml(crew) {
   const me = (crew.members || []).find((m) => m.isMe);
-  const others = (crew.members || []).filter((m) => !m.isMe && m.story);
+  // plainStories, not m.story: proof is carried on the story pipe but is not a
+  // story, and a member whose only story is proof — for an exercise they may
+  // since have deleted — was still raising a tile that opened nothing.
+  const others = (crew.members || []).filter((m) => !m.isMe && plainStories(m).length);
   if (!me && !others.length) return '';
   const tile = (m, label) => `<button class="story-tile" data-action="${plainStories(m).length ? 'open-story' : 'add-story'}" data-id="${m.id}">
       ${memberFaceHtml(m, 56)}
       <span>${escapeHtml(label)}</span>
-      ${m.isMe && !m.story ? '<i class="story-plus">+</i>' : ''}
+      ${m.isMe && !plainStories(m).length ? '<i class="story-plus">+</i>' : ''}
     </button>`;
   return `<div class="story-bar">
-    ${me ? tile(me, me.story ? 'Your story' : 'Add story') : ''}
+    ${me ? tile(me, plainStories(me).length ? 'Your story' : 'Add story') : ''}
     ${others.map((m) => tile(m, m.name || 'Someone')).join('')}
   </div>`;
 }
@@ -4462,6 +4481,7 @@ function renderModal() {
   else if (m.type === 'exerciseForm') root.innerHTML = modalExerciseForm(m.exId);
   else if (m.type === 'proof') root.innerHTML = modalProof();
   else if (m.type === 'shareChoice') root.innerHTML = modalShareChoice();
+  else if (m.type === 'shareReady') root.innerHTML = modalShareReady();
   else if (m.type === 'notices') root.innerHTML = modalNotices();
   else if (m.type === 'confirmDeleteHabit') root.innerHTML = modalConfirmDeleteHabit(m);
   else if (m.type === 'addChoice') root.innerHTML = modalAddChoice();
@@ -4655,6 +4675,35 @@ function modalConfirmDeleteHabit(m) {
  * nobody was told about reads as the app being broken, and a rule explained
  * every single day reads as nagging.
  */
+/**
+ * The pause between building a video card and sharing it.
+ *
+ * It exists for one reason: navigator.share() only works inside a live user
+ * gesture, and an eight-second render outlives one. This sheet turns the share
+ * into its own tap, which is why the native sheet opens directly instead of the
+ * browser dropping you on a file page.
+ */
+function modalShareReady() {
+  const m = state.modal || {};
+  const ex = state.exercises.find((e) => e.id === m.exId);
+  if (!ex) return '';
+  return `<div class="modal-backdrop" data-action="backdrop">
+    <div class="modal-sheet" data-stop>
+      <div class="sheet-handle"></div>
+      <div class="sheet-head">
+        <h2>${m.building ? 'Building your video' : 'Ready to share'}</h2>
+        <button class="sheet-close" data-action="close-modal">${ICONS.close}</button>
+      </div>
+      ${m.building
+        ? `<div class="field"><div class="hint">Drawing your card over the clip — about eight seconds. Keep this open.</div></div>`
+        : m.built
+          ? `<div class="field"><div class="hint">${escapeHtml(ex.name)}, story-sized with your clip behind the numbers.</div></div>
+             <button class="primary-btn wide" data-action="share-built">Share it</button>`
+          : `<div class="field"><div class="hint">Your phone couldn't make the video card. The photo card is still there under Save to my photos.</div></div>`}
+    </div>
+  </div>`;
+}
+
 function modalShareChoice() {
   const ex = state.exercises.find((e) => e.id === (state.modal || {}).exId);
   if (!ex) return '';
@@ -4691,7 +4740,6 @@ function modalProof() {
   // An object URL for the sheet only. Revoked when the sheet closes, in
   // closeModal — a URL held past its element is the classic leak here.
   const clip = m.videoUrl || null;
-  const hasVideo = hasProofVideo(today, ex.id);
   return `<div class="modal-backdrop" data-action="backdrop">
     <div class="modal-sheet" data-stop>
       <div class="sheet-handle"></div>
@@ -4716,20 +4764,14 @@ function modalProof() {
           ? (left > 0 ? `${left} retake${left === 1 ? '' : 's'} left.` : 'No retakes left — this one stands.')
           : 'A photo of the work, or of you having done it. It stays on your phone; your crew sees it for the day.'}</div>
       </div>
-      <input type="file" id="proof-file" accept="image/*" capture="environment" style="display:none">
-      <input type="file" id="proof-file-lib" accept="image/*" style="display:none">
-      <input type="file" id="proof-video" accept="video/*" capture="environment" style="display:none">
-      <input type="file" id="proof-video-lib" accept="video/*" style="display:none">
+      <input type="file" id="proof-file" accept="image/*,video/*" capture="environment" style="display:none">
+      <input type="file" id="proof-file-lib" accept="image/*,video/*" style="display:none">
       ${(!rec || left > 0) ? `
-        <button class="primary-btn wide" data-action="pick-proof">${rec ? 'Retake' : 'Take the photo'}</button>
-        <button class="secondary-btn wide" data-action="pick-proof-lib">Upload a photo</button>
-        <button class="secondary-btn wide" data-action="pick-video">${rec ? 'Record again' : 'Record a video'}</button>
-        <button class="secondary-btn wide" data-action="pick-video-lib">Upload a video</button>
+        <button class="primary-btn wide" data-action="pick-proof">${rec ? 'Retake' : 'Take a photo or video'}</button>
+        <button class="secondary-btn wide" data-action="pick-proof-lib">Upload a photo or video</button>
         <div class="hint">A clip can be up to ${PROOF_VIDEO_MAX_SEC} seconds.</div>` : ''}
-      ${m.image ? `<button class="secondary-btn wide" data-action="save-proof" data-id="${ex.id}">Use this photo</button>` : ''}
+      ${m.image ? `<button class="secondary-btn wide" data-action="save-proof" data-id="${ex.id}">Use this ${m.video ? 'video' : 'photo'}</button>` : ''}
       ${rec && img ? `<button class="secondary-btn wide" data-action="save-proof-image" data-id="${ex.id}">Save to my photos</button>` : ''}
-      ${rec && hasVideo ? `<button class="secondary-btn wide" data-action="share-proof-video" data-id="${ex.id}">Share the video</button>` : ''}
-      ${rec && img ? `<button class="secondary-btn wide" data-action="share-proof-collage" data-id="${ex.id}">Share it</button>` : ''}
       ${rec ? `<div class="hint">${rec.posted
         ? 'Your crew can see this on today’s workout.'
         : (activeCrew() ? 'Not sent to your crew yet.' : 'You are not in a crew, so only you can see this.')}</div>` : ''}
@@ -5905,13 +5947,20 @@ function bindModalEvents() {
       }
     };
   }
+  // One picker for both. The camera and the library each offer photo AND video
+  // on iOS and Android, so splitting them into four buttons only made the user
+  // decide twice what the file itself already says.
   const onProofPicked = async (e) => {
       const file = e.target.files[0];
       e.target.value = '';
       if (!file) return;
+      if ((file.type || '').startsWith('video/')) { await takeVideo(file); return; }
       try {
         // Same 800px shrink stories use — a phone photo is a megabyte and a
         // proof shot does not need to be.
+        if (state.modal.videoUrl) URL.revokeObjectURL(state.modal.videoUrl);
+        state.modal.video = null;
+        state.modal.videoUrl = null;
         state.modal.image = await fileToStoryDataUrl(file);
         renderModal();
       } catch (err) {
@@ -5922,10 +5971,7 @@ function bindModalEvents() {
   if (proofFile) proofFile.onchange = onProofPicked;
   const proofLib = document.getElementById('proof-file-lib');
   if (proofLib) proofLib.onchange = onProofPicked;
-  const onVideoPicked = async (e) => {
-    const file = e.target.files[0];
-    e.target.value = '';
-    if (!file) return;
+  const takeVideo = async (file) => {
     showToast('Reading the clip…');
     try {
       const got = await readVideoFile(file);
@@ -5943,10 +5989,6 @@ function bindModalEvents() {
       );
     }
   };
-  const proofVideo = document.getElementById('proof-video');
-  if (proofVideo) proofVideo.onchange = onVideoPicked;
-  const proofVideoLib = document.getElementById('proof-video-lib');
-  if (proofVideoLib) proofVideoLib.onchange = onVideoPicked;
   const storyFile = document.getElementById('story-file');
   if (storyFile) {
     storyFile.onchange = async (e) => {
@@ -6047,15 +6089,6 @@ document.addEventListener('click', async (e) => {
     case 'save-proof-image':
       await saveProofCollage(btn.dataset.id);
       break;
-    case 'share-proof-video': {
-      const ex2 = state.exercises.find((e) => e.id === btn.dataset.id);
-      const raw = await loadProofVideo(todayISO(), btn.dataset.id);
-      if (!ex2 || !raw) { showToast('That clip is gone.'); break; }
-      // Straight through, untouched: no processing, no wait, no quality lost,
-      // and a file every gallery and story sheet already accepts.
-      await offerImage(raw, ex2, '-proof', raw.type || 'video/mp4');
-      break;
-    }
     case 'pick-proof': {
       const el = document.getElementById('proof-file');
       if (el) el.click();
@@ -6063,16 +6096,6 @@ document.addEventListener('click', async (e) => {
     }
     case 'pick-proof-lib': {
       const el = document.getElementById('proof-file-lib');
-      if (el) el.click();
-      break;
-    }
-    case 'pick-video': {
-      const el = document.getElementById('proof-video');
-      if (el) el.click();
-      break;
-    }
-    case 'pick-video-lib': {
-      const el = document.getElementById('proof-video-lib');
       if (el) el.click();
       break;
     }
@@ -6295,10 +6318,37 @@ document.addEventListener('click', async (e) => {
       state.modal = { type: 'shareChoice', exId: btn.dataset.id };
       renderModal();
       break;
-    case 'share-proof-collage':
-      closeModal();
-      await shareProofCollage(btn.dataset.id);
+    case 'share-proof-collage': {
+      const exId3 = btn.dataset.id;
+      // A photo card builds inside the tap that asked for it, so it can share
+      // straight away. A clip cannot: compositing runs in real time, and by the
+      // time it finishes the browser no longer counts this as a user gesture —
+      // navigator.share() refuses, offerImage falls back to a download, and iOS
+      // shows a file page instead of the share sheet. So the clip gets built
+      // first and shared by a second, fresh tap.
+      if (!hasProofVideo(todayISO(), exId3)) {
+        closeModal();
+        await shareProofCollage(exId3);
+        break;
+      }
+      state.modal = { type: 'shareReady', exId: exId3, building: true, built: null };
+      renderModal();
+      const made = await buildCollageFor(exId3);
+      if (!state.modal || state.modal.type !== 'shareReady' || state.modal.exId !== exId3) break;
+      state.modal.building = false;
+      state.modal.built = made && made.blob ? made : null;
+      renderModal();
       break;
+    }
+    case 'share-built': {
+      const m3 = state.modal || {};
+      const ex3 = state.exercises.find((e) => e.id === m3.exId);
+      if (!ex3 || !m3.built) break;
+      const { blob, mime } = m3.built;
+      closeModal();
+      await offerImage(blob, ex3, '-proof', mime);
+      break;
+    }
     case 'share-session-only':
       closeModal();
       await shareSessionImage(btn.dataset.id);

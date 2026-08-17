@@ -2232,7 +2232,10 @@
      side by side rather than argued about: qa-a low and wide, qa-b lifted onto
      the middle of the floor, qa-c the largest. Whichever wins becomes the
      default and the other two rules go. */
-  .floor-plate{ position:absolute; left:6%; width:88%; top:72%; height:19%; pointer-events:none; }
+  /* The plate carries the ring frame's own 238:120 aspect. Without it the ring
+     is stretched and every number below drifts with it; with it, the mark can be
+     placed from the measured ellipse and stay placed at any size. */
+  .floor-plate{ position:absolute; left:6%; width:88%; top:72%; aspect-ratio:238/120; pointer-events:none; }
   .floor-ring{ position:absolute; inset:0; overflow:hidden; pointer-events:none; opacity:0.8; }
   .floor-ring i{
     display:block; width:1000%; height:100%;
@@ -2240,21 +2243,31 @@
     will-change:transform;
     animation:fire-strip 1.6s steps(10) infinite;
   }
-  /* The mark sits ON the floor, so it is squashed to the same ellipse the ring
-     is drawn at — standing it upright would make it a sign hanging in the air
-     above the circle rather than something burned into the stone. */
+  /* Dead centre of the ELLIPSE, not of the box.
+     Measured on the sheet: the ellipse spans x 5-231 and y 46-119 of a 238x120
+     frame, so its centre is 49.6% across but 68.75% down — the light rays take
+     the top third of the frame, and centring on the box put the mark visibly
+     high. Its squash is 73/226 = 0.323, which is exactly the factor a circle
+     lying on that floor needs, so the mark is scaled by the same number rather
+     than a guess. Standing it upright would make it a sign hovering above the
+     circle instead of something burned into the stone.
+     Width 68% leaves even margin inside the ellipse on both axes. */
   .floor-mark{
-    position:absolute; left:50%; top:50%; width:46%; aspect-ratio:1;
-    transform:translate(-50%,-50%) scaleY(0.42);
+    position:absolute; left:49.6%; top:68.75%; width:68%; aspect-ratio:1;
+    transform:translate(-50%,-50%) scaleY(0.323);
     background:url('/floor-mark.webp') center/contain no-repeat;
-    opacity:0.62; pointer-events:none;
+    opacity:0.66; pointer-events:none;
     animation:frame-breathe 3.4s ease-in-out infinite;
   }
 
-  html.qa-b .floor-plate{ left:10%; width:80%; top:60%; height:22%; }
-  html.qa-b .floor-mark{ width:42%; }
-  html.qa-c .floor-plate{ left:-6%; width:112%; top:68%; height:25%; }
-  html.qa-c .floor-mark{ width:38%; }
+  /* Option 1: the ring is wide enough that every ember, wherever it starts,
+     rises out of it. The embers are not touched. */
+  html.opt1 .floor-plate{ left:-14%; width:128%; top:64%; }
+
+  /* Option 2: a big ring, and the embers restricted to it — they start inside
+     the ellipse and nowhere else, so the ring is visibly what is throwing them.
+     See the #embers override further down. */
+  html.opt2 .floor-plate{ left:-4%; width:108%; top:66%; }
 
   html.idle .floor-ring i, html.idle .floor-mark{ animation-play-state:paused; }
   @media (prefers-reduced-motion: reduce){
@@ -2387,6 +2400,35 @@
     55%  {transform:translate3d(14px, -46vh, 0) scale(1); opacity:0.7;}
     100% {transform:translate3d(-10px, -96vh, 0) scale(0.7); opacity:0;}
   }
+
+  /* Option 2 only: embers issue from the ring rather than from the whole floor.
+     They start inside the ellipse's x span and at its height, and they rise a
+     shorter distance, so they read as thrown up by the circle instead of
+     drifting past it. Written as a block so it can be deleted in one piece if
+     option 1 wins. */
+  html.opt2 #embers i{ bottom:22%; }
+  html.opt2 #embers i:nth-child(1){left:34%;}
+  html.opt2 #embers i:nth-child(2){left:44%;}
+  html.opt2 #embers i:nth-child(3){left:53%;}
+  html.opt2 #embers i:nth-child(4){left:62%;}
+  html.opt2 #embers i:nth-child(5){left:29%;}
+  html.opt2 #embers i:nth-child(6){left:70%;}
+  html.opt2 #embers i:nth-child(7){left:39%;}
+  html.opt2 #embers i:nth-child(8){left:49%;}
+  html.opt2 #embers i:nth-child(9){left:58%;}
+  html.opt2 #embers i:nth-child(10){left:66%;}
+  html.opt2 #embers i:nth-child(11){left:32%;}
+  html.opt2 #embers i:nth-child(12){left:46%;}
+  html.opt2 #embers i:nth-child(13){left:56%;}
+  html.opt2 #embers i:nth-child(14){left:64%;}
+  html.opt2 #embers i:nth-child(15){left:36%;}
+  html.opt2 #embers i:nth-child(16){left:51%;}
+  html.opt2 #embers i:nth-child(17){left:60%;}
+  html.opt2 #embers i:nth-child(18){left:42%;}
+  html.opt2 #embers i:nth-child(19){left:68%;}
+  html.opt2 #embers i:nth-child(20){left:31%;}
+  html.opt2 #embers i:nth-child(21){left:55%;}
+  html.opt2 #embers i:nth-child(22){left:47%;}
 
   html.idle #embers i{animation-play-state:paused;}
 

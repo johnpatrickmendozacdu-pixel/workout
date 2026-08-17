@@ -269,6 +269,57 @@ export function recordProof(proofLog, dateStr, exId, nowMs) {
   return next;
 }
 
+/**
+ * A proof picture or clip lives for 24 hours from the moment it was taken.
+ *
+ * The age is read from the proof RECORD, never from the file, because the
+ * record is the only thing with a timestamp on it. Media whose record has
+ * gone is expired by definition: there is nothing left that says it was ever
+ * earned.
+ *
+ * This governs the MEDIA only. proofLog itself is never expired — if it were,
+ * every past day would silently un-finish and take the streak with it.
+ */
+export const PROOF_MEDIA_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+export function proofMediaLive(proofLog, dateStr, exId, nowMs) {
+  const rec = proofFor(proofLog, dateStr, exId);
+  if (!rec || typeof rec.at !== 'number') return false;
+  return nowMs - rec.at < PROOF_MEDIA_MAX_AGE_MS;
+}
+
+/** Every entry in a by-day media map that has outlived its record. */
+export function expiredProofMedia(byDay, proofLog, nowMs) {
+  const out = [];
+  for (const date of Object.keys(byDay || {})) {
+    for (const exId of Object.keys(byDay[date] || {})) {
+      if (!proofMediaLive(proofLog, date, exId, nowMs)) out.push({ date, exId });
+    }
+  }
+  return out;
+}
+
+/** Removes the listed entries, dropping any day left empty. Never mutates. */
+export function dropFromByDay(byDay, entries) {
+  if (!entries || !entries.length) return byDay || {};
+  const next = { ...(byDay || {}) };
+  for (const { date, exId } of entries) {
+    if (!next[date]) continue;
+    const day = { ...next[date] };
+    delete day[exId];
+    if (Object.keys(day).length) next[date] = day; else delete next[date];
+  }
+  return next;
+}
+
+/** The same, for every day at once — what deleting an exercise needs. */
+export function purgeExerciseFromByDay(byDay, exId) {
+  const entries = Object.keys(byDay || {})
+    .filter((date) => byDay[date] && Object.prototype.hasOwnProperty.call(byDay[date], exId))
+    .map((date) => ({ date, exId }));
+  return entries.length ? dropFromByDay(byDay, entries) : (byDay || {});
+}
+
 export function calcDayStats(exercises, setsLog, dateStr, overrides, proof) {
   let targetedCount = 0;
   let completedCount = 0;

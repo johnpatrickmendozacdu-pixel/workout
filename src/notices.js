@@ -16,6 +16,16 @@
  */
 export const NOTICES = [
   {
+    id: '2026-08-17-video-proof',
+    date: '2026-08-17',
+    title: 'Proof can be a video now',
+    body: [
+      'Finish an exercise with a clip instead of a photo — record it in Sets or pick one you already took. Up to 15 seconds.',
+      'Share the clip as it is, or share the card with your clip playing behind the numbers. Both save to your phone.',
+      'Photos and clips now clear themselves after 24 hours, and go the moment you delete the exercise. Anything you saved to your phone is yours and stays.',
+    ],
+  },
+  {
     id: '2026-08-16-categories-and-sets',
     date: '2026-08-16',
     title: 'Categories fold, and targets can count sets',

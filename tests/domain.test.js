@@ -63,6 +63,10 @@ import {
   weightTrend,
   weeklyAverages,
   deepEqual,
+  proofMediaLive,
+  expiredProofMedia,
+  dropFromByDay,
+  purgeExerciseFromByDay,
   sameSnapshotData,
   recordWeight,
   mergeTombstones,
@@ -1675,5 +1679,49 @@ describe('bumpTargetIfPR in sets mode', () => {
   it('still raises a reps target on a genuine PR', () => {
     const repsEx = { id: 'r', targetHistory: [{ effectiveDate: '2026-08-01', target: 40 }] };
     expect(getEffectiveTarget(bumpTargetIfPR(repsEx, '2026-08-16', 55), '2026-08-16')).toBe(55);
+  });
+});
+
+describe('proof media lifetime', () => {
+  const DAY = 24 * 60 * 60 * 1000;
+  const log = {
+    '2026-08-17': { ex1: { at: 1000000, retakes: 0 }, ex2: { at: 1000000, retakes: 0 } },
+    '2026-08-16': { ex1: { at: 1000000 - 2 * DAY, retakes: 0 } },
+  };
+
+  it('keeps media younger than 24 hours', () => {
+    expect(proofMediaLive(log, '2026-08-17', 'ex1', 1000000 + 1000)).toBe(true);
+  });
+
+  it('expires media older than 24 hours', () => {
+    expect(proofMediaLive(log, '2026-08-17', 'ex1', 1000000 + DAY + 1)).toBe(false);
+  });
+
+  it('treats media with no proof record as expired', () => {
+    expect(proofMediaLive(log, '2026-08-17', 'nope', 1000000)).toBe(false);
+  });
+
+  it('lists every expired entry as date and exercise', () => {
+    const byDay = { '2026-08-17': { ex1: 'a', ex2: 'b' }, '2026-08-16': { ex1: 'c' } };
+    expect(expiredProofMedia(byDay, log, 1000000 + 1000)).toEqual([
+      { date: '2026-08-16', exId: 'ex1' },
+    ]);
+  });
+
+  it('drops listed entries and removes days left empty', () => {
+    const byDay = { '2026-08-17': { ex1: 'a', ex2: 'b' }, '2026-08-16': { ex1: 'c' } };
+    const next = dropFromByDay(byDay, [{ date: '2026-08-16', exId: 'ex1' }, { date: '2026-08-17', exId: 'ex1' }]);
+    expect(next).toEqual({ '2026-08-17': { ex2: 'b' } });
+    expect(byDay['2026-08-16']).toBeTruthy();
+  });
+
+  it('purges one exercise from every day and drops days left empty', () => {
+    const byDay = { '2026-08-17': { ex1: 'a', ex2: 'b' }, '2026-08-16': { ex1: 'c' } };
+    expect(purgeExerciseFromByDay(byDay, 'ex1')).toEqual({ '2026-08-17': { ex2: 'b' } });
+  });
+
+  it('returns the same object when a purge changes nothing', () => {
+    const byDay = { '2026-08-17': { ex2: 'b' } };
+    expect(purgeExerciseFromByDay(byDay, 'ex1')).toBe(byDay);
   });
 });

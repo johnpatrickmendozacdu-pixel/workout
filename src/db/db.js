@@ -83,6 +83,16 @@ export async function setItem(key, value) {
   });
 }
 
+export async function removeItem(key) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, 'readwrite');
+    tx.objectStore(STORE).delete(scoped(key));
+    tx.oncomplete = () => resolve(true);
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
 /**
  * Request persistent storage so the browser is less likely to evict this
  * site's data under storage pressure. Best-effort — not supported everywhere,

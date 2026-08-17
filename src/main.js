@@ -24,6 +24,10 @@ import {
   recordProof,
   retakesLeft,
   PROOF_MAX_RETAKES,
+  proofMediaLive,
+  expiredProofMedia,
+  dropFromByDay,
+  purgeExerciseFromByDay,
   calcDayStats,
   calcStreakInfo,
   calcWeeklyCompletion,
@@ -103,6 +107,10 @@ const state = {
   proofLog: {},
   /** The pictures themselves — local only, never in a Drive snapshot. */
   proofImages: {},
+  // The INDEX only — { date: { exId: true } }. The clips live under one key
+  // each (see videoKey) so a save writes one blob instead of rewriting every
+  // blob, and so startup reads none of them.
+  proofVideos: {},
   autoUpdated2: false,
   deletedExercises: {},
   storageError: false,
@@ -205,7 +213,7 @@ async function restoreNamespace() {
 }
 
 async function loadAll() {
-  const [exercises, setsLog, meta, timersLog, profile, streakOverrides, deletedExercises, habits, habitLog, noticesSeen, proofLog, proofImages] = await Promise.all([
+  const [exercises, setsLog, meta, timersLog, profile, streakOverrides, deletedExercises, habits, habitLog, noticesSeen, proofLog, proofImages, proofVideos] = await Promise.all([
     db.getItem('exercises'),
     db.getItem('sets-log'),
     db.getItem('app-meta'),
@@ -218,6 +226,7 @@ async function loadAll() {
     db.getItem('notices-seen'),
     db.getItem('proof-log'),
     db.getItem('proof-images'),
+    db.getItem('proof-videos'),
   ]);
 
   state.exercises = exercises || [];
@@ -232,20 +241,18 @@ async function loadAll() {
   state.habitLog = habitLog || {};
   state.proofLog = proofLog || {};
   state.proofImages = proofImages || {};
+  state.proofVideos = proofVideos || {};
   // The rule starts the first time this build runs, so everything already
   // finished stays finished. Written once and never moved.
   if (!state.meta.proofSince) {
     state.meta.proofSince = todayISO();
     db.setItem('app-meta', state.meta).catch(() => {});
   }
-  // Pictures are the artifact, not the record: two days is long enough to look
-  // back at one, and keeping them longer would fill the phone for nothing.
-  const proofCutoff = addDays(todayISO(), -2);
-  let prunedProof = false;
-  for (const d in state.proofImages) {
-    if (d < proofCutoff) { delete state.proofImages[d]; prunedProof = true; }
-  }
-  if (prunedProof) db.setItem('proof-images', state.proofImages).catch(() => {});
+  // Pictures and clips are the artifact, not the record: 24 hours from the
+  // moment it was taken, then it is gone unless it was saved to the phone —
+  // where no prune of ours can reach it. The RECORD survives; only the file
+  // goes. Read the note on PROOF_MEDIA_MAX_AGE_MS in domain.js.
+  await pruneProofMedia();
   // A genuinely fresh install starts with everything read: greeting a first-time
   // user with a backlog about features they have never not had is noise.
   //
@@ -372,6 +379,51 @@ async function persistProof() {
   } catch (e) {
     state.storageError = true;
     return false;
+  }
+}
+function videoKey(dateStr, exId) { return `proof-video:${dateStr}:${exId}`; }
+
+function hasProofVideo(dateStr, exId) {
+  return !!((state.proofVideos[dateStr] || {})[exId]);
+}
+
+async function saveProofVideo(dateStr, exId, blob) {
+  await db.setItem(videoKey(dateStr, exId), blob);
+  state.proofVideos = { ...state.proofVideos,
+    [dateStr]: { ...(state.proofVideos[dateStr] || {}), [exId]: true } };
+  await db.setItem('proof-videos', state.proofVideos);
+}
+
+/** On demand, never at startup: a clip is tens of megabytes and the app opens
+ *  on Today, which shows the still frame. */
+async function loadProofVideo(dateStr, exId) {
+  if (!hasProofVideo(dateStr, exId)) return null;
+  if (!proofMediaLive(state.proofLog, dateStr, exId, Date.now())) return null;
+  try {
+    const blob = await db.getItem(videoKey(dateStr, exId));
+    return blob || null;
+  } catch (e) { return null; }
+}
+
+/**
+ * Both stores, one cutoff. The video half deletes each blob KEY before it
+ * shrinks the index — an index entry dropped while its key survives is a leak
+ * no later startup can ever find again.
+ */
+async function pruneProofMedia() {
+  const now = Date.now();
+  const goneImages = expiredProofMedia(state.proofImages, state.proofLog, now);
+  if (goneImages.length) {
+    state.proofImages = dropFromByDay(state.proofImages, goneImages);
+    db.setItem('proof-images', state.proofImages).catch(() => {});
+  }
+  const goneVideos = expiredProofMedia(state.proofVideos, state.proofLog, now);
+  if (goneVideos.length) {
+    for (const { date, exId } of goneVideos) {
+      await db.removeItem(videoKey(date, exId)).catch(() => {});
+    }
+    state.proofVideos = dropFromByDay(state.proofVideos, goneVideos);
+    db.setItem('proof-videos', state.proofVideos).catch(() => {});
   }
 }
 async function persistHabits() {
@@ -1017,9 +1069,25 @@ async function toggleDayOverrideHandler(dateStr) {
 async function deleteExerciseHandler(id) {
   state.exercises = removeExercisePure(state.exercises, id);
   state.setsLog = purgeExerciseSetsPure(state.setsLog, id);
+  // The plan going takes its proof with it — record, picture and clip. Blob
+  // keys go first, for the same reason the prune does them first.
+  for (const date of Object.keys(state.proofVideos)) {
+    if ((state.proofVideos[date] || {})[id]) {
+      await db.removeItem(videoKey(date, id)).catch(() => {});
+    }
+  }
+  state.proofVideos = purgeExerciseFromByDay(state.proofVideos, id);
+  state.proofImages = purgeExerciseFromByDay(state.proofImages, id);
+  state.proofLog = purgeExerciseFromByDay(state.proofLog, id);
   // Tombstone the id so sync cannot resurrect it from the copy still in Drive.
   state.deletedExercises = { ...state.deletedExercises, [id]: Date.now() };
-  await Promise.all([persistExercises(), persistSets(), db.setItem('deleted-exercises', state.deletedExercises)]);
+  await Promise.all([
+    persistExercises(),
+    persistSets(),
+    persistProof(),
+    db.setItem('proof-videos', state.proofVideos),
+    db.setItem('deleted-exercises', state.deletedExercises),
+  ]);
   closeModal();
   rerender();
 }
@@ -2044,19 +2112,9 @@ async function buildSessionImage(ex, session) {
   if (document.fonts && document.fonts.ready) { try { await document.fonts.ready; } catch (e) { /* draw anyway */ } }
 
   const INK = '#0A0C0B', TEXT = '#EEF2EF', DIM = '#9AA5A0', FAINT = '#6E7975', ACCENT = '#3EE07F';
-  paintShareBackdrop(g, INK, ACCENT);
-
-  // With proof, the photo IS the card's ground rather than a panel above it.
-  // Stacking the two shrank the card — both are 9:16, so every bit of height
-  // the card gave up cost it width twice over — and pillarboxed a portrait
-  // phone photo inside a wide band. Full-bleed wastes nothing.
-  if (session.photo) {
-    const ph = session.photo;
-    const sc = Math.max(S / ph.width, SHARE_H / ph.height);
-    const pw = ph.width * sc, phh = ph.height * sc;
-    g.drawImage(ph, (S - pw) / 2, (SHARE_H - phh) / 2, pw, phh);
-    // Light over the picture, heavy under the text: the scrim has to let you
-    // see the proof at the top and still let you read the number below it.
+  // Light over the picture, heavy under the text: the scrim has to let you see
+  // the proof at the top and still let you read the number below it.
+  const paintScrim = () => {
     const scrim = g.createLinearGradient(0, 0, 0, SHARE_H);
     scrim.addColorStop(0, 'rgba(10,12,11,0.55)');
     scrim.addColorStop(0.30, 'rgba(10,12,11,0.38)');
@@ -2064,6 +2122,26 @@ async function buildSessionImage(ex, session) {
     scrim.addColorStop(1, 'rgba(10,12,11,0.95)');
     g.fillStyle = scrim;
     g.fillRect(0, 0, S, SHARE_H);
+  };
+
+  // overlayOnly draws the card and nothing under it, so a caller can composite
+  // it over something that moves. Every other caller gets the opaque card it
+  // always got.
+  if (session.overlayOnly) {
+    paintScrim();
+  } else {
+    paintShareBackdrop(g, INK, ACCENT);
+    // With proof, the photo IS the card's ground rather than a panel above it.
+    // Stacking the two shrank the card — both are 9:16, so every bit of height
+    // the card gave up cost it width twice over — and pillarboxed a portrait
+    // phone photo inside a wide band. Full-bleed wastes nothing.
+    if (session.photo) {
+      const ph = session.photo;
+      const sc = Math.max(S / ph.width, SHARE_H / ph.height);
+      const pw = ph.width * sc, phh = ph.height * sc;
+      g.drawImage(ph, (S - pw) / 2, (SHARE_H - phh) / 2, pw, phh);
+      paintScrim();
+    }
   }
 
   const pad = 76;
@@ -2148,7 +2226,7 @@ async function buildSessionImage(ex, session) {
     await shareLoadCrewIcon('role', standing && standing.role),
     await shareLoadCrewIcon('class', standing && standing.klass));
 
-  return new Promise((resolve) => c.toBlob(resolve, 'image/png'));
+  return session.overlayOnly ? c : new Promise((resolve) => c.toBlob(resolve, 'image/png'));
 }
 
 /**
@@ -2365,7 +2443,7 @@ async function shareDayImage() {
 
 /** Canvas → blob → share sheet, with a download fallback. Shared by all three
  *  cards so there is one answer to "where does the picture go". */
-async function offerImage(blob, ex, suffix) {
+async function offerImage(blob, ex, suffix, mime = 'image/png') {
   if (!blob) { showToast("Couldn't build the image."); return; }
   // The file is named for whoever it belongs to, read from the profile at the
   // moment of sharing — rename yourself and Save profile, and the next image
@@ -2373,7 +2451,10 @@ async function offerImage(blob, ex, suffix) {
   const slug = (v) => String(v || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
   const who = slug(state.profile && state.profile.username);
   const parts = ['sets', who, slug(ex.name)].filter(Boolean);
-  const file = new File([blob], `${parts.join('-')}${suffix}.png`, { type: 'image/png' });
+  // The extension comes off the type rather than a second argument: a name and
+  // a type that disagree is how a share sheet ends up refusing a valid file.
+  const ext = mime.includes('mp4') ? 'mp4' : mime.includes('webm') ? 'webm' : 'png';
+  const file = new File([blob], `${parts.join('-')}${suffix}.${ext}`, { type: mime });
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
     try { await navigator.share({ files: [file] }); return; } catch (e) { if (e && e.name === 'AbortError') return; }
   }
@@ -2382,7 +2463,7 @@ async function offerImage(blob, ex, suffix) {
   a.href = url; a.download = file.name;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
-  showToast('Image saved');
+  showToast(ext === 'png' ? 'Image saved' : 'Video saved');
 }
 
 /**
@@ -2410,6 +2491,43 @@ async function offerImage(blob, ex, suffix) {
  * portrait phone photo sat pillarboxed in a wide band — two thirds of the frame
  * was empty. Drawing the photo INTO the card is one pass, full size, no waste.
  */
+/**
+ * Is the file in my hand playable?
+ *
+ * NOT "can this browser record MP4". isTypeSupported() is a claim — Safari has
+ * answered true for types it then muxes badly — and a button branched off a
+ * claim is a feature that is missing on one phone and broken on another, with
+ * no way to tell which from here. Asking the artifact catches what the claim
+ * cannot: a recorder yielding zero bytes, a stream that never started, and a
+ * duration coming back Infinity, which is a real and common Chromium bug and
+ * which Instagram rejects anyway.
+ *
+ * minSec is why this is not just "duration > 0". A stalled draw loop yields a
+ * perfectly valid MP4 holding ONE frame — right container, right dimensions,
+ * 0.03 seconds long. That passed the first version of this check, which is
+ * precisely the artifact it exists to reject.
+ */
+function playableVideoBlob(blob, minSec) {
+  return new Promise((resolve) => {
+    if (!blob || blob.size < 1024) { resolve(false); return; }
+    const url = URL.createObjectURL(blob);
+    const v = document.createElement('video');
+    v.muted = true;
+    v.preload = 'metadata';
+    let settled = false;
+    const done = (ok) => {
+      if (settled) return;
+      settled = true;
+      URL.revokeObjectURL(url);
+      resolve(ok);
+    };
+    v.onloadedmetadata = () => done(Number.isFinite(v.duration) && v.duration >= (minSec || 0.5));
+    v.onerror = () => done(false);
+    setTimeout(() => done(false), 5000);
+    v.src = url;
+  });
+}
+
 async function buildProofCollage(exId) {
   const ex = state.exercises.find((e) => e.id === exId);
   const d = todayISO();
@@ -2446,17 +2564,167 @@ async function buildProofCollage(exId) {
   }
 }
 
+const COLLAGE_MAX_MS = 8000;
+// MP4 first, because it is the only container every story sheet accepts. This
+// picks a preference order; it never gates the button. The verdict is
+// playableVideoBlob, on the file that comes out.
+const RECORDER_TYPES = [
+  'video/mp4;codecs=avc1.42E01E',
+  'video/mp4',
+  'video/webm;codecs=vp9',
+  'video/webm',
+];
+
+/**
+ * The same card, with the clip as its moving ground.
+ *
+ * Eight seconds, because compositing runs in real time — there is no
+ * fast-forward without an encoder this app refuses to carry — so the clip's
+ * length is the user's wait. Eight seconds with a toast is a wait; fifteen is
+ * a hang. The raw-video button is instant and carries the whole clip, so
+ * nothing is lost by capping this one.
+ *
+ * Silent by design. A gym clip's audio is noise, and muxing a second track
+ * doubles the failure surface for something nobody asked for.
+ *
+ * ponytail: MediaRecorder's container is the browser's choice, so an old
+ * Android with no MP4 support yields .webm — which saves to the gallery but
+ * Instagram rejects. The upgrade, if it ever actually bites, is WebCodecs
+ * VideoEncoder with a vendored MP4 muxer. Not worth a second encoder today.
+ */
+async function buildProofVideoCollage(exId) {
+  const ex = state.exercises.find((e) => e.id === exId);
+  const d = todayISO();
+  const raw = ex && await loadProofVideo(d, exId);
+  if (!ex || !raw || !window.MediaRecorder) return null;
+
+  const arr = getSetsFor(exId, d);
+  const target = getEffectiveTarget(ex, d);
+  const timer = getTimerPure(state.timersLog, d, exId);
+  const st = exerciseStats(ex, state.setsLog, state.timersLog, null, state.streakOverrides);
+
+  const url = URL.createObjectURL(raw);
+  const vid = document.createElement('video');
+  vid.muted = true;
+  vid.playsInline = true;
+  // iOS refuses to play an unmuted, non-inline video without a fresh gesture,
+  // and a refused play records a blank canvas rather than throwing.
+  vid.setAttribute('playsinline', '');
+  vid.setAttribute('muted', '');
+  vid.loop = false;
+
+  let stopEarly = null;
+  try {
+    const card = await buildSessionImage(ex, {
+      total: progressValue(ex, arr), target,
+      timeMode: isTimeMode(ex),
+      sets: arr.length,
+      streak: st.currentStreak,
+      elapsed: formatDuration(timerElapsedMs(timer, Date.now())),
+      pct: target > 0 ? Math.min(1, progressValue(ex, arr) / target) : 1,
+      short: false,
+      dateLabel: formatDisplayDate(d, { weekday: 'short', day: 'numeric', month: 'short' }),
+      headline: target > 0 ? 'Target met' : 'Session complete',
+      overlayOnly: true,
+    });
+
+    await new Promise((res, rej) => {
+      vid.onloadeddata = res;
+      vid.onerror = () => rej(new Error('decode-failed'));
+      vid.src = url;
+    });
+
+    const c = document.createElement('canvas');
+    c.width = SHARE_W; c.height = SHARE_H;
+    const g = c.getContext('2d');
+    const stream = c.captureStream(30);
+    const mime = RECORDER_TYPES.find((t) => {
+      try { return MediaRecorder.isTypeSupported(t); } catch (e) { return false; }
+    });
+    const rec = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: 4000000 } : {});
+    const chunks = [];
+    rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+    const finished = new Promise((res) => { rec.onstop = res; });
+
+    const sc = Math.max(SHARE_W / vid.videoWidth, SHARE_H / vid.videoHeight);
+    const vw = vid.videoWidth * sc, vh = vid.videoHeight * sc;
+    const vx = (SHARE_W - vw) / 2, vy = (SHARE_H - vh) / 2;
+
+    // A timer, NOT requestAnimationFrame. rAF stops dead the moment the page
+    // is not visible — and the share sheet opening over the app, a glance at a
+    // notification, or the screen dimming all do that mid-build. The recording
+    // then holds a single frame: a valid MP4, right size, 0.03 seconds long.
+    // A timer keeps firing while hidden (throttled, so choppier), which is a
+    // worse video and not a broken one.
+    let ticker = 0;
+    const draw = () => {
+      g.drawImage(vid, vx, vy, vw, vh);
+      g.drawImage(card, 0, 0);
+    };
+
+    rec.start();
+    await vid.play();
+    draw();
+    ticker = setInterval(draw, 1000 / 30);
+    stopEarly = () => { clearInterval(ticker); try { rec.stop(); } catch (e) { /* already stopped */ } };
+    const wantMs = Math.min(COLLAGE_MAX_MS, vid.duration * 1000);
+    await new Promise((res) => {
+      const t = setTimeout(res, wantMs);
+      vid.onended = () => { clearTimeout(t); res(); };
+    });
+    stopEarly();
+    stopEarly = null;
+    await finished;
+
+    const blob = new Blob(chunks, { type: rec.mimeType || mime || 'video/mp4' });
+    // Half of what was asked for, floored at half a second: enough slack for a
+    // throttled tab, tight enough that a one-frame file can never pass.
+    if (!await playableVideoBlob(blob, Math.max(0.5, (wantMs / 1000) * 0.5))) return null;
+    return { blob, mime: blob.type };
+  } catch (e) {
+    return null;
+  } finally {
+    if (stopEarly) stopEarly();
+    vid.pause();
+    vid.src = '';
+    URL.revokeObjectURL(url);
+  }
+}
+
+/**
+ * One answer for both collage buttons: the moving card when there is a clip
+ * and the phone could make one, the still card otherwise.
+ *
+ * The still is not a consolation prize, it is the same card. Nothing is hidden
+ * on any phone, and no phone is ever handed a file it cannot play — a feature
+ * that exists on your phone and not your crewmate's is the disharmony this
+ * whole design exists to avoid.
+ */
+async function buildCollageFor(exId) {
+  const d = todayISO();
+  if (hasProofVideo(d, exId)) {
+    showToast('Building your video… about 8 seconds.');
+    const made = await buildProofVideoCollage(exId);
+    if (made) return made;
+    showToast("Your phone couldn't make the video card — here is the photo one.");
+  } else {
+    showToast('Building image…');
+  }
+  return { blob: await buildProofCollage(exId), mime: 'image/png' };
+}
+
 /** Keepsake: straight to the roll, never the share sheet. */
 async function saveProofCollage(exId) {
   const ex = state.exercises.find((e) => e.id === exId);
   if (!ex) return;
-  showToast('Building…');
-  const blob = await buildProofCollage(exId);
+  const made = await buildCollageFor(exId);
+  const blob = made.blob;
   if (!blob) { showToast("Couldn't build the image."); return; }
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   const slug = (v) => String(v || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-  a.href = url; a.download = `sets-proof-${slug(ex.name)}-${todayISO()}.png`;
+  const ext = made.mime.includes('mp4') ? 'mp4' : made.mime.includes('webm') ? 'webm' : 'png';
+  a.href = url; a.download = `sets-proof-${slug(ex.name)}-${todayISO()}.${ext}`;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
   showToast('Saved to your photos');
@@ -2466,9 +2734,8 @@ async function saveProofCollage(exId) {
 async function shareProofCollage(exId) {
   const ex = state.exercises.find((e) => e.id === exId);
   if (!ex) return;
-  showToast('Building image…');
-  const blob = await buildProofCollage(exId);
-  await offerImage(blob, ex, '-proof');
+  const made = await buildCollageFor(exId);
+  await offerImage(made.blob, ex, '-proof', made.mime);
 }
 
 /** Today's session, from the finished card it was tapped on. */
@@ -4176,7 +4443,11 @@ function modalConfirmBreak() {
   </div>`;
 }
 
-function closeModal() { state.modal = null; renderModal(); }
+function closeModal() {
+  if (state.modal && state.modal.videoUrl) URL.revokeObjectURL(state.modal.videoUrl);
+  state.modal = null;
+  renderModal();
+}
 let lastModalKey = null;
 function renderModal() {
   const root = document.getElementById('modal-root');
@@ -4398,7 +4669,9 @@ function modalShareChoice() {
         <b>The card</b><span>Numbers only — the clean one.</span>
       </button>
       <button class="add-kind" data-action="share-proof-collage" data-id="${ex.id}">
-        <b>With your proof</b><span>Your photo above the card, story-sized.</span>
+        <b>With your proof</b><span>${hasProofVideo(todayISO(), ex.id)
+          ? 'Your clip as the card, story-sized.'
+          : 'Your photo as the card, story-sized.'}</span>
       </button>
     </div>
   </div>`;
@@ -4415,6 +4688,10 @@ function modalProof() {
   const explained = !!state.meta.proofExplained;
 
   const shot = m.image || img;
+  // An object URL for the sheet only. Revoked when the sheet closes, in
+  // closeModal — a URL held past its element is the classic leak here.
+  const clip = m.videoUrl || null;
+  const hasVideo = hasProofVideo(today, ex.id);
   return `<div class="modal-backdrop" data-action="backdrop">
     <div class="modal-sheet" data-stop>
       <div class="sheet-handle"></div>
@@ -4427,7 +4704,10 @@ function modalProof() {
         <p>From now on an exercise counts as done once you have shown it. Take a picture, and your crew sees it for the day — that is the whole point of it.</p>
         <p>You get ${PROOF_MAX_RETAKES} retakes if the shot is bad. Days you finished before today are untouched.</p>
       </div>` : ''}
-      ${shot ? `<div class="proof-shot"><img src="${shot}" alt="Proof of ${escapeHtml(ex.name)}">
+      ${shot ? `<div class="proof-shot">
+        ${clip
+          ? `<video src="${clip}" poster="${shot}" controls playsinline muted loop preload="metadata"></video>`
+          : `<img src="${shot}" alt="Proof of ${escapeHtml(ex.name)}">`}
         <p class="story-caption">${escapeHtml(ex.name)}</p>
       </div>` : ''}
       <div class="field">
@@ -4438,11 +4718,17 @@ function modalProof() {
       </div>
       <input type="file" id="proof-file" accept="image/*" capture="environment" style="display:none">
       <input type="file" id="proof-file-lib" accept="image/*" style="display:none">
+      <input type="file" id="proof-video" accept="video/*" capture="environment" style="display:none">
+      <input type="file" id="proof-video-lib" accept="video/*" style="display:none">
       ${(!rec || left > 0) ? `
         <button class="primary-btn wide" data-action="pick-proof">${rec ? 'Retake' : 'Take the photo'}</button>
-        <button class="secondary-btn wide" data-action="pick-proof-lib">Upload a photo</button>` : ''}
+        <button class="secondary-btn wide" data-action="pick-proof-lib">Upload a photo</button>
+        <button class="secondary-btn wide" data-action="pick-video">${rec ? 'Record again' : 'Record a video'}</button>
+        <button class="secondary-btn wide" data-action="pick-video-lib">Upload a video</button>
+        <div class="hint">A clip can be up to ${PROOF_VIDEO_MAX_SEC} seconds.</div>` : ''}
       ${m.image ? `<button class="secondary-btn wide" data-action="save-proof" data-id="${ex.id}">Use this photo</button>` : ''}
       ${rec && img ? `<button class="secondary-btn wide" data-action="save-proof-image" data-id="${ex.id}">Save to my photos</button>` : ''}
+      ${rec && hasVideo ? `<button class="secondary-btn wide" data-action="share-proof-video" data-id="${ex.id}">Share the video</button>` : ''}
       ${rec && img ? `<button class="secondary-btn wide" data-action="share-proof-collage" data-id="${ex.id}">Share it</button>` : ''}
       ${rec ? `<div class="hint">${rec.posted
         ? 'Your crew can see this on today’s workout.'
@@ -5520,6 +5806,57 @@ function fileToStoryDataUrl(file) {
   });
 }
 
+const PROOF_VIDEO_MAX_SEC = 15;
+const PROOF_VIDEO_MAX_BYTES = 60 * 1024 * 1024;
+
+/**
+ * A clip, checked and given a still frame, or a refusal saying which rule it
+ * broke.
+ *
+ * The size cap is not tidiness. The clip is stored as it arrived — trimming or
+ * shrinking it would mean re-encoding, which means a multi-megabyte encoder
+ * this app does not carry — so the cap is the only thing between a phone
+ * shooting 4K and an IndexedDB store nobody can clear.
+ *
+ * The poster frame at 0.5s is what makes everything else work untouched: the
+ * Done row, the crew story and the still collage all read proofImages and
+ * neither know nor care that the proof moves.
+ */
+function readVideoFile(file) {
+  return new Promise((resolve, reject) => {
+    if (!file.type || !file.type.startsWith('video/')) { reject(new Error('not-a-video')); return; }
+    if (file.size > PROOF_VIDEO_MAX_BYTES) { reject(new Error('too-big')); return; }
+    const url = URL.createObjectURL(file);
+    const v = document.createElement('video');
+    v.muted = true;
+    v.playsInline = true;
+    v.setAttribute('playsinline', '');
+    v.preload = 'metadata';
+    const fail = (why) => { URL.revokeObjectURL(url); reject(new Error(why)); };
+    v.onerror = () => fail('decode-failed');
+    v.onloadedmetadata = () => {
+      if (!Number.isFinite(v.duration) || v.duration <= 0) { fail('decode-failed'); return; }
+      if (v.duration > PROOF_VIDEO_MAX_SEC + 0.5) { fail('too-long'); return; }
+      // Half a second in: frame zero of a phone clip is very often the lens
+      // still opening up.
+      v.onseeked = () => {
+        try {
+          const side = Math.min(1, 800 / Math.max(v.videoWidth, v.videoHeight));
+          const c = document.createElement('canvas');
+          c.width = Math.round(v.videoWidth * side);
+          c.height = Math.round(v.videoHeight * side);
+          c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+          const poster = c.toDataURL('image/jpeg', 0.68);
+          URL.revokeObjectURL(url);
+          resolve({ blob: file, poster });
+        } catch (e) { fail('decode-failed'); }
+      };
+      v.currentTime = Math.min(0.5, v.duration / 2);
+    };
+    v.src = url;
+  });
+}
+
 async function setAvatarHandler(file) {
   try {
     const dataUrl = await fileToAvatarDataUrl(file);
@@ -5585,6 +5922,31 @@ function bindModalEvents() {
   if (proofFile) proofFile.onchange = onProofPicked;
   const proofLib = document.getElementById('proof-file-lib');
   if (proofLib) proofLib.onchange = onProofPicked;
+  const onVideoPicked = async (e) => {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    showToast('Reading the clip…');
+    try {
+      const got = await readVideoFile(file);
+      if (state.modal.videoUrl) URL.revokeObjectURL(state.modal.videoUrl);
+      state.modal.video = got;
+      state.modal.videoUrl = URL.createObjectURL(got.blob);
+      state.modal.image = got.poster;
+      renderModal();
+    } catch (err) {
+      const why = err && err.message;
+      showToast(
+        why === 'too-long' ? `That clip is over ${PROOF_VIDEO_MAX_SEC} seconds — try a shorter one.`
+        : why === 'too-big' ? 'That clip is too large — try a shorter one, or a lower camera quality.'
+        : "That video couldn't be read."
+      );
+    }
+  };
+  const proofVideo = document.getElementById('proof-video');
+  if (proofVideo) proofVideo.onchange = onVideoPicked;
+  const proofVideoLib = document.getElementById('proof-video-lib');
+  if (proofVideoLib) proofVideoLib.onchange = onVideoPicked;
   const storyFile = document.getElementById('story-file');
   if (storyFile) {
     storyFile.onchange = async (e) => {
@@ -5653,10 +6015,21 @@ document.addEventListener('click', async (e) => {
       if (idx >= 0) await openStoryAt(m.id, idx);
       break;
     }
-    case 'open-proof':
-      state.modal = { type: 'proof', exId: btn.dataset.id, image: null };
+    case 'open-proof': {
+      const exId2 = btn.dataset.id;
+      state.modal = { type: 'proof', exId: exId2, image: null };
       renderModal();
+      const d = todayISO();
+      const existing = await loadProofVideo(d, exId2);
+      // The sheet may have been closed, or reopened on a different exercise,
+      // while the read was in flight — attaching the URL to the wrong modal
+      // (or a gone one) would leak it, since only closeModal revokes.
+      if (existing && state.modal && state.modal.type === 'proof' && state.modal.exId === exId2) {
+        state.modal.videoUrl = URL.createObjectURL(existing);
+        renderModal();
+      }
       break;
+    }
     case 'repost-proof': {
       const today2 = todayISO();
       const image = (state.proofImages[today2] || {})[btn.dataset.id];
@@ -5674,6 +6047,15 @@ document.addEventListener('click', async (e) => {
     case 'save-proof-image':
       await saveProofCollage(btn.dataset.id);
       break;
+    case 'share-proof-video': {
+      const ex2 = state.exercises.find((e) => e.id === btn.dataset.id);
+      const raw = await loadProofVideo(todayISO(), btn.dataset.id);
+      if (!ex2 || !raw) { showToast('That clip is gone.'); break; }
+      // Straight through, untouched: no processing, no wait, no quality lost,
+      // and a file every gallery and story sheet already accepts.
+      await offerImage(raw, ex2, '-proof', raw.type || 'video/mp4');
+      break;
+    }
     case 'pick-proof': {
       const el = document.getElementById('proof-file');
       if (el) el.click();
@@ -5681,6 +6063,16 @@ document.addEventListener('click', async (e) => {
     }
     case 'pick-proof-lib': {
       const el = document.getElementById('proof-file-lib');
+      if (el) el.click();
+      break;
+    }
+    case 'pick-video': {
+      const el = document.getElementById('proof-video');
+      if (el) el.click();
+      break;
+    }
+    case 'pick-video-lib': {
+      const el = document.getElementById('proof-video-lib');
       if (el) el.click();
       break;
     }
@@ -5693,6 +6085,20 @@ document.addEventListener('click', async (e) => {
       state.proofLog = recordProof(before, today, exId, Date.now());
       if (state.proofLog === before) { showToast('No retakes left.'); break; }
       state.proofImages = { ...state.proofImages, [today]: { ...(state.proofImages[today] || {}), [exId]: img } };
+      // A clip is stored beside its poster, never instead of it. Everything
+      // else in the app reads the poster and needs no knowledge of video.
+      const clip = state.modal && state.modal.video;
+      if (clip) await saveProofVideo(today, exId, clip.blob);
+      else if (hasProofVideo(today, exId)) {
+        // A retake with a photo replaces a clip: leaving the old one would
+        // mean the sheet plays a video the record no longer describes.
+        await db.removeItem(videoKey(today, exId)).catch(() => {});
+        // dropFromByDay, NOT purgeExerciseFromByDay: only today's key was
+        // deleted, so purging every day would leave yesterday's blob orphaned
+        // under a key no index can ever name again.
+        state.proofVideos = dropFromByDay(state.proofVideos, [{ date: today, exId }]);
+        await db.setItem('proof-videos', state.proofVideos);
+      }
       // Explained once, on the first one ever taken.
       if (!state.meta.proofExplained) { state.meta.proofExplained = true; }
       await persistProof();
@@ -5711,6 +6117,7 @@ document.addEventListener('click', async (e) => {
       }).catch(() => {});
       break;
     }
+    case 'open-notices':
       state.modal = { type: 'notices' };
       // Opening is reading. The badge clears now rather than on close, so
       // dismissing the sheet cannot leave a count for something already seen.

@@ -101,8 +101,13 @@ def build_frame():
     im = Image.open(ROOT / 'fireframebackup.jpg').convert('RGB')
     im = im.crop(im.convert('L').point(lambda p: 255 if p > 34 else 0).getbbox())
     W, H = im.size
-    S, dc = 256, 72                      # dc must stay under S/2 or the edges invert
-    scw, sch = int(W * 0.20), int(H * 0.32)
+    # T is how thick the border band is drawn. It is the whole point of this
+    # asset: the frame has to read as a border around the photo, not a hairline
+    # on top of it. The corner ornament runs a little larger than the band so
+    # the corners stay corners rather than becoming four more edges.
+    S, T = 256, 58
+    dc = T + 18
+    scw, sch = int(W * 0.22), int(H * 0.34)
     out = Image.new('RGB', (S, S), (0, 0, 0))
 
     def put(src, dst):
@@ -114,15 +119,15 @@ def build_frame():
     put((W - scw, 0, W, sch),         (S - dc, 0, S, dc))
     put((0, H - sch, scw, H),         (0, S - dc, dc, S))
     put((W - scw, H - sch, W, H),     (S - dc, S - dc, S, S))
-    put((scw, 0, W - scw, sch),       (dc, 0, S - dc, dc))
-    put((scw, H - sch, W - scw, H),   (dc, S - dc, S - dc, S))
-    put((0, sch, scw, H - sch),       (0, dc, dc, S - dc))
-    put((W - scw, sch, W, H - sch),   (S - dc, dc, S, S - dc))
+    put((scw, 0, W - scw, sch),       (dc, 0, S - dc, T))
+    put((scw, H - sch, W - scw, H),   (dc, S - T, S - dc, S))
+    put((0, sch, scw, H - sch),       (0, dc, T, S - dc))
+    put((W - scw, sch, W, H - sch),   (S - T, dc, S, S - dc))
 
     # A floor before the boost: this source has dim smoke inside its opening,
     # and without the floor that haze survives as alpha and greys the face.
     out.putalpha(out.convert('L').point(
-        lambda p: 0 if p < 46 else min(255, int((p - 46) * 1.9))))
+        lambda p: 0 if p < 44 else min(255, int((p - 44) * 2.1))))
     path = OUT / 'fire-frame.webp'
     out.save(path, 'WEBP', quality=84, method=6)
     print(f'{path.name}: {S}x{S} square, {path.stat().st_size / 1024:.0f} KB')

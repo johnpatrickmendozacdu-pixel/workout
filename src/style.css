@@ -2206,20 +2206,38 @@
      and is never seen. The flames appear to come up from under the screen
      rather than starting at a cut. The mask fades the tips, so the tall ones
      die out in air instead of stopping at an edge. */
-  .fire-band.s1{ left:-3%;  width:24%; bottom:0;     height:27%;   opacity:0.55; }
-  .fire-band.s1 i{ animation-duration:1.9s; }
-  .fire-band.s2{ left:15%;  width:16%; bottom:0;     height:21%;   opacity:0.4;  transform:scaleX(-1); }
-  .fire-band.s2 i{ animation-duration:2.3s;  animation-delay:-0.8s; }
-  .fire-band.s3{ left:30%;  width:21%; bottom:0;     height:31%;   opacity:0.6;  }
-  .fire-band.s3 i{ animation-duration:1.75s; animation-delay:-1.4s; }
-  .fire-band.s4{ left:47%;  width:14%; bottom:0;     height:19%;   opacity:0.34; transform:scaleX(-1); }
-  .fire-band.s4 i{ animation-duration:2.55s; animation-delay:-0.35s; }
-  .fire-band.s5{ left:57%;  width:22%; bottom:0;     height:29%;   opacity:0.57; }
-  .fire-band.s5 i{ animation-duration:2.05s; animation-delay:-1.9s; }
-  .fire-band.s6{ left:75%;  width:15%; bottom:0;     height:22%;   opacity:0.38; transform:scaleX(-1); }
-  .fire-band.s6 i{ animation-duration:1.65s; animation-delay:-0.55s; }
-  .fire-band.s7{ left:86%;  width:20%; bottom:0;     height:26%;   opacity:0.53; }
-  .fire-band.s7 i{ animation-duration:2.45s; animation-delay:-1.1s; }
+  /* Volume, and one rate.
+     Seven clusters with gaps between them read as seven separate fires sitting
+     a seat apart, and durations spread from 1.65s to 2.55s made them look out
+     of time with each other — the same wall burning at different speeds, which
+     nothing real does. They OVERLAP now: ten of them, each wide enough to run
+     into its neighbours, so the fire is continuous across the floor and the
+     variation is in how high it reaches rather than whether it is there.
+     Every duration sits between 1.85s and 2.05s — close enough to be one fire,
+     far enough not to pulse in unison — and the phases are separated by delay
+     instead, which changes what each cluster is doing without changing how
+     fast it does it. */
+  .fire-band{ width:20%; bottom:0; }
+  .fire-band.s1{ left:-6%; height:30%; opacity:0.6;  }
+  .fire-band.s1 i{ animation-duration:1.94s; animation-delay:-0.2s; }
+  .fire-band.s2{ left:4%;  height:24%; opacity:0.5;  transform:scaleX(-1); }
+  .fire-band.s2 i{ animation-duration:2.0s;  animation-delay:-1.3s; }
+  .fire-band.s3{ left:14%; height:33%; opacity:0.66; }
+  .fire-band.s3 i{ animation-duration:1.88s; animation-delay:-0.7s; }
+  .fire-band.s4{ left:24%; height:26%; opacity:0.54; transform:scaleX(-1); }
+  .fire-band.s4 i{ animation-duration:2.02s; animation-delay:-1.8s; }
+  .fire-band.s5{ left:34%; height:31%; opacity:0.63; }
+  .fire-band.s5 i{ animation-duration:1.9s;  animation-delay:-0.45s; }
+  .fire-band.s6{ left:44%; height:25%; opacity:0.52; transform:scaleX(-1); }
+  .fire-band.s6 i{ animation-duration:1.97s; animation-delay:-1.05s; }
+  .fire-band.s7{ left:54%; height:34%; opacity:0.68; }
+  .fire-band.s7 i{ animation-duration:1.86s; animation-delay:-1.55s; }
+  .fire-band.s8{ left:64%; height:27%; opacity:0.55; transform:scaleX(-1); }
+  .fire-band.s8 i{ animation-duration:2.04s; animation-delay:-0.9s; }
+  .fire-band.s9{ left:74%; height:32%; opacity:0.64; }
+  .fire-band.s9 i{ animation-duration:1.92s; animation-delay:-1.65s; }
+  .fire-band.s10{ left:85%; height:28%; opacity:0.57; transform:scaleX(-1); }
+  .fire-band.s10 i{ animation-duration:1.99s; animation-delay:-0.6s; }
 
   /* Three braziers, each on its own clock and none of the durations a multiple
      of another — three flames rising in step reads as one animation repeated,
@@ -2443,12 +2461,22 @@
      instead: corners at native scale, edges stretched, baked into a square
      picture. What ships is background-size:100% 100% on a square box, which
      has no compatibility question left in it. */
+  /* OUTSIDE the photo, not over it. A negative inset puts the band around the
+     picture the way a frame goes around a print — sitting flush on top of it
+     made a thin line drawn on someone's face. That needs overflow:visible,
+     which the square boxes can afford: overflow:hidden was only ever there to
+     clip an image to a rounded corner, and there are no rounded corners here. */
+  .avatar-chip.has-photo, .profile-avatar-big.has-photo{ overflow:visible; }
   .avatar-chip.has-photo::before, .profile-avatar-big.has-photo::before{
-    content:""; position:absolute; inset:0; pointer-events:none; z-index:2;
+    content:""; position:absolute; pointer-events:none; z-index:2;
     background:url('/fire-frame.webp') 0 0 / 100% 100% no-repeat;
     /* A still frame beside a burning room looks dead, so it breathes. */
     animation:frame-breathe 3.4s ease-in-out infinite;
   }
+  /* The chip sits in a row of five with small gaps, so its overhang is the
+     most it can take without touching the bell beside it. */
+  .avatar-chip.has-photo::before{ inset:-6px; }
+  .profile-avatar-big.has-photo::before{ inset:-13px; }
   @keyframes frame-breathe{ 0%,100%{opacity:0.82;} 50%{opacity:1;} }
 
   /* The green rings this replaces — two frames on one photo is one too many. */

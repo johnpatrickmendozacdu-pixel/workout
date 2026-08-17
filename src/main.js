@@ -24,6 +24,10 @@ import {
   recordProof,
   retakesLeft,
   PROOF_MAX_RETAKES,
+  proofMediaLive,
+  expiredProofMedia,
+  dropFromByDay,
+  purgeExerciseFromByDay,
   calcDayStats,
   calcStreakInfo,
   calcWeeklyCompletion,
@@ -103,6 +107,10 @@ const state = {
   proofLog: {},
   /** The pictures themselves — local only, never in a Drive snapshot. */
   proofImages: {},
+  // The INDEX only — { date: { exId: true } }. The clips live under one key
+  // each (see videoKey) so a save writes one blob instead of rewriting every
+  // blob, and so startup reads none of them.
+  proofVideos: {},
   autoUpdated2: false,
   deletedExercises: {},
   storageError: false,
@@ -205,7 +213,7 @@ async function restoreNamespace() {
 }
 
 async function loadAll() {
-  const [exercises, setsLog, meta, timersLog, profile, streakOverrides, deletedExercises, habits, habitLog, noticesSeen, proofLog, proofImages] = await Promise.all([
+  const [exercises, setsLog, meta, timersLog, profile, streakOverrides, deletedExercises, habits, habitLog, noticesSeen, proofLog, proofImages, proofVideos] = await Promise.all([
     db.getItem('exercises'),
     db.getItem('sets-log'),
     db.getItem('app-meta'),
@@ -218,6 +226,7 @@ async function loadAll() {
     db.getItem('notices-seen'),
     db.getItem('proof-log'),
     db.getItem('proof-images'),
+    db.getItem('proof-videos'),
   ]);
 
   state.exercises = exercises || [];
@@ -232,20 +241,18 @@ async function loadAll() {
   state.habitLog = habitLog || {};
   state.proofLog = proofLog || {};
   state.proofImages = proofImages || {};
+  state.proofVideos = proofVideos || {};
   // The rule starts the first time this build runs, so everything already
   // finished stays finished. Written once and never moved.
   if (!state.meta.proofSince) {
     state.meta.proofSince = todayISO();
     db.setItem('app-meta', state.meta).catch(() => {});
   }
-  // Pictures are the artifact, not the record: two days is long enough to look
-  // back at one, and keeping them longer would fill the phone for nothing.
-  const proofCutoff = addDays(todayISO(), -2);
-  let prunedProof = false;
-  for (const d in state.proofImages) {
-    if (d < proofCutoff) { delete state.proofImages[d]; prunedProof = true; }
-  }
-  if (prunedProof) db.setItem('proof-images', state.proofImages).catch(() => {});
+  // Pictures and clips are the artifact, not the record: 24 hours from the
+  // moment it was taken, then it is gone unless it was saved to the phone —
+  // where no prune of ours can reach it. The RECORD survives; only the file
+  // goes. Read the note on PROOF_MEDIA_MAX_AGE_MS in domain.js.
+  await pruneProofMedia();
   // A genuinely fresh install starts with everything read: greeting a first-time
   // user with a backlog about features they have never not had is noise.
   //
@@ -372,6 +379,51 @@ async function persistProof() {
   } catch (e) {
     state.storageError = true;
     return false;
+  }
+}
+function videoKey(dateStr, exId) { return `proof-video:${dateStr}:${exId}`; }
+
+function hasProofVideo(dateStr, exId) {
+  return !!((state.proofVideos[dateStr] || {})[exId]);
+}
+
+async function saveProofVideo(dateStr, exId, blob) {
+  await db.setItem(videoKey(dateStr, exId), blob);
+  state.proofVideos = { ...state.proofVideos,
+    [dateStr]: { ...(state.proofVideos[dateStr] || {}), [exId]: true } };
+  await db.setItem('proof-videos', state.proofVideos);
+}
+
+/** On demand, never at startup: a clip is tens of megabytes and the app opens
+ *  on Today, which shows the still frame. */
+async function loadProofVideo(dateStr, exId) {
+  if (!hasProofVideo(dateStr, exId)) return null;
+  if (!proofMediaLive(state.proofLog, dateStr, exId, Date.now())) return null;
+  try {
+    const blob = await db.getItem(videoKey(dateStr, exId));
+    return blob || null;
+  } catch (e) { return null; }
+}
+
+/**
+ * Both stores, one cutoff. The video half deletes each blob KEY before it
+ * shrinks the index — an index entry dropped while its key survives is a leak
+ * no later startup can ever find again.
+ */
+async function pruneProofMedia() {
+  const now = Date.now();
+  const goneImages = expiredProofMedia(state.proofImages, state.proofLog, now);
+  if (goneImages.length) {
+    state.proofImages = dropFromByDay(state.proofImages, goneImages);
+    db.setItem('proof-images', state.proofImages).catch(() => {});
+  }
+  const goneVideos = expiredProofMedia(state.proofVideos, state.proofLog, now);
+  if (goneVideos.length) {
+    for (const { date, exId } of goneVideos) {
+      await db.removeItem(videoKey(date, exId)).catch(() => {});
+    }
+    state.proofVideos = dropFromByDay(state.proofVideos, goneVideos);
+    db.setItem('proof-videos', state.proofVideos).catch(() => {});
   }
 }
 async function persistHabits() {
@@ -1017,9 +1069,25 @@ async function toggleDayOverrideHandler(dateStr) {
 async function deleteExerciseHandler(id) {
   state.exercises = removeExercisePure(state.exercises, id);
   state.setsLog = purgeExerciseSetsPure(state.setsLog, id);
+  // The plan going takes its proof with it — record, picture and clip. Blob
+  // keys go first, for the same reason the prune does them first.
+  for (const date of Object.keys(state.proofVideos)) {
+    if ((state.proofVideos[date] || {})[id]) {
+      await db.removeItem(videoKey(date, id)).catch(() => {});
+    }
+  }
+  state.proofVideos = purgeExerciseFromByDay(state.proofVideos, id);
+  state.proofImages = purgeExerciseFromByDay(state.proofImages, id);
+  state.proofLog = purgeExerciseFromByDay(state.proofLog, id);
   // Tombstone the id so sync cannot resurrect it from the copy still in Drive.
   state.deletedExercises = { ...state.deletedExercises, [id]: Date.now() };
-  await Promise.all([persistExercises(), persistSets(), db.setItem('deleted-exercises', state.deletedExercises)]);
+  await Promise.all([
+    persistExercises(),
+    persistSets(),
+    persistProof(),
+    db.setItem('proof-videos', state.proofVideos),
+    db.setItem('deleted-exercises', state.deletedExercises),
+  ]);
   closeModal();
   rerender();
 }

@@ -244,6 +244,13 @@ async function loadAll() {
   state.proofVideos = proofVideos || {};
   // The rule starts the first time this build runs, so everything already
   // finished stays finished. Written once and never moved.
+  // Same shape as proofSince, and a separate date on purpose: the crew rule
+  // arrived later, and a day finished under the old rule must not turn into an
+  // unproven one on someone else's screen.
+  if (!state.meta.crewProofSince) {
+    state.meta.crewProofSince = todayISO();
+    db.setItem('app-meta', state.meta).catch(() => {});
+  }
   if (!state.meta.proofSince) {
     state.meta.proofSince = todayISO();
     db.setItem('app-meta', state.meta).catch(() => {});
@@ -4024,7 +4031,16 @@ function myCrewCard() {
     extra[ex.id] = { top: st.topSet || 0, bestDay: st.maxReps || 0, avgMs: st.avgTime || 0, totalMs: st.totalTime || 0 };
   });
   const dayStreak = calcStreakInfo(state.exercises, state.setsLog, today, state.streakOverrides);
-  const card = buildCrewCard(state.profile, state.exercises, stats, todayTotals, dayStreak, dueToday, targets, strips, doneAt, extra, rests);
+  // Proof, before the crew is told anything happened. `posted` rather than the
+  // record: what a crew can see is the whole point, and a record they cannot
+  // open is the same to them as no proof at all. The proof sheet says "Not sent
+  // to your crew yet" and offers the send, so this is never a dead end.
+  const proven = {};
+  const gated = proofRequiredOn(today, state.meta.crewProofSince);
+  state.exercises.forEach((ex) => {
+    proven[ex.id] = !gated || !!(proofFor(state.proofLog, today, ex.id) || {}).posted;
+  });
+  const card = buildCrewCard(state.profile, state.exercises, stats, todayTotals, dayStreak, dueToday, targets, strips, doneAt, extra, rests, proven);
   return { ...card, photo: crewPhoto() };
 }
 
@@ -6110,6 +6126,7 @@ document.addEventListener('click', async (e) => {
           [btn.dataset.id]: { ...(state.proofLog[today2] || {})[btn.dataset.id], posted } } };
       await persistProof();
       renderModal(); renderView();
+      if (posted) refreshCrews().catch(() => {});
       showToast(posted ? 'Sent to your crew' : "Couldn't send — try again later");
       break;
     }
@@ -6164,6 +6181,10 @@ document.addEventListener('click', async (e) => {
             [exId]: { ...(state.proofLog[today] || {})[exId], posted: !!posted } } };
         persistProof();
         renderView();
+        // The card withholds the day until proof is sent, so the card has to go
+        // again the moment it lands — otherwise the crew sees nothing until the
+        // next sync and the proof looks like it never arrived.
+        if (posted) refreshCrews().catch(() => {});
       }).catch(() => {});
       break;
     }

@@ -652,6 +652,37 @@ describe('buildCrewCard', () => {
     expect(card.exercises).toHaveLength(2);        // the archived one is not published
   });
 
+  it('withholds the day until proof reached the crew', () => {
+    // The tick was the claim and the claim was the only evidence. An exercise
+    // with work logged but no proof sent publishes as a day not yet done.
+    const unproven = buildCrewCard({}, exercises, stats, { a: 76 }, { current: 9 },
+      null, null, null, { a: 1699999999 }, null, null, { a: false, b: false });
+    const pushUps = unproven.exercises.find((e) => e.name === 'Push Ups');
+    expect(pushUps.today).toBe(0);
+    expect(pushUps.doneAt).toBe(0);
+    expect(unproven.trainedToday).toBe(false);
+    // History is never re-judged by the rule.
+    expect(pushUps.streak).toBe(17);
+    expect(pushUps.total).toBe(1292);
+    expect(unproven.streak).toBe(9);
+  });
+
+  it('publishes the day once its proof is sent', () => {
+    const proved = buildCrewCard({}, exercises, stats, { a: 76 }, { current: 9 },
+      null, null, null, { a: 1699999999 }, null, null, { a: true });
+    const pushUps = proved.exercises.find((e) => e.name === 'Push Ups');
+    expect(pushUps.today).toBe(76);
+    expect(pushUps.doneAt).toBe(1699999999);
+    expect(proved.trainedToday).toBe(true);
+  });
+
+  it('publishes everything when no proof rule is passed at all', () => {
+    // Every caller from before the rule, and every day before its cutoff.
+    const card = buildCrewCard({}, exercises, stats, { a: 76 }, { current: 9 });
+    expect(card.exercises.find((e) => e.name === 'Push Ups').today).toBe(76);
+    expect(card.trainedToday).toBe(true);
+  });
+
   it('counts any logged work as trained today, not a met target', () => {
     const none = buildCrewCard({}, exercises, stats, {}, { current: 0 });
     expect(none.trainedToday).toBe(false);

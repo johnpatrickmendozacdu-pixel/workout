@@ -481,17 +481,32 @@ export function formatCount(n) {
  */
 const DAY_CHAR = { hit: 'h', break: 'b', miss: 'm', rest: 'r', none: 'n' };
 
-export function buildCrewCard(profile, exercises, statsById, todayTotals, dayStreak, dueToday, targets, strips, doneAt, extra, rests) {
+/**
+ * `proven` is the crew's proof rule: an exercise's DAY is published only once
+ * its proof has actually reached the crew.
+ *
+ * Without it a crew card said "done" for work nobody could see, which is the
+ * one thing proof of workout exists to prevent — the tick was the claim and
+ * the claim was the only evidence.
+ *
+ * It gates the DAY only: `today` and `doneAt`. Streaks, lifetime totals and
+ * the seven-day strip are history and are never re-judged, both because a
+ * logged day is immutable here and because the rule starts from a date rather
+ * than reaching backwards. Omitting `proven` entirely publishes everything,
+ * which is what every caller from before this rule does.
+ */
+export function buildCrewCard(profile, exercises, statsById, todayTotals, dayStreak, dueToday, targets, strips, doneAt, extra, rests, proven) {
   const active = (exercises || []).filter((e) => e.active && !e.archived);
   const cards = active.map((ex) => {
     const s = (statsById && statsById[ex.id]) || {};
+    const shows = !proven || !!proven[ex.id];
     return {
       name: ex.name,
       category: ex.category || '',
       unit: ex.unit || 'reps',
       streak: s.currentStreak || 0,
       total: s.totalReps || 0,
-      today: (todayTotals && todayTotals[ex.id]) || 0,
+      today: shows ? ((todayTotals && todayTotals[ex.id]) || 0) : 0,
       // The day, not just the lifetime: a crew watching each other needs to see
       // what someone is down to do and whether they have done it. A total with
       // no target beside it says nothing about being on track.
@@ -502,7 +517,7 @@ export function buildCrewCard(profile, exercises, statsById, todayTotals, dayStr
       days: ((strips && strips[ex.id]) || []).map((d) => DAY_CHAR[d] || 'n').join(''),
       // When today's work was finished, and the figures that make a crew card
       // read like the Progress card it mirrors.
-      doneAt: (doneAt && doneAt[ex.id]) || 0,
+      doneAt: shows ? ((doneAt && doneAt[ex.id]) || 0) : 0,
       // A claimed rest day is a decision, not an absence. Without this a crew
       // sees someone who chose to rest and someone who has not started as the
       // same thing — and nudges the wrong one.

@@ -2206,38 +2206,47 @@
      and is never seen. The flames appear to come up from under the screen
      rather than starting at a cut. The mask fades the tips, so the tall ones
      die out in air instead of stopping at an edge. */
-  /* Volume, and one rate.
-     Seven clusters with gaps between them read as seven separate fires sitting
-     a seat apart, and durations spread from 1.65s to 2.55s made them look out
-     of time with each other — the same wall burning at different speeds, which
-     nothing real does. They OVERLAP now: ten of them, each wide enough to run
-     into its neighbours, so the fire is continuous across the floor and the
-     variation is in how high it reaches rather than whether it is there.
-     Every duration sits between 1.85s and 2.05s — close enough to be one fire,
-     far enough not to pulse in unison — and the phases are separated by delay
-     instead, which changes what each cluster is doing without changing how
-     fast it does it. */
-  .fire-band{ width:20%; bottom:0; }
-  .fire-band.s1{ left:-6%; height:30%; opacity:0.6;  }
-  .fire-band.s1 i{ animation-duration:1.94s; animation-delay:-0.2s; }
-  .fire-band.s2{ left:4%;  height:24%; opacity:0.5;  transform:scaleX(-1); }
-  .fire-band.s2 i{ animation-duration:2.0s;  animation-delay:-1.3s; }
-  .fire-band.s3{ left:14%; height:33%; opacity:0.66; }
-  .fire-band.s3 i{ animation-duration:1.88s; animation-delay:-0.7s; }
-  .fire-band.s4{ left:24%; height:26%; opacity:0.54; transform:scaleX(-1); }
-  .fire-band.s4 i{ animation-duration:2.02s; animation-delay:-1.8s; }
-  .fire-band.s5{ left:34%; height:31%; opacity:0.63; }
-  .fire-band.s5 i{ animation-duration:1.9s;  animation-delay:-0.45s; }
-  .fire-band.s6{ left:44%; height:25%; opacity:0.52; transform:scaleX(-1); }
-  .fire-band.s6 i{ animation-duration:1.97s; animation-delay:-1.05s; }
-  .fire-band.s7{ left:54%; height:34%; opacity:0.68; }
-  .fire-band.s7 i{ animation-duration:1.86s; animation-delay:-1.55s; }
-  .fire-band.s8{ left:64%; height:27%; opacity:0.55; transform:scaleX(-1); }
-  .fire-band.s8 i{ animation-duration:2.04s; animation-delay:-0.9s; }
-  .fire-band.s9{ left:74%; height:32%; opacity:0.64; }
-  .fire-band.s9 i{ animation-duration:1.92s; animation-delay:-1.65s; }
-  .fire-band.s10{ left:85%; height:28%; opacity:0.57; transform:scaleX(-1); }
-  .fire-band.s10 i{ animation-duration:1.99s; animation-delay:-0.6s; }
+  /* One rate, no gaps, mid height.
+     Every cluster runs at exactly 1.95s. Spreading the durations, even
+     narrowly, is what made the wall look out of time with itself — a single
+     fire has a single rate, and the only thing that should differ between one
+     part of it and another is which moment it is at. That is the delay, and
+     the delays are all different.
+
+     Twelve of them at 26% wide on a 9% pitch, so each one is drawn over by
+     both neighbours. The sprites carry dark edges that screen away to nothing,
+     so boxes that merely touch still leave holes — the overlap has to be in
+     the content, not just the boxes.
+
+     Mid height: tall enough to be fire, short enough to stay under the
+     content. */
+  .fire-band{ width:26%; bottom:0; }
+  .fire-band i{ animation-duration:1.95s; }
+
+  .fire-band.s1{ left:-6%; height:17%; opacity:0.58; }
+  .fire-band.s1 i{ animation-delay:-0.2s; }
+  .fire-band.s2{ left:3%; height:20%; opacity:0.50; transform:scaleX(-1); }
+  .fire-band.s2 i{ animation-delay:-1.3s; }
+  .fire-band.s3{ left:12%; height:16%; opacity:0.62; }
+  .fire-band.s3 i{ animation-delay:-0.7s; }
+  .fire-band.s4{ left:21%; height:21%; opacity:0.54; transform:scaleX(-1); }
+  .fire-band.s4 i{ animation-delay:-1.75s; }
+  .fire-band.s5{ left:30%; height:18%; opacity:0.60; }
+  .fire-band.s5 i{ animation-delay:-0.45s; }
+  .fire-band.s6{ left:39%; height:15%; opacity:0.52; transform:scaleX(-1); }
+  .fire-band.s6 i{ animation-delay:-1.05s; }
+  .fire-band.s7{ left:48%; height:20%; opacity:0.63; }
+  .fire-band.s7 i{ animation-delay:-1.55s; }
+  .fire-band.s8{ left:57%; height:17%; opacity:0.55; transform:scaleX(-1); }
+  .fire-band.s8 i{ animation-delay:-0.9s; }
+  .fire-band.s9{ left:66%; height:21%; opacity:0.59; }
+  .fire-band.s9 i{ animation-delay:-1.65s; }
+  .fire-band.s10{ left:75%; height:16%; opacity:0.51; transform:scaleX(-1); }
+  .fire-band.s10 i{ animation-delay:-0.35s; }
+  .fire-band.s11{ left:84%; height:19%; opacity:0.61; }
+  .fire-band.s11 i{ animation-delay:-1.45s; }
+  .fire-band.s12{ left:93%; height:18%; opacity:0.56; transform:scaleX(-1); }
+  .fire-band.s12 i{ animation-delay:-0.6s; }
 
   /* Three braziers, each on its own clock and none of the durations a multiple
      of another — three flames rising in step reads as one animation repeated,

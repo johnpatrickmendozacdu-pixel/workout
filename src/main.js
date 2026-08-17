@@ -2112,19 +2112,9 @@ async function buildSessionImage(ex, session) {
   if (document.fonts && document.fonts.ready) { try { await document.fonts.ready; } catch (e) { /* draw anyway */ } }
 
   const INK = '#0A0C0B', TEXT = '#EEF2EF', DIM = '#9AA5A0', FAINT = '#6E7975', ACCENT = '#3EE07F';
-  paintShareBackdrop(g, INK, ACCENT);
-
-  // With proof, the photo IS the card's ground rather than a panel above it.
-  // Stacking the two shrank the card — both are 9:16, so every bit of height
-  // the card gave up cost it width twice over — and pillarboxed a portrait
-  // phone photo inside a wide band. Full-bleed wastes nothing.
-  if (session.photo) {
-    const ph = session.photo;
-    const sc = Math.max(S / ph.width, SHARE_H / ph.height);
-    const pw = ph.width * sc, phh = ph.height * sc;
-    g.drawImage(ph, (S - pw) / 2, (SHARE_H - phh) / 2, pw, phh);
-    // Light over the picture, heavy under the text: the scrim has to let you
-    // see the proof at the top and still let you read the number below it.
+  // Light over the picture, heavy under the text: the scrim has to let you see
+  // the proof at the top and still let you read the number below it.
+  const paintScrim = () => {
     const scrim = g.createLinearGradient(0, 0, 0, SHARE_H);
     scrim.addColorStop(0, 'rgba(10,12,11,0.55)');
     scrim.addColorStop(0.30, 'rgba(10,12,11,0.38)');
@@ -2132,6 +2122,26 @@ async function buildSessionImage(ex, session) {
     scrim.addColorStop(1, 'rgba(10,12,11,0.95)');
     g.fillStyle = scrim;
     g.fillRect(0, 0, S, SHARE_H);
+  };
+
+  // overlayOnly draws the card and nothing under it, so a caller can composite
+  // it over something that moves. Every other caller gets the opaque card it
+  // always got.
+  if (session.overlayOnly) {
+    paintScrim();
+  } else {
+    paintShareBackdrop(g, INK, ACCENT);
+    // With proof, the photo IS the card's ground rather than a panel above it.
+    // Stacking the two shrank the card — both are 9:16, so every bit of height
+    // the card gave up cost it width twice over — and pillarboxed a portrait
+    // phone photo inside a wide band. Full-bleed wastes nothing.
+    if (session.photo) {
+      const ph = session.photo;
+      const sc = Math.max(S / ph.width, SHARE_H / ph.height);
+      const pw = ph.width * sc, phh = ph.height * sc;
+      g.drawImage(ph, (S - pw) / 2, (SHARE_H - phh) / 2, pw, phh);
+      paintScrim();
+    }
   }
 
   const pad = 76;
@@ -2216,7 +2226,7 @@ async function buildSessionImage(ex, session) {
     await shareLoadCrewIcon('role', standing && standing.role),
     await shareLoadCrewIcon('class', standing && standing.klass));
 
-  return new Promise((resolve) => c.toBlob(resolve, 'image/png'));
+  return session.overlayOnly ? c : new Promise((resolve) => c.toBlob(resolve, 'image/png'));
 }
 
 /**
@@ -2481,6 +2491,38 @@ async function offerImage(blob, ex, suffix, mime = 'image/png') {
  * portrait phone photo sat pillarboxed in a wide band — two thirds of the frame
  * was empty. Drawing the photo INTO the card is one pass, full size, no waste.
  */
+/**
+ * Is the file in my hand playable?
+ *
+ * NOT "can this browser record MP4". isTypeSupported() is a claim — Safari has
+ * answered true for types it then muxes badly — and a button branched off a
+ * claim is a feature that is missing on one phone and broken on another, with
+ * no way to tell which from here. Asking the artifact catches what the claim
+ * cannot: a recorder yielding zero bytes, a stream that never started, and a
+ * duration coming back Infinity, which is a real and common Chromium bug and
+ * which Instagram rejects anyway.
+ */
+function playableVideoBlob(blob) {
+  return new Promise((resolve) => {
+    if (!blob || blob.size < 1024) { resolve(false); return; }
+    const url = URL.createObjectURL(blob);
+    const v = document.createElement('video');
+    v.muted = true;
+    v.preload = 'metadata';
+    let settled = false;
+    const done = (ok) => {
+      if (settled) return;
+      settled = true;
+      URL.revokeObjectURL(url);
+      resolve(ok);
+    };
+    v.onloadedmetadata = () => done(Number.isFinite(v.duration) && v.duration > 0);
+    v.onerror = () => done(false);
+    setTimeout(() => done(false), 5000);
+    v.src = url;
+  });
+}
+
 async function buildProofCollage(exId) {
   const ex = state.exercises.find((e) => e.id === exId);
   const d = todayISO();
@@ -2517,17 +2559,158 @@ async function buildProofCollage(exId) {
   }
 }
 
+const COLLAGE_MAX_MS = 8000;
+// MP4 first, because it is the only container every story sheet accepts. This
+// picks a preference order; it never gates the button. The verdict is
+// playableVideoBlob, on the file that comes out.
+const RECORDER_TYPES = [
+  'video/mp4;codecs=avc1.42E01E',
+  'video/mp4',
+  'video/webm;codecs=vp9',
+  'video/webm',
+];
+
+/**
+ * The same card, with the clip as its moving ground.
+ *
+ * Eight seconds, because compositing runs in real time — there is no
+ * fast-forward without an encoder this app refuses to carry — so the clip's
+ * length is the user's wait. Eight seconds with a toast is a wait; fifteen is
+ * a hang. The raw-video button is instant and carries the whole clip, so
+ * nothing is lost by capping this one.
+ *
+ * Silent by design. A gym clip's audio is noise, and muxing a second track
+ * doubles the failure surface for something nobody asked for.
+ *
+ * ponytail: MediaRecorder's container is the browser's choice, so an old
+ * Android with no MP4 support yields .webm — which saves to the gallery but
+ * Instagram rejects. The upgrade, if it ever actually bites, is WebCodecs
+ * VideoEncoder with a vendored MP4 muxer. Not worth a second encoder today.
+ */
+async function buildProofVideoCollage(exId) {
+  const ex = state.exercises.find((e) => e.id === exId);
+  const d = todayISO();
+  const raw = ex && await loadProofVideo(d, exId);
+  if (!ex || !raw || !window.MediaRecorder) return null;
+
+  const arr = getSetsFor(exId, d);
+  const target = getEffectiveTarget(ex, d);
+  const timer = getTimerPure(state.timersLog, d, exId);
+  const st = exerciseStats(ex, state.setsLog, state.timersLog, null, state.streakOverrides);
+
+  const url = URL.createObjectURL(raw);
+  const vid = document.createElement('video');
+  vid.muted = true;
+  vid.playsInline = true;
+  // iOS refuses to play an unmuted, non-inline video without a fresh gesture,
+  // and a refused play records a blank canvas rather than throwing.
+  vid.setAttribute('playsinline', '');
+  vid.setAttribute('muted', '');
+  vid.loop = false;
+
+  let stopEarly = null;
+  try {
+    const card = await buildSessionImage(ex, {
+      total: progressValue(ex, arr), target,
+      timeMode: isTimeMode(ex),
+      sets: arr.length,
+      streak: st.currentStreak,
+      elapsed: formatDuration(timerElapsedMs(timer, Date.now())),
+      pct: target > 0 ? Math.min(1, progressValue(ex, arr) / target) : 1,
+      short: false,
+      dateLabel: formatDisplayDate(d, { weekday: 'short', day: 'numeric', month: 'short' }),
+      headline: target > 0 ? 'Target met' : 'Session complete',
+      overlayOnly: true,
+    });
+
+    await new Promise((res, rej) => {
+      vid.onloadeddata = res;
+      vid.onerror = () => rej(new Error('decode-failed'));
+      vid.src = url;
+    });
+
+    const c = document.createElement('canvas');
+    c.width = SHARE_W; c.height = SHARE_H;
+    const g = c.getContext('2d');
+    const stream = c.captureStream(30);
+    const mime = RECORDER_TYPES.find((t) => {
+      try { return MediaRecorder.isTypeSupported(t); } catch (e) { return false; }
+    });
+    const rec = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: 4000000 } : {});
+    const chunks = [];
+    rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+    const finished = new Promise((res) => { rec.onstop = res; });
+
+    const sc = Math.max(SHARE_W / vid.videoWidth, SHARE_H / vid.videoHeight);
+    const vw = vid.videoWidth * sc, vh = vid.videoHeight * sc;
+    const vx = (SHARE_W - vw) / 2, vy = (SHARE_H - vh) / 2;
+
+    let raf = 0;
+    const draw = () => {
+      g.drawImage(vid, vx, vy, vw, vh);
+      g.drawImage(card, 0, 0);
+      raf = requestAnimationFrame(draw);
+    };
+
+    rec.start();
+    await vid.play();
+    draw();
+    stopEarly = () => { cancelAnimationFrame(raf); try { rec.stop(); } catch (e) { /* already stopped */ } };
+    await new Promise((res) => {
+      const t = setTimeout(res, Math.min(COLLAGE_MAX_MS, vid.duration * 1000));
+      vid.onended = () => { clearTimeout(t); res(); };
+    });
+    stopEarly();
+    stopEarly = null;
+    await finished;
+
+    const blob = new Blob(chunks, { type: rec.mimeType || mime || 'video/mp4' });
+    if (!await playableVideoBlob(blob)) return null;
+    return { blob, mime: blob.type };
+  } catch (e) {
+    return null;
+  } finally {
+    if (stopEarly) stopEarly();
+    vid.pause();
+    vid.src = '';
+    URL.revokeObjectURL(url);
+  }
+}
+
+/**
+ * One answer for both collage buttons: the moving card when there is a clip
+ * and the phone could make one, the still card otherwise.
+ *
+ * The still is not a consolation prize, it is the same card. Nothing is hidden
+ * on any phone, and no phone is ever handed a file it cannot play — a feature
+ * that exists on your phone and not your crewmate's is the disharmony this
+ * whole design exists to avoid.
+ */
+async function buildCollageFor(exId) {
+  const d = todayISO();
+  if (hasProofVideo(d, exId)) {
+    showToast('Building your video… about 8 seconds.');
+    const made = await buildProofVideoCollage(exId);
+    if (made) return made;
+    showToast("Your phone couldn't make the video card — here is the photo one.");
+  } else {
+    showToast('Building image…');
+  }
+  return { blob: await buildProofCollage(exId), mime: 'image/png' };
+}
+
 /** Keepsake: straight to the roll, never the share sheet. */
 async function saveProofCollage(exId) {
   const ex = state.exercises.find((e) => e.id === exId);
   if (!ex) return;
-  showToast('Building…');
-  const blob = await buildProofCollage(exId);
+  const made = await buildCollageFor(exId);
+  const blob = made.blob;
   if (!blob) { showToast("Couldn't build the image."); return; }
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   const slug = (v) => String(v || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-  a.href = url; a.download = `sets-proof-${slug(ex.name)}-${todayISO()}.png`;
+  const ext = made.mime.includes('mp4') ? 'mp4' : made.mime.includes('webm') ? 'webm' : 'png';
+  a.href = url; a.download = `sets-proof-${slug(ex.name)}-${todayISO()}.${ext}`;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
   showToast('Saved to your photos');
@@ -2537,9 +2720,8 @@ async function saveProofCollage(exId) {
 async function shareProofCollage(exId) {
   const ex = state.exercises.find((e) => e.id === exId);
   if (!ex) return;
-  showToast('Building image…');
-  const blob = await buildProofCollage(exId);
-  await offerImage(blob, ex, '-proof');
+  const made = await buildCollageFor(exId);
+  await offerImage(made.blob, ex, '-proof', made.mime);
 }
 
 /** Today's session, from the finished card it was tapped on. */
@@ -4473,7 +4655,9 @@ function modalShareChoice() {
         <b>The card</b><span>Numbers only — the clean one.</span>
       </button>
       <button class="add-kind" data-action="share-proof-collage" data-id="${ex.id}">
-        <b>With your proof</b><span>Your photo above the card, story-sized.</span>
+        <b>With your proof</b><span>${hasProofVideo(todayISO(), ex.id)
+          ? 'Your clip as the card, story-sized.'
+          : 'Your photo as the card, story-sized.'}</span>
       </button>
     </div>
   </div>`;

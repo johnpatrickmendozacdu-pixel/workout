@@ -2433,7 +2433,7 @@ async function shareDayImage() {
 
 /** Canvas → blob → share sheet, with a download fallback. Shared by all three
  *  cards so there is one answer to "where does the picture go". */
-async function offerImage(blob, ex, suffix) {
+async function offerImage(blob, ex, suffix, mime = 'image/png') {
   if (!blob) { showToast("Couldn't build the image."); return; }
   // The file is named for whoever it belongs to, read from the profile at the
   // moment of sharing — rename yourself and Save profile, and the next image
@@ -2441,7 +2441,10 @@ async function offerImage(blob, ex, suffix) {
   const slug = (v) => String(v || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
   const who = slug(state.profile && state.profile.username);
   const parts = ['sets', who, slug(ex.name)].filter(Boolean);
-  const file = new File([blob], `${parts.join('-')}${suffix}.png`, { type: 'image/png' });
+  // The extension comes off the type rather than a second argument: a name and
+  // a type that disagree is how a share sheet ends up refusing a valid file.
+  const ext = mime.includes('mp4') ? 'mp4' : mime.includes('webm') ? 'webm' : 'png';
+  const file = new File([blob], `${parts.join('-')}${suffix}.${ext}`, { type: mime });
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
     try { await navigator.share({ files: [file] }); return; } catch (e) { if (e && e.name === 'AbortError') return; }
   }
@@ -2450,7 +2453,7 @@ async function offerImage(blob, ex, suffix) {
   a.href = url; a.download = file.name;
   document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
-  showToast('Image saved');
+  showToast(ext === 'png' ? 'Image saved' : 'Video saved');
 }
 
 /**
@@ -4490,6 +4493,7 @@ function modalProof() {
   // An object URL for the sheet only. Revoked when the sheet closes, in
   // closeModal — a URL held past its element is the classic leak here.
   const clip = m.videoUrl || null;
+  const hasVideo = hasProofVideo(today, ex.id);
   return `<div class="modal-backdrop" data-action="backdrop">
     <div class="modal-sheet" data-stop>
       <div class="sheet-handle"></div>
@@ -4526,6 +4530,7 @@ function modalProof() {
         <div class="hint">A clip can be up to ${PROOF_VIDEO_MAX_SEC} seconds.</div>` : ''}
       ${m.image ? `<button class="secondary-btn wide" data-action="save-proof" data-id="${ex.id}">Use this photo</button>` : ''}
       ${rec && img ? `<button class="secondary-btn wide" data-action="save-proof-image" data-id="${ex.id}">Save to my photos</button>` : ''}
+      ${rec && hasVideo ? `<button class="secondary-btn wide" data-action="share-proof-video" data-id="${ex.id}">Share the video</button>` : ''}
       ${rec && img ? `<button class="secondary-btn wide" data-action="share-proof-collage" data-id="${ex.id}">Share it</button>` : ''}
       ${rec ? `<div class="hint">${rec.posted
         ? 'Your crew can see this on today’s workout.'
@@ -5844,6 +5849,15 @@ document.addEventListener('click', async (e) => {
     case 'save-proof-image':
       await saveProofCollage(btn.dataset.id);
       break;
+    case 'share-proof-video': {
+      const ex2 = state.exercises.find((e) => e.id === btn.dataset.id);
+      const raw = await loadProofVideo(todayISO(), btn.dataset.id);
+      if (!ex2 || !raw) { showToast('That clip is gone.'); break; }
+      // Straight through, untouched: no processing, no wait, no quality lost,
+      // and a file every gallery and story sheet already accepts.
+      await offerImage(raw, ex2, '-proof', raw.type || 'video/mp4');
+      break;
+    }
     case 'pick-proof': {
       const el = document.getElementById('proof-file');
       if (el) el.click();

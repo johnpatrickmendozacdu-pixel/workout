@@ -2144,8 +2144,14 @@
        list runs loose text straight across it — so the bottom holds its cover
        instead of opening up. The flames keep their shape and lose only
        brightness, which is the half that was fighting the words. */
+    /* The top stop went up with the ceiling fire. Loose text lives right under
+       the topbar — 'Tap an exercise to log reps' on Today, the intro line on
+       Guide — and that is exactly the band the hanging flames occupy. Same
+       trade as the floor: the flames keep their shape and give up the
+       brightness that was competing with words. */
     background:linear-gradient(180deg,
-      rgba(10,12,11,0.42) 0%,
+      rgba(10,12,11,0.56) 0%,
+      rgba(10,12,11,0.58) 22%,
       rgba(10,12,11,0.58) 40%,
       rgba(10,12,11,0.62) 60%,
       rgba(10,12,11,0.63) 82%,
@@ -2248,6 +2254,41 @@
   .fire-band.s11 i{ animation-delay:-1.45s; }
   .fire-band.s12{ left:93%; height:24%; opacity:0.64; transform:scaleX(-1); }
   .fire-band.s12 i{ animation-delay:-0.6s; }
+
+  /* The fire burns down from the ceiling too, so the frame reads as a room
+     alight rather than a floor on fire.
+
+     scaleY(-1) turns each cluster over: the sprite's base lands at the top,
+     behind the opaque topbar, and the tips hang down. The mask flips with it,
+     because a mask is applied in the element's own space before the transform
+     maps it — so the tips still fade out and the base is still the solid end.
+
+     Shorter and dimmer than the floor. Fire climbs, so an equal weight
+     overhead would read as upside down rather than as balance, and the top of
+     the screen is where the eye starts. */
+  .fire-band.fire-top{ top:0; bottom:auto; transform:scaleY(-1); }
+  .fire-band.fire-top.mir{ transform:scale(-1,-1); }
+
+  .fire-band.u1{ left:-6%; height:16%; opacity:0.54; }
+  .fire-band.u1 i{ animation-delay:-0.35s; }
+  .fire-band.u2{ left:3%; height:19%; opacity:0.48; }
+  .fire-band.u2 i{ animation-delay:-1.4s; }
+  .fire-band.u3{ left:12%; height:15%; opacity:0.56; }
+  .fire-band.u3 i{ animation-delay:-0.8s; }
+  .fire-band.u4{ left:21%; height:18%; opacity:0.50; }
+  .fire-band.u4 i{ animation-delay:-1.7s; }
+  .fire-band.u5{ left:30%; height:17%; opacity:0.55; }
+  .fire-band.u5 i{ animation-delay:-0.5s; }
+  .fire-band.u6{ left:39%; height:20%; opacity:0.47; }
+  .fire-band.u6 i{ animation-delay:-1.15s; }
+  .fire-band.u7{ left:48%; height:15%; opacity:0.57; }
+  .fire-band.u7 i{ animation-delay:-1.6s; }
+  .fire-band.u8{ left:57%; height:18%; opacity:0.51; }
+  .fire-band.u8 i{ animation-delay:-0.95s; }
+  .fire-band.u9{ left:66%; height:16%; opacity:0.53; }
+  .fire-band.u9 i{ animation-delay:-1.25s; }
+  .fire-band.u10{ left:75%; height:19%; opacity:0.49; }
+  .fire-band.u10 i{ animation-delay:-0.65s; }
 
   /* Three braziers, each on its own clock and none of the durations a multiple
      of another — three flames rising in step reads as one animation repeated,

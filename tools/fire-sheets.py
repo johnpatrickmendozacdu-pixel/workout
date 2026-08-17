@@ -21,7 +21,7 @@ one steps().
 Crop boxes and frame counts live here and nowhere else. Re-run after changing
 any source GIF.
 """
-from PIL import Image
+from PIL import Image, ImageFilter
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -74,6 +74,41 @@ def build(name, src, count, height):
     print(f'{path.name}: {count} frames of {width}x{height} '
           f'-> {sheet.width}x{sheet.height}, {kb:.0f} KB')
     return width, height, count
+
+
+def build_floor():
+    """sfx2: the ring burned into the arena floor.
+
+    Alpha rather than screen-blending, unlike the flame sheets. This sits on
+    the stone floor where the picture is nearly black, and screen over near
+    black leaves the ring's own dark interior visible as a grey disc. Alpha
+    lets the floor show through it instead.
+
+    Measured at hue 149 against the app accent's 144 — it is already this
+    app's green and is left alone. Nothing here recolours it.
+    """
+    im = Image.open(ROOT / 'sfx2.gif')
+    box = lit_bbox(im) or (0, 0, im.width, im.height)
+    cw, ch = box[2] - box[0], box[3] - box[1]
+    # 12 frames at 140 tall, and a whisper of blur before encoding. The ring is
+    # a field of fine particles, which is the worst case for WebP — at 20
+    # frames of 220 it came out at 1 MB, six times the whole rest of the
+    # arena. The blur costs nothing visible at the size it renders and it is
+    # what makes the file affordable.
+    count, height = 10, 120
+    width = max(1, round(cw * height / ch))
+    idxs = [round(i * im.n_frames / count) % im.n_frames for i in range(count)]
+    sheet = Image.new('RGBA', (width * count, height), (0, 0, 0, 0))
+    for slot, fi in enumerate(idxs):
+        im.seek(fi)
+        f = im.convert('RGB').crop(box).resize((width, height), Image.LANCZOS)
+        f = f.filter(ImageFilter.GaussianBlur(0.9))
+        f.putalpha(f.convert('L').point(lambda p: min(255, int(p * 1.3))))
+        sheet.paste(f, (slot * width, 0))
+    path = OUT / 'floor-ring.webp'
+    sheet.save(path, 'WEBP', quality=52, method=6)
+    print(f'{path.name}: {count} frames of {width}x{height} '
+          f'-> {sheet.width}x{sheet.height}, {path.stat().st_size / 1024:.0f} KB')
 
 
 def build_frame():
@@ -136,3 +171,4 @@ def build_frame():
 for name, (src, count, height) in JOBS.items():
     build(name, src, count, height)
 build_frame()
+build_floor()

@@ -2212,48 +2212,28 @@
      and is never seen. The flames appear to come up from under the screen
      rather than starting at a cut. The mask fades the tips, so the tall ones
      die out in air instead of stopping at an edge. */
-  /* One rate, no gaps, mid height.
-     Every cluster runs at exactly 1.95s. Spreading the durations, even
-     narrowly, is what made the wall look out of time with itself — a single
-     fire has a single rate, and the only thing that should differ between one
-     part of it and another is which moment it is at. That is the delay, and
-     the delays are all different.
+  /* The floor flames are gone. With fire hanging from the ceiling as well they
+     made the screen busy at both ends and there was nowhere left for the eye to
+     rest — the room was all edges and no middle.
 
-     Twelve of them at 26% wide on a 9% pitch, so each one is drawn over by
-     both neighbours. The sprites carry dark edges that screen away to nothing,
-     so boxes that merely touch still leave holes — the overlap has to be in
-     the content, not just the boxes.
+     What stands there instead is sfx2: a ring burned into the stone, particles
+     lifting out of it. It is one quiet element where twelve loud ones were, and
+     it belongs to the floor the artwork already draws in perspective rather
+     than sitting on top of it. Measured at hue 149 against the accent's 144 —
+     already this app's green, so nothing recolours it.
 
-     Height is the third guess and the one that stuck: 24-34% read as too high,
-     15-21% as barely there. These land between, at 21-27%, with the opacity
-     lifted a little so they read as well as they reach. */
-  .fire-band{ width:26%; bottom:0; }
-  .fire-band i{ animation-duration:1.95s; }
-
-  .fire-band.s1{ left:-6%; height:23%; opacity:0.66; }
-  .fire-band.s1 i{ animation-delay:-0.2s; }
-  .fire-band.s2{ left:3%; height:26%; opacity:0.58; transform:scaleX(-1); }
-  .fire-band.s2 i{ animation-delay:-1.3s; }
-  .fire-band.s3{ left:12%; height:22%; opacity:0.70; }
-  .fire-band.s3 i{ animation-delay:-0.7s; }
-  .fire-band.s4{ left:21%; height:27%; opacity:0.62; transform:scaleX(-1); }
-  .fire-band.s4 i{ animation-delay:-1.75s; }
-  .fire-band.s5{ left:30%; height:24%; opacity:0.68; }
-  .fire-band.s5 i{ animation-delay:-0.45s; }
-  .fire-band.s6{ left:39%; height:21%; opacity:0.60; transform:scaleX(-1); }
-  .fire-band.s6 i{ animation-delay:-1.05s; }
-  .fire-band.s7{ left:48%; height:26%; opacity:0.71; }
-  .fire-band.s7 i{ animation-delay:-1.55s; }
-  .fire-band.s8{ left:57%; height:23%; opacity:0.63; transform:scaleX(-1); }
-  .fire-band.s8 i{ animation-delay:-0.9s; }
-  .fire-band.s9{ left:66%; height:27%; opacity:0.67; }
-  .fire-band.s9 i{ animation-delay:-1.65s; }
-  .fire-band.s10{ left:75%; height:22%; opacity:0.59; transform:scaleX(-1); }
-  .fire-band.s10 i{ animation-delay:-0.35s; }
-  .fire-band.s11{ left:84%; height:25%; opacity:0.69; }
-  .fire-band.s11 i{ animation-delay:-1.45s; }
-  .fire-band.s12{ left:93%; height:24%; opacity:0.64; transform:scaleX(-1); }
-  .fire-band.s12 i{ animation-delay:-0.6s; }
+     Alpha, not screen: this sits where the picture is nearly black, and screen
+     over near-black would leave the ring's dark interior as a grey disc. */
+  .floor-ring{
+    position:absolute; left:15%; width:70%; top:76%; height:13%;
+    overflow:hidden; pointer-events:none; opacity:0.8;
+  }
+  .floor-ring i{
+    display:block; width:1000%; height:100%;
+    background:url('/floor-ring.webp') 0 0 / 100% 100% no-repeat;
+    will-change:transform;
+    animation:fire-strip 1.6s steps(10) infinite;
+  }
 
   /* The fire burns down from the ceiling too, so the frame reads as a room
      alight rather than a floor on fire.
@@ -2293,7 +2273,10 @@
   /* Three braziers, each on its own clock and none of the durations a multiple
      of another — three flames rising in step reads as one animation repeated,
      which is exactly what a fire is not. */
-  .fire-brazier{ width:8%; height:22%; bottom:0; opacity:0.48; }
+  /* Back to the artwork's own sconces, small and low. Stretched up from the
+     bottom edge they were part of the floor fire that is now gone; on their own
+     that height read as two stray jets with no source. */
+  .fire-brazier{ width:7%; height:9%; bottom:36%; opacity:0.4; }
   .fire-brazier i{ background-image:url('/fire-column.webp'); }
   .fire-brazier.b1{ left:20.5%; animation-duration:0s; }
   .fire-brazier.b1 i{ animation-duration:1.7s; }
@@ -2307,8 +2290,11 @@
      inside a session, which is what stops a pulse reading as a metronome. */
   .firelight{
     position:absolute; left:-10%; right:-10%; top:70%; height:30%;
-    background:radial-gradient(ellipse 75% 80% at 50% 100%,
-      rgba(120,224,40,0.22) 0%, rgba(120,224,40,0.10) 42%, rgba(120,224,40,0) 78%);
+    /* Cast by the ring now, not by flames along the floor — so it sits over
+       the ring rather than rising from the very bottom edge, and it takes the
+       accent's green to match what is throwing it. */
+    background:radial-gradient(ellipse 55% 60% at 50% 62%,
+      rgba(62,224,127,0.16) 0%, rgba(62,224,127,0.07) 45%, rgba(62,224,127,0) 80%);
     mix-blend-mode:screen; pointer-events:none;
     animation:breathe-a 7s ease-in-out infinite, breathe-b 11s ease-in-out infinite;
   }

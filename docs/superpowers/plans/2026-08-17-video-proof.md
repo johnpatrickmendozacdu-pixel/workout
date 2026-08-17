@@ -316,6 +316,8 @@ with:
   await pruneProofMedia();
 ```
 
+`addDays` is used twice in `main.js`; this removes one of them. Confirm the other survives (`grep -c "addDays(" src/main.js` should print 1) and leave the import alone — the build fails on an unused import only if it was the last one.
+
 Then add, next to `persistProof` (line 364):
 
 ```js
@@ -628,7 +630,10 @@ with:
         // A retake with a photo replaces a clip: leaving the old one would
         // mean the sheet plays a video the record no longer describes.
         await db.removeItem(videoKey(today, exId)).catch(() => {});
-        state.proofVideos = purgeExerciseFromByDay(state.proofVideos, exId);
+        // dropFromByDay, NOT purgeExerciseFromByDay: only today's key was
+        // deleted, so purging every day would leave yesterday's blob orphaned
+        // under a key no index can ever name again.
+        state.proofVideos = dropFromByDay(state.proofVideos, [{ date: today, exId }]);
         await db.setItem('proof-videos', state.proofVideos);
       }
       // Explained once, on the first one ever taken.
@@ -675,7 +680,19 @@ The sheet renders first and the clip arrives after, so opening it is never block
 
 - [ ] **Step 8: Style the video like the still**
 
-In `src/style.css`, find the `.proof-shot img` rule and extend its selector to `.proof-shot img, .proof-shot video`. If the rule sets `object-fit`, keep it. Do not add a new block — one rule for both is the point.
+In `src/style.css:2333`, assert and replace:
+
+```css
+  .proof-shot img{width:100%; height:auto; object-fit:contain; display:block;}
+```
+
+with:
+
+```css
+  .proof-shot img, .proof-shot video{width:100%; height:auto; object-fit:contain; display:block;}
+```
+
+One rule for both. Do not add a second block.
 
 - [ ] **Step 9: Verify by using it**
 

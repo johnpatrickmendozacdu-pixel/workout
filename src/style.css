@@ -2218,34 +2218,35 @@
      so boxes that merely touch still leave holes — the overlap has to be in
      the content, not just the boxes.
 
-     Mid height: tall enough to be fire, short enough to stay under the
-     content. */
+     Height is the third guess and the one that stuck: 24-34% read as too high,
+     15-21% as barely there. These land between, at 21-27%, with the opacity
+     lifted a little so they read as well as they reach. */
   .fire-band{ width:26%; bottom:0; }
   .fire-band i{ animation-duration:1.95s; }
 
-  .fire-band.s1{ left:-6%; height:17%; opacity:0.58; }
+  .fire-band.s1{ left:-6%; height:23%; opacity:0.66; }
   .fire-band.s1 i{ animation-delay:-0.2s; }
-  .fire-band.s2{ left:3%; height:20%; opacity:0.50; transform:scaleX(-1); }
+  .fire-band.s2{ left:3%; height:26%; opacity:0.58; transform:scaleX(-1); }
   .fire-band.s2 i{ animation-delay:-1.3s; }
-  .fire-band.s3{ left:12%; height:16%; opacity:0.62; }
+  .fire-band.s3{ left:12%; height:22%; opacity:0.70; }
   .fire-band.s3 i{ animation-delay:-0.7s; }
-  .fire-band.s4{ left:21%; height:21%; opacity:0.54; transform:scaleX(-1); }
+  .fire-band.s4{ left:21%; height:27%; opacity:0.62; transform:scaleX(-1); }
   .fire-band.s4 i{ animation-delay:-1.75s; }
-  .fire-band.s5{ left:30%; height:18%; opacity:0.60; }
+  .fire-band.s5{ left:30%; height:24%; opacity:0.68; }
   .fire-band.s5 i{ animation-delay:-0.45s; }
-  .fire-band.s6{ left:39%; height:15%; opacity:0.52; transform:scaleX(-1); }
+  .fire-band.s6{ left:39%; height:21%; opacity:0.60; transform:scaleX(-1); }
   .fire-band.s6 i{ animation-delay:-1.05s; }
-  .fire-band.s7{ left:48%; height:20%; opacity:0.63; }
+  .fire-band.s7{ left:48%; height:26%; opacity:0.71; }
   .fire-band.s7 i{ animation-delay:-1.55s; }
-  .fire-band.s8{ left:57%; height:17%; opacity:0.55; transform:scaleX(-1); }
+  .fire-band.s8{ left:57%; height:23%; opacity:0.63; transform:scaleX(-1); }
   .fire-band.s8 i{ animation-delay:-0.9s; }
-  .fire-band.s9{ left:66%; height:21%; opacity:0.59; }
+  .fire-band.s9{ left:66%; height:27%; opacity:0.67; }
   .fire-band.s9 i{ animation-delay:-1.65s; }
-  .fire-band.s10{ left:75%; height:16%; opacity:0.51; transform:scaleX(-1); }
+  .fire-band.s10{ left:75%; height:22%; opacity:0.59; transform:scaleX(-1); }
   .fire-band.s10 i{ animation-delay:-0.35s; }
-  .fire-band.s11{ left:84%; height:19%; opacity:0.61; }
+  .fire-band.s11{ left:84%; height:25%; opacity:0.69; }
   .fire-band.s11 i{ animation-delay:-1.45s; }
-  .fire-band.s12{ left:93%; height:18%; opacity:0.56; transform:scaleX(-1); }
+  .fire-band.s12{ left:93%; height:24%; opacity:0.64; transform:scaleX(-1); }
   .fire-band.s12 i{ animation-delay:-0.6s; }
 
   /* Three braziers, each on its own clock and none of the durations a multiple

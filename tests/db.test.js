@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { namespaceFor } from '../src/db/db.js';
+import { namespaceFor, getItem, setItem, removeItem } from '../src/db/db.js';
 
 describe('namespaceFor — whose dataset a key belongs to', () => {
   it('uses the unprefixed keys when signed out', () => {
@@ -26,5 +26,18 @@ describe('namespaceFor — whose dataset a key belongs to', () => {
     const guest = namespaceFor('b@x.com', 'a@x.com');
     const third = namespaceFor('c@x.com', 'a@x.com');
     expect(new Set([owner, guest, third]).size).toBe(3);
+  });
+});
+
+describe('db storage operations', () => {
+  it('removes a stored key', async () => {
+    await setItem('gone-soon', { a: 1 });
+    expect(await getItem('gone-soon')).toEqual({ a: 1 });
+    await removeItem('gone-soon');
+    expect(await getItem('gone-soon')).toBeUndefined();
+  });
+
+  it('resolves rather than throwing when the key was never there', async () => {
+    await expect(removeItem('never-existed')).resolves.toBe(true);
   });
 });

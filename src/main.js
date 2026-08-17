@@ -5779,6 +5779,7 @@ document.addEventListener('click', async (e) => {
       }).catch(() => {});
       break;
     }
+    case 'open-notices':
       state.modal = { type: 'notices' };
       // Opening is reading. The badge clears now rather than on close, so
       // dismissing the sheet cannot leave a count for something already seen.

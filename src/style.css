@@ -2189,12 +2189,12 @@
      Every duration is different and none is a multiple of another, so the whole
      row never returns to the same arrangement twice. */
   .fire-band{ background:none; }
-  /* Three textures dealt across the seven clusters. One tile repeated is found
-     out by the eye however the phases are staggered — fire2 is a dense wall,
-     fire1 a fat turbulent body, fire3 a thin wispy lick, and mixing them is
-     what stops the row reading as one animation seven times. */
-  .fire-band i{ background-image:url('/fire-band.webp'); }
-  .fire-band.t-body i{ background-image:url('/fire-body.webp'); }
+  /* Two textures, alternating. One tile repeated is found out by the eye
+     however the phases are staggered. fire2 was the third and is gone: a dense
+     wall with a hard ground edge, it read as cheap at this scale — too even,
+     too solid, too obviously a loop. These two are irregular enough to bear
+     repeating. */
+  .fire-band i{ background-image:url('/fire-body.webp'); }
   .fire-band.t-wisp i{ background-image:url('/fire-column.webp'); }
 
   /* Anchored by their BASE, not their top. Every cluster stands on the same

@@ -28,14 +28,16 @@ ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / 'public'
 
 # name: (source, frames to keep, height of one frame in the sheet)
-# Three textures, not one. A wall of fire made from a single tile repeats no
-# matter how the phases are staggered — the eye finds the tile. fire1 is a fat
-# turbulent body, fire2 a dense wall with a ground edge, fire3 a wispy column;
-# dealt across the clusters they stop reading as one animation seven times.
+# Two textures, alternating. A wall made from a single tile repeats no matter
+# how the phases are staggered — the eye finds the tile — so the clusters take
+# turns between a fat turbulent body and a thin wispy lick.
+#
+# fire2 is not used. It is a dense wall with a hard ground edge, and at this
+# scale it read as cheap: too even, too solid, too obviously a loop. fire1 and
+# fire3 are both irregular enough to stand being repeated.
 JOBS = {
-    'fire-band':   ('fire2.gif', 24, 176),   # dense wall, the bulk of the fire
-    'fire-column': ('fire3.gif', 24, 320),   # wispy, for the tall thin licks
     'fire-body':   ('fire1.gif', 24, 260),   # fat and turbulent, the deep bases
+    'fire-column': ('fire3.gif', 24, 320),   # wispy, the tall thin licks
 }
 
 
@@ -91,25 +93,36 @@ def build_frame():
     mix-blend-mode inside a clipped box is a fight with the stacking context
     nobody wins.
     """
-    im = Image.open(ROOT / 'fireframe.png').convert('RGB')
-    im = im.crop(im.convert('L').point(lambda p: 255 if p > 26 else 0).getbbox())
+    # fireframebackup.jpg, not fireframe.png. The latter's fire is thick
+    # relative to its opening — squared off it ate a third of the box from
+    # every edge and left a letterbox for the face. This one is a thin neon
+    # line with corner ornaments and a wide clear middle, which is what a
+    # frame around a portrait wants to be.
+    im = Image.open(ROOT / 'fireframebackup.jpg').convert('RGB')
+    im = im.crop(im.convert('L').point(lambda p: 255 if p > 34 else 0).getbbox())
     W, H = im.size
-    S, cw, ch = 256, 78, 62
+    S, dc = 256, 72                      # dc must stay under S/2 or the edges invert
+    scw, sch = int(W * 0.20), int(H * 0.32)
     out = Image.new('RGB', (S, S), (0, 0, 0))
 
     def put(src, dst):
-        out.paste(im.crop(src).resize((dst[2] - dst[0], dst[3] - dst[1]), Image.LANCZOS), dst[:2])
+        w, h = dst[2] - dst[0], dst[3] - dst[1]
+        if w > 0 and h > 0:
+            out.paste(im.crop(src).resize((w, h), Image.LANCZOS), dst[:2])
 
-    put((0, 0, cw, ch),           (0, 0, cw, ch))
-    put((W - cw, 0, W, ch),       (S - cw, 0, S, ch))
-    put((0, H - ch, cw, H),       (0, S - ch, cw, S))
-    put((W - cw, H - ch, W, H),   (S - cw, S - ch, S, S))
-    put((cw, 0, W - cw, ch),      (cw, 0, S - cw, ch))
-    put((cw, H - ch, W - cw, H),  (cw, S - ch, S - cw, S))
-    put((0, ch, cw, H - ch),      (0, ch, cw, S - ch))
-    put((W - cw, ch, W, H - ch),  (S - cw, ch, S, S - ch))
+    put((0, 0, scw, sch),             (0, 0, dc, dc))
+    put((W - scw, 0, W, sch),         (S - dc, 0, S, dc))
+    put((0, H - sch, scw, H),         (0, S - dc, dc, S))
+    put((W - scw, H - sch, W, H),     (S - dc, S - dc, S, S))
+    put((scw, 0, W - scw, sch),       (dc, 0, S - dc, dc))
+    put((scw, H - sch, W - scw, H),   (dc, S - dc, S - dc, S))
+    put((0, sch, scw, H - sch),       (0, dc, dc, S - dc))
+    put((W - scw, sch, W, H - sch),   (S - dc, dc, S, S - dc))
 
-    out.putalpha(out.convert('L').point(lambda p: min(255, int(p * 1.45))))
+    # A floor before the boost: this source has dim smoke inside its opening,
+    # and without the floor that haze survives as alpha and greys the face.
+    out.putalpha(out.convert('L').point(
+        lambda p: 0 if p < 46 else min(255, int((p - 46) * 1.9))))
     path = OUT / 'fire-frame.webp'
     out.save(path, 'WEBP', quality=84, method=6)
     print(f'{path.name}: {S}x{S} square, {path.stat().st_size / 1024:.0f} KB')

@@ -2046,11 +2046,32 @@ async function buildSessionImage(ex, session) {
   const INK = '#0A0C0B', TEXT = '#EEF2EF', DIM = '#9AA5A0', FAINT = '#6E7975', ACCENT = '#3EE07F';
   paintShareBackdrop(g, INK, ACCENT);
 
+  // With proof, the photo IS the card's ground rather than a panel above it.
+  // Stacking the two shrank the card — both are 9:16, so every bit of height
+  // the card gave up cost it width twice over — and pillarboxed a portrait
+  // phone photo inside a wide band. Full-bleed wastes nothing.
+  if (session.photo) {
+    const ph = session.photo;
+    const sc = Math.max(S / ph.width, SHARE_H / ph.height);
+    const pw = ph.width * sc, phh = ph.height * sc;
+    g.drawImage(ph, (S - pw) / 2, (SHARE_H - phh) / 2, pw, phh);
+    // Light over the picture, heavy under the text: the scrim has to let you
+    // see the proof at the top and still let you read the number below it.
+    const scrim = g.createLinearGradient(0, 0, 0, SHARE_H);
+    scrim.addColorStop(0, 'rgba(10,12,11,0.55)');
+    scrim.addColorStop(0.30, 'rgba(10,12,11,0.38)');
+    scrim.addColorStop(0.46, 'rgba(10,12,11,0.86)');
+    scrim.addColorStop(1, 'rgba(10,12,11,0.95)');
+    g.fillStyle = scrim;
+    g.fillRect(0, 0, S, SHARE_H);
+  }
+
   const pad = 76;
   const icon = await shareLoadIcon(ex);
   if (icon) g.drawImage(icon, pad, SAFE_TOP - 78, 118, 118);
 
   g.textBaseline = 'alphabetic';
+  if (session.photo) { g.shadowColor = 'rgba(0,0,0,0.85)'; g.shadowBlur = 18; }
   g.fillStyle = TEXT; g.font = "700 52px Manrope, system-ui, sans-serif";
   const nameX = icon ? pad + 146 : pad;
   let name = ex.name;
@@ -2061,6 +2082,7 @@ async function buildSessionImage(ex, session) {
   const cat = categoryOf(ex);
   g.fillStyle = FAINT; g.font = "600 26px 'JetBrains Mono', ui-monospace, monospace";
   g.fillText([cat ? cat.label.toUpperCase() : null, session.dateLabel.toUpperCase()].filter(Boolean).join(' · '), nameX, SAFE_TOP + 22);
+  g.shadowColor = 'transparent'; g.shadowBlur = 0;
 
   // The day's number is the headline here, the way the streak is on the other
   // card — with its target beside it, so the size of the thing is legible.
@@ -2380,31 +2402,34 @@ async function offerImage(blob, ex, suffix) {
  * backdrop fills whatever is left over, so letterboxing reads as the frame
  * rather than as a mistake.
  */
+/**
+ * One card, with the proof as its ground.
+ *
+ * The earlier version stacked a rendered card under a rendered photo. Both are
+ * 9:16, so the card could only ever render at a fraction of the width, and a
+ * portrait phone photo sat pillarboxed in a wide band — two thirds of the frame
+ * was empty. Drawing the photo INTO the card is one pass, full size, no waste.
+ */
 async function buildProofCollage(exId) {
   const ex = state.exercises.find((e) => e.id === exId);
   const d = todayISO();
   const img = (state.proofImages[d] || {})[exId];
   if (!ex || !img) return null;
 
-  const load = (src) => new Promise((res) => {
+  const photo = await new Promise((res) => {
     const i = new Image();
     i.onload = () => res(i);
     i.onerror = () => res(null);
-    i.src = src;
+    i.src = img;
   });
+  if (!photo) return null;
 
-  const bitmap = await load(img);
-  if (!bitmap) return null;
-
-  // The card half is the REAL share image, so the keepsake can never drift
-  // from what the Share button sends.
   const arr = getSetsFor(exId, d);
   const target = getEffectiveTarget(ex, d);
   const timer = getTimerPure(state.timersLog, d, exId);
   const st = exerciseStats(ex, state.setsLog, state.timersLog, null, state.streakOverrides);
-  let cardBlob = null;
   try {
-    cardBlob = await buildSessionImage(ex, {
+    return await buildSessionImage(ex, {
       total: progressValue(ex, arr), target,
       timeMode: isTimeMode(ex),
       sets: arr.length,
@@ -2414,37 +2439,11 @@ async function buildProofCollage(exId) {
       short: false,
       dateLabel: formatDisplayDate(d, { weekday: 'short', day: 'numeric', month: 'short' }),
       headline: target > 0 ? 'Target met' : 'Session complete',
+      photo,
     });
-  } catch (e) { cardBlob = null; }
-  if (!cardBlob) return null;
-  const card = await load(URL.createObjectURL(cardBlob));
-  if (!card) return null;
-
-  const c = document.createElement('canvas');
-  c.width = SHARE_W; c.height = SHARE_H;
-  const g = c.getContext('2d');
-  paintShareBackdrop(g, '#0A0C0B', '#3EE07F');
-
-  // Contain each half inside its own band, centred.
-  const fit = (im, top, h) => {
-    const sc = Math.min(SHARE_W / im.width, h / im.height);
-    const w = im.width * sc, hh = im.height * sc;
-    g.drawImage(im, (SHARE_W - w) / 2, top + (h - hh) / 2, w, hh);
-    return { w, h: hh, y: top + (h - hh) / 2 };
-  };
-  // NOT an even split. The card is 9:16 like the frame, so any height it gives
-  // up costs it width twice over — at half the frame it rendered at half width
-  // while a landscape photo filled almost all of its own half, and the card was
-  // the thing being read. The card takes the larger share; the photo keeps
-  // enough to be seen whole.
-  const photoBand = Math.round(SHARE_H * 0.32);
-  fit(bitmap, 0, photoBand);
-  fit(card, photoBand, SHARE_H - photoBand);
-
-  g.strokeStyle = 'rgba(216,222,218,0.7)'; g.lineWidth = 3;
-  g.beginPath(); g.moveTo(0, photoBand); g.lineTo(SHARE_W, photoBand); g.stroke();
-
-  return new Promise((res) => c.toBlob(res, 'image/png'));
+  } catch (e) {
+    return null;
+  }
 }
 
 /** Keepsake: straight to the roll, never the share sheet. */

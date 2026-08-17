@@ -22,7 +22,16 @@ wherever it is running and sent to the broker, which checks it against a
 comma-separated `ALLOWED_ORIGIN`. Adding a host is a Google Console entry plus
 one Cloudflare variable — never a code change.
 
-- `src/domain/domain.js` + `src/domain/stats.js` — pure, hold every rule
+- `src/domain/domain.js` + `src/domain/stats.js` — pure, hold every rule.
+  `progressValue`/`targetMet` (sets-vs-reps) and the proof record live in
+  `domain.js`; `clusterByCategory`, `flameLevel` and `bestSessionTotal` in
+  `stats.js`.
+- `src/domain/habits.js` — pure, every health-habit rule (the 5 AM day, slots,
+  the immutability guard, streaks, presets). The habit-log MERGE lives in
+  `domain.js` instead, next to the other merges, so `habits.js` never imports
+  back and makes a cycle.
+- `src/notices.js` — the bell's contents, as data. Adding an entry IS what sends
+  it to everyone.
 - `src/domain/habits.js` — pure, every health-habit rule (5 AM day, slots, the
   immutability guard, streaks, presets). The merge lives in `domain.js` instead,
   next to the others, so `habits.js` never imports back and makes a cycle.
@@ -36,15 +45,13 @@ one Cloudflare variable — never a code change.
 - `src/sync/googleSync.js` — self-contained Google auth + Drive (no test coverage)
 - `worker/` — the Cloudflare token-broker (deployed separately, see below)
 
-**385 tests, all passing** (`npm test`). They cover the pure domain layer and the
+**420 tests, all passing** (`npm test`). They cover the pure domain layer and the
 Worker's pure helpers only — **not `main.js`, not `googleSync.js`**.
 
 ## State right now
 
-- `main` = **`387c5ee`**, health habits shipped. Working tree clean apart from
-  `.DS_Store`. **Not yet byte-verified against Vercel** — do that before trusting
-  the deploy.
-- **385 tests pass.** Byte-verify every deploy against a build of the *pushed*
+- `main` = **`c4bf9f2`**, live and byte-verified. Working tree clean.
+- **420 tests pass.** Byte-verify every deploy against a build of the *pushed*
   commit — `__BUILD_ID__` is the commit SHA, so a build made before committing
   can never match. That mistake has cost a round of false-alarm polling twice.
 - Migration finished and verified 2026-08-05: the old Pages address serves a
@@ -55,11 +62,21 @@ Worker's pure helpers only — **not `main.js`, not `googleSync.js`**.
   Every D1 migration has been run. If a crew feature misbehaves, check that
   version FIRST — it is the only pre-auth route, and it is there because every
   other one answers 401 before it looks at the path.
-- **Nothing is outstanding in the code.** One optional chore is the user's: the
-  Google Console warns about a second, unused OAuth client secret. Check which one
-  the Worker holds before deleting the other, and never paste either into chat.
+- One optional chore is the user's: the Google Console warns about a second,
+  unused OAuth client secret. Check which one the Worker holds before deleting
+  the other, and never paste either into chat.
+- **The one thing left unverified** is what a crew member actually SEES of
+  someone else's proof. The posting path, the caption tagging, the filtering and
+  the "not sent yet" states are all confirmed; the other side of the wire needs
+  two signed-in accounts and could not be tested from here. Start there.
 
 ## Next up (raised, not built)
+
+- **Proof for the crew, verified end to end.** See above — the only untested
+  half of a shipped feature.
+- Per-exercise folds inside a crew member's "Their progress", if one tap still
+  reads as crowded. Deliberately not built: it needs a second nesting level and
+  a state key per exercise.
 
 - UX ideas brainstormed and **not** built, in the user's order of interest: a
   "last time you did this" line inside the logger, a rest timer between sets
@@ -167,7 +184,7 @@ now: absent is absent, not fatal.
 the stable per-user id. Asking for the email scope would have meant a fresh
 consent screen for every user.
 
-## The token-broker (new this session)
+## The token-broker (added 2026-08-05)
 
 A **stateless Cloudflare Worker** at `sets-broker.johnpatrickmendoza-cdu.workers.dev`
 holds the Google client secret and swaps tokens on demand. It **stores nothing** — each
@@ -187,6 +204,55 @@ through it.
   `sets-workout.vercel.app.evil.com` → `bad-redirect`. The hour-long test is the user's.
 
 ## Hard-won facts — do not re-derive these
+
+**A rep total must never be compared against a target that counts sets.** This
+one bug class bit FOUR times in one session, in four different files, and each
+time it looked like a different bug: `bumpTargetIfPR` silently rewrote a 3-set
+target into 6 mid-workout; `sealedToday` sealed the session the moment reps
+passed the set count and locked the keypad; the day list read "16 / 3 reps"; and
+the share card headline read "14 / 3". Everything that judges completion now
+routes through `progressValue(exercise, arr)` in `domain.js` — reps in reps
+mode, `arr.length` in sets mode. **If you add another completion test, route it
+through that function.** Eleven call sites used to compare `calcTotal()` against
+the target directly, and eleven copies of a rule is eleven chances for the
+streak, the day list and the share card to disagree about whether you finished.
+
+**Duplicate `case` labels are legal JavaScript and the first one wins.**
+`main.js` had a 37-line run of ten cases duplicated inside the same switch, so
+the second copy was unreachable. An edit landing there looks perfectly correct
+in a diff and does nothing at runtime — it is what made "Save to phone" a dead
+button for a whole round. Removed in `a75b60a`; `grep -o "case '[a-z-]*':" |
+sort | uniq -d` now returns nothing. Keep it that way.
+
+**A string replace with no assertion is how dead code ships.** Several edits in
+this session silently matched nothing and were reported as done. Every scripted
+edit to `main.js` must `assert old in s` before replacing. Related: when the
+same text appears twice (the `archive`/`restore` run does), anchor on a region
+large enough to be unique, or the replace will hit the LIVE copy.
+
+**The dev browser serves a stale bundle constantly.** Four times in one session
+a verification reported old behaviour because the service worker had cached the
+previous build — twice nearly causing a working feature to be called broken.
+Before trusting any in-browser check, unregister the worker and clear caches.
+
+**Proof of workout is two stores, deliberately.** `proofLog` (timestamp + retake
+count) SYNCS and is what decides whether a day counted; `proofImages` is local
+only, pruned at 48h, and never enters a Drive snapshot. If completion checked
+for the *picture*, signing in on a new phone would retroactively un-finish every
+day ever done and take the streak with it. There is a test named for exactly
+that. Photos in the snapshot would also turn a small backup into an enormous one.
+
+**Proof reaches the crew through the story pipe, not a new endpoint.** It is
+captioned `proof:<exercise>` and that tag is never displayed: proof is filtered
+OUT of the stories row, the story rings and the unread badge, and surfaced as a
+camera button on that member's exercise row. This is why the feature shipped at
+all — a new endpoint would have needed a Worker deploy, which only Johnny can do.
+
+**Two 9:16 images cannot be stacked in a 9:16 frame.** The proof collage tried
+it: the card could only render at a fraction of the width, and a portrait phone
+photo sat pillarboxed in a wide band. The photo is now drawn as the card's
+GROUND (full-bleed, cover, under a gradient scrim) by passing `photo` to
+`buildSessionImage`. One pass, full size, nothing shrunk.
 
 **An installed app that is never closed keeps running the JS it started with**,
 however new the service worker under it is — which is why "Force update now"
@@ -314,6 +380,11 @@ asking.
 | Today | Only exercises scheduled for today (or already logged), one-offs included. Daily weigh-in card → "✓ Weighed in today · N kg" once done. |
 | Plan | Grouped by shared schedule, collapsed by default, tap to open. Add → Scheduled or One-time. Category picks the icon. Equipment: bodyweight / dumbbell + kg/lb. |
 | Progress | Same schedule groups + combo times. Weekly-average weight chart. BMI. One-offs get their own group, sorted last. Per-exercise card: 7-day strip, streak, then figures in **two groups** — reps (top set, first day, best day, lifetime) and time (best/average/total) — each with a 💡 that opens term-and-meaning rows. Empty figures are not rendered at all. Day list is unboxed: green total = target met, dashed underline = tap to edit. |
+| Proof of workout | An exercise is not finished until it is photographed. Card on Today says "Done — one photo to finish it" with **Keep going** beside **Add proof**. Take a photo or upload one, 3 retakes, explained once. Only applies from `meta.proofSince` (first run of that build) — nothing already done was affected. A camera button on the Done row re-opens it. |
+| Target mode | Plan → target → **Reps** or **Sets**. Sets counts sets ("2 sets · 6 reps", "1 SET LEFT"), never a fraction. Both targets are remembered per exercise (`targetByMode`); switching restores the other, and an unset reps target prefills from `bestSessionTotal`. `targetMode` has NO dated history on purpose — the mode is what the number means, and past days were always counted the way they were counted. |
+| Category clusters | Three or more exercises sharing a category fold into one row on Today (`clusterByCategory`, threshold 3). Below three, nothing changes — two cards were never the problem. |
+| Arena | A 156KB JPEG at `public/arena.jpg`, on `<html>` so embers (z-index -1) rise in front of it. `jpg` had to be added to the precache globs or the ground would be a network request. Scrim is four stops; `#firelight` adds light over the flame band. |
+| Effects | Streak flame lights at day one and climbs (`flameLevel`, 0-4). 22 embers. All transform/opacity, no per-frame JS, paused when the app is not visible, with a resting state under `prefers-reduced-motion` (the global 0.001ms rule DELETES a looping animation whose first and last frames are both opacity 0). |
 | What's new | A bell in the topbar, **in the version chip's old slot** — once updates apply themselves, "which build am I on" belongs in Backup & data, not on every screen. Notices are a data file (`src/notices.js`) shipped **inside the build**: the release is the delivery mechanism, so there is no endpoint, no table and no network dependency in the topbar. Read state is per-device (`notices-seen`), never synced, and a fresh install starts with everything read. **Adding an entry is what sends it — never add one without asking Johnny, every time.** |
 | Health habits | Plan → Add → Health habit. Listed on Plan; tap to rename, re-schedule or delete. Delete **archives** (`active:false`) — habits carry no tombstone key, so a hard delete would come back from Drive. Today collapses a meals habit to one row; a one-tap habit never collapses, because its row is the action. | Recurring, no target, own streak. Two shapes: **meals** (six slots — breakfast, morning snack, lunch, afternoon snack, dinner, evening snack) and **plain** (one tap a day). Each slot is Kept / Skipped / Broke. A day is **clean** (nothing broke, ≥1 kept), **broken** (anything broke), **neutral** (nothing logged, or all skipped) or **off plan**. Neutral and off-plan days are gaps the streak steps over. Three presets — Keto, No alcohol, Sleep by 11 — which are **copied, never linked**. |
 | Weigh-in | Daily weigh-in, weekly-average line chart. Never touches any exercise streak. Deliberately not a "health habit": it stores a number BMI and the chart read. |
@@ -371,6 +442,14 @@ asking.
 - **Seeding demo data to check a view is fine, but clear it afterwards.** The dev
   server runs against real IndexedDB; a mis-tap once logged 15 reps into the
   user's actual Push Ups and bumped its target.
+
+## Working with agents
+
+Johnny asked for parallel agents once and it worked, with one rule that matters:
+**two agents editing `main.js` at the same time will conflict.** The declutter
+agent was given an explicit list of functions NOT to touch, told to
+`git pull --rebase` before committing, and it landed cleanly. Give any agent a
+region, not a file.
 
 ## Things only the user can do
 

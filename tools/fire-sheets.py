@@ -21,7 +21,12 @@ one steps().
 Crop boxes and frame counts live here and nowhere else. Re-run after changing
 any source GIF.
 """
+import sys
+from pathlib import Path
 from PIL import Image, ImageFilter
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from hue import rotate_to_target, FROM
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -36,8 +41,8 @@ OUT = ROOT / 'public'
 # scale it read as cheap: too even, too solid, too obviously a loop. fire1 and
 # fire3 are both irregular enough to stand being repeated.
 JOBS = {
-    'fire-body':   ('fire1.gif', 24, 260),   # fat and turbulent, the deep bases
-    'fire-column': ('fire3.gif', 24, 320),   # wispy, the tall thin licks
+    'fire-body':   ('fire1.gif', 24, 260, 'fire1'),  # fat and turbulent, the deep bases
+    'fire-column': ('fire3.gif', 24, 320, 'fire3'),  # wispy, the tall thin licks
 }
 
 
@@ -57,7 +62,7 @@ def lit_bbox(im):
     return box
 
 
-def build(name, src, count, height):
+def build(name, src, count, height, hue_key):
     im = Image.open(ROOT / src)
     box = lit_bbox(im) or (0, 0, im.width, im.height)
     cw, ch = box[2] - box[0], box[3] - box[1]
@@ -68,8 +73,16 @@ def build(name, src, count, height):
         im.seek(fi)
         frame = im.convert('RGB').crop(box).resize((width, height), Image.LANCZOS)
         sheet.paste(frame, (slot * width, 0))
+    # Rotated here, on the assembled sheet, and encoded ONCE. It used to be
+    # recoloured in a second pass that re-saved every sheet at a lower quality
+    # than the one that made it — the profile frame went out at 74 having been
+    # written at 84. One pass, one encode, no generation loss.
+    sheet = rotate_to_target(sheet, FROM[hue_key])
     path = OUT / f'{name}.webp'
-    sheet.save(path, 'WEBP', quality=72, method=6)
+    # 82, not 88. These are blurred fire behind a mask at about half opacity —
+    # the detail 88 buys is not visible through any of that, and it cost 60 KB.
+    # The arena is where the quality budget belongs; it is the picture.
+    sheet.save(path, 'WEBP', quality=82, method=6)
     kb = path.stat().st_size / 1024
     print(f'{path.name}: {count} frames of {width}x{height} '
           f'-> {sheet.width}x{sheet.height}, {kb:.0f} KB')
@@ -105,8 +118,9 @@ def build_floor():
         f = f.filter(ImageFilter.GaussianBlur(0.9))
         f.putalpha(f.convert('L').point(lambda p: min(255, int(p * 1.3))))
         sheet.paste(f, (slot * width, 0))
+    sheet = rotate_to_target(sheet, FROM['ring'])
     path = OUT / 'floor-ring.webp'
-    sheet.save(path, 'WEBP', quality=52, method=6)
+    sheet.save(path, 'WEBP', quality=64, method=6)
     print(f'{path.name}: {count} frames of {width}x{height} '
           f'-> {sheet.width}x{sheet.height}, {path.stat().st_size / 1024:.0f} KB')
 
@@ -163,12 +177,13 @@ def build_frame():
     # and without the floor that haze survives as alpha and greys the face.
     out.putalpha(out.convert('L').point(
         lambda p: 0 if p < 44 else min(255, int((p - 44) * 2.1))))
+    out = rotate_to_target(out, FROM['frame'])
     path = OUT / 'fire-frame.webp'
-    out.save(path, 'WEBP', quality=84, method=6)
+    out.save(path, 'WEBP', quality=90, method=6)
     print(f'{path.name}: {S}x{S} square, {path.stat().st_size / 1024:.0f} KB')
 
 
-for name, (src, count, height) in JOBS.items():
-    build(name, src, count, height)
+for name, (src, count, height, hue_key) in JOBS.items():
+    build(name, src, count, height, hue_key)
 build_frame()
 build_floor()

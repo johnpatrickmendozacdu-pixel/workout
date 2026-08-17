@@ -1,83 +1,65 @@
 #!/usr/bin/env python3
 """
-Pulls every green in the app onto one hue.
+The arena plate, the app icons, and the floor mark cut from one of them.
 
-    python3 tools/greens.py
+    python3 tools/fire-sheets.py && python3 tools/greens.py
 
-The app had five different greens by accident: the arena artwork at hue 80, one
-fire sheet at 97, another at 129, the profile frame at 137, the CSS accent at
-144 and the floor ring at 158. Individually each looked fine; together they read
-as a palette that had never been decided.
+The flame sheets are NOT here any more. They used to be recoloured in this
+second pass, which meant re-encoding a WebP that had just been written — the
+profile frame went out at quality 74 having been made at 84. Each of those is
+rotated while it is generated now and encoded once; see tools/fire-sheets.py.
 
-TARGET is the floor ring's own hue, because that asset is the reference Johnny
-chose. Everything else is rotated onto it.
+The arena had the same fault and worse: it was a JPEG recoloured from a JPEG,
+so it carried two lots of encoding loss on the app's single most-looked-at
+image. It is built from backgroundarena.png, the lossless original, and written
+as WebP — which at this size is both sharper and smaller than the JPEG it
+replaces.
 
-Only saturated pixels are moved. The arena is mostly desaturated stone, and
-rotating grey does nothing but tint it — the guard is what keeps the room stone
-rather than turning it green.
-
-Saturation and value are untouched throughout: this changes WHICH green, never
-how bright or how vivid, so nothing that was tuned by eye has to be tuned again.
-Re-run after regenerating any sheet.
+The contrast and colour lift is the point of that: the arena is a dark picture
+under a heavy scrim, and the scrim cannot lighten without letting the flames
+fight the text. Putting the contrast into the plate instead makes the greens
+carry through the scrim rather than trying to see past it. The unsharp mask is
+for the upscale: the art is 852 wide and a phone at 3x asks for more than that,
+so the browser enlarges it either way — sharpening before it does is the only
+part of that we control.
 """
-import colorsys
+import sys
 from pathlib import Path
-from PIL import Image
+from PIL import Image, ImageEnhance, ImageFilter
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from hue import rotate_to_target, FROM
 
 ROOT = Path(__file__).resolve().parent.parent
-TARGET = 156.0          # degrees — the floor ring's median green
-MIN_SAT = 0.18          # below this a pixel is stone, not paint
+OUT = ROOT / 'public'
 
-# file -> the hue it is being moved FROM (its own measured median)
-JOBS = [
-    ('arena-source.jpg',        'public/arena.jpg',              80.0),
-    ('public/fire-body.webp',   'public/fire-body.webp',        129.0),
-    ('public/fire-column.webp', 'public/fire-column.webp',       97.0),
-    ('public/fire-frame.webp',  'public/fire-frame.webp',       137.0),
-    ('public/floor-ring.webp',  'public/floor-ring.webp',       158.0),
-    ('public/icons/icon-192.png',        'public/icons/icon-192.png',        85.0),
-    ('public/icons/icon-512.png',        'public/icons/icon-512.png',        85.0),
-    ('public/icons/icon-maskable-512.png','public/icons/icon-maskable-512.png',85.0),
-    ('public/favicon.png',      'public/favicon.png',            85.0),
-]
+# --- the arena -------------------------------------------------------------
+arena = Image.open(ROOT / 'backgroundarena.png').convert('RGB')
+arena = rotate_to_target(arena, FROM['arena'])
+arena = ImageEnhance.Contrast(arena).enhance(1.16)
+arena = ImageEnhance.Color(arena).enhance(1.24)
+arena = arena.filter(ImageFilter.UnsharpMask(radius=1.2, percent=62, threshold=3))
+arena.save(OUT / 'arena.webp', 'WEBP', quality=90, method=6)
+print(f'arena.webp: {arena.size[0]}x{arena.size[1]}, '
+      f'{(OUT / "arena.webp").stat().st_size / 1024:.0f} KB')
 
-
-def rotate(img, delta):
-    """Hue-rotate the saturated pixels of an RGB(A) image by delta degrees."""
-    has_alpha = img.mode == 'RGBA'
-    alpha = img.getchannel('A') if has_alpha else None
-    rgb = img.convert('RGB')
-    px = list(rgb.getdata())
-    out = []
-    d = delta / 360.0
-    for r, g, b in px:
-        h, s, v = colorsys.rgb_to_hsv(r / 255, g / 255, b / 255)
-        if s >= MIN_SAT:
-            h = (h + d) % 1.0
-            r2, g2, b2 = colorsys.hsv_to_rgb(h, s, v)
-            out.append((int(r2 * 255 + .5), int(g2 * 255 + .5), int(b2 * 255 + .5)))
-        else:
-            out.append((r, g, b))
-    rgb.putdata(out)
-    if has_alpha:
-        rgb = rgb.convert('RGBA')
-        rgb.putalpha(alpha)
-    return rgb
-
-
-for src, dst, from_hue in JOBS:
-    p_in, p_out = ROOT / src, ROOT / dst
-    if not p_in.exists():
-        print(f'skip {src} (missing)')
-        continue
-    im = Image.open(p_in)
+# --- the icons, and the mark cut out of one ---------------------------------
+ICONS = ['icons/icon-192.png', 'icons/icon-512.png',
+         'icons/icon-maskable-512.png', 'favicon.png']
+for rel in ICONS:
+    src = ROOT / 'icon-sources' / Path(rel).name
+    if not src.exists():
+        src = OUT / rel                      # first run: recolour in place
+    im = Image.open(src)
     im = im.convert('RGBA' if 'A' in im.getbands() else 'RGB')
-    moved = rotate(im, TARGET - from_hue)
-    if p_out.suffix == '.jpg':
-        moved.convert('RGB').save(p_out, 'JPEG', quality=86, optimize=True)
-    elif p_out.suffix == '.webp':
-        moved.save(p_out, 'WEBP', quality=74, method=6)
-    else:
-        moved.save(p_out, 'PNG', optimize=True)
-    print(f'{dst}: {from_hue:.0f} -> {TARGET:.0f}deg, '
-          f'{p_out.stat().st_size / 1024:.0f} KB')
+    rotate_to_target(im, FROM['icon']).save(OUT / rel, 'PNG', optimize=True)
+    print(f'{rel}: -> {(OUT / rel).stat().st_size / 1024:.0f} KB')
+
+# The Sets mark, lifted off the square tile it was drawn on: luminance becomes
+# alpha, so the mark and its ring float free of the plate behind them.
+tile = Image.open(OUT / 'icons/icon-512.png').convert('RGB')
+tile.putalpha(tile.convert('L').point(
+    lambda p: 0 if p < 26 else min(255, int((p - 26) * 1.5))))
+mark = tile.crop(tile.getchannel('A').getbbox()).resize((320, 320), Image.LANCZOS)
+mark.save(OUT / 'floor-mark.webp', 'WEBP', quality=92, method=6)
+print(f'floor-mark.webp: {(OUT / "floor-mark.webp").stat().st_size / 1024:.0f} KB')

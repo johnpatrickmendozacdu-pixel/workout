@@ -36,6 +36,10 @@ one Cloudflare variable — never a code change.
   immutability guard, streaks, presets). The merge lives in `domain.js` instead,
   next to the others, so `habits.js` never imports back and makes a cycle.
 - `src/main.js` — all rendering and events (large; no test coverage)
+- `src/sound.js` — every clip, the audio session, the three settings. No network.
+- `tools/hue.py` — the one hue rotation both art generators share.
+- `tools/fire-sheets.py` — flame sheets, floor ring, profile frame, from the
+  source GIFs. `tools/greens.py` — the arena plate, the icons, the floor mark.
 - `src/guide.js` — the Guide tab's content, as data. No logic.
 - `src/categories.js` — the nine categories and their icon lookup. No logic.
 - `tools/slice-icons.py` — cuts the icons out of the committed source art. Re-run
@@ -48,56 +52,192 @@ one Cloudflare variable — never a code change.
 **420 tests, all passing** (`npm test`). They cover the pure domain layer and the
 Worker's pure helpers only — **not `main.js`, not `googleSync.js`**.
 
-## State right now
+## State right now — READ THIS FIRST
 
-- `main` = **`c4bf9f2`**, live and byte-verified. Working tree clean.
-- **420 tests pass.** Byte-verify every deploy against a build of the *pushed*
-  commit — `__BUILD_ID__` is the commit SHA, so a build made before committing
-  can never match. That mistake has cost a round of false-alarm polling twice.
-- Migration finished and verified 2026-08-05: the old Pages address serves a
-  redirect, the old app's assets 404, and a browser following the old link lands
-  on Vercel.
-- **Worker = build `2026-08-12.10`**, deployed and confirmed by
-  `curl -X POST -H 'Origin: https://sets-workout.vercel.app' .../crew/version`.
-  Every D1 migration has been run. If a crew feature misbehaves, check that
-  version FIRST — it is the only pre-auth route, and it is there because every
-  other one answers 401 before it looks at the path.
-- One optional chore is the user's: the Google Console warns about a second,
-  unused OAuth client secret. Check which one the Worker holds before deleting
-  the other, and never paste either into chat.
-- **The one thing left unverified** is what a crew member actually SEES of
-  someone else's proof. The posting path, the caption tagging, the filtering and
-  the "not sent yet" states are all confirmed; the other side of the wire needs
-  two signed-in accounts and could not be tested from here. Start there.
+- `main` = **`a69ddbd`**, and it is **committed but NOT pushed**. The voice-line
+  work is local only. Live is still the previous build. Push, then byte-verify
+  BOTH the js and the css asset against a build of the pushed commit — checking
+  only the js has hidden a css-only change here before.
+- **430 tests pass** (`npm test`). Same coverage as ever: the pure domain layer
+  and the Worker's pure helpers. Not `main.js`, not `sound.js`, not
+  `googleSync.js`.
+- **Worker = build `2026-08-17.12`**, deployed and confirmed by curl, carrying
+  `story-delete` and `story-video`. Both pastes are done; nothing is pending
+  there.
+- An untracked file sits in the repo root: **`before gods and ancestors
+  prevail.mp3`**. Nobody has said what it is for. It may be the missing
+  health-habit line under a different name — **ask before wiring it**.
 
-## Next up (raised, not built)
+## The one thing that is wired and silent
 
-- **Proof for the crew, verified end to end.** See above — the only untested
-  half of a shipped feature.
+`sfx-add-habit.mp3` does not exist. Picking Plan → Add → Health habit asks for
+it, gets nothing, and carries on: verified, no error, the sheet still opens.
+Johnny said the line was "forge what fate has foreseen, the mortal must become
+more" and that it was in the folder; it was not. Either that file arrives under
+that name, or `before gods and ancestors prevail.mp3` is it.
+
+## Next up
+
+**Immediately, in order:**
+
+1. **Push `a69ddbd` and byte-verify** — js AND css.
+2. **Decide what `before gods and ancestors prevail.mp3` is.** Untracked in the
+   repo root. If it is the health-habit line, rename it `sfx-add-habit.mp3` into
+   `public/` and it works with no code change.
+3. **Johnny listens on his phone.** Three things only a real iPhone can answer:
+   does Spotify keep playing underneath (ambient), does the silent switch mute
+   everything, and is the 460ms click too long when tapping the keypad fast.
+
+**Raised and not built:**
+
+- **A bell notice for everything since the video work** — the arena, the fire
+  frame, the sound. Nothing has gone out. **Adding an entry to `src/notices.js`
+  IS what sends it; ask Johnny every time.**
+- **The embers are untouched originals** — `linear` motion, one depth plane,
+  uniform colour. Next to real fire they are the weakest motion on screen. The
+  fix discussed: easing, lateral drift, two depth layers, and origins inside the
+  floor ring so they lift out of it.
+- **`sfx1.png` is unused** — a smoke-and-embers plate, sparks are orange so it
+  would need the hue rotation. Held back deliberately: it would be a seventh
+  layer on a screen already called cluttered. If it lands, it should REPLACE the
+  CSS embers rather than join them.
+- **`magic.css` (github.com/miniMAC/magic) was asked about and never examined.**
+  Nothing was fetched or decided.
+- The proof video collage is capped by real-time compositing: a minute-long clip
+  costs a minute of building. WebCodecs plus a vendored MP4 muxer is the upgrade
+  if it ever bites; there is a `ponytail:` comment naming it.
 - Per-exercise folds inside a crew member's "Their progress", if one tap still
-  reads as crowded. Deliberately not built: it needs a second nesting level and
-  a state key per exercise.
-
-- UX ideas brainstormed and **not** built, in the user's order of interest: a
-  "last time you did this" line inside the logger, a rest timer between sets
-  (iOS has no vibration and the audio system was deleted, so it would be visual
-  only), a session summary when the last card clears, and a year heatmap.
-  Reminder notifications were explicitly ruled out: reliable ones need a server,
-  which breaks "zero maintenance".
+  reads as crowded.
+- UX ideas brainstormed and not built, in Johnny's order of interest: a "last
+  time you did this" line in the logger, a rest timer between sets, a session
+  summary when the last card clears, and a year heatmap.
+- Crew personalisation: a **handle**, **earned ink**, and a **composed crew
+  emblem**. Explicitly parked: a shared wall, a crew streak, anything bought or
+  randomised.
+- **The QR invite card was designed and never built.** It needs a vendored MIT
+  QR encoder in `src/vendor/` — the one dependency the app would carry.
 - Badminton (2026-08-10) took the picker to ten, so `.cat-grid` is four across.
   Add an eleventh and check that row again.
-- **Crew personalisation, brainstormed 2026-08-12, three of five built.** Built:
-  the crew motto, member-since, and rest days showing to the crew. Not built, in
-  the user's order of interest: a **handle** (one self-set line under your own
-  name), **earned ink** (small marks derived from your own numbers — 100 days,
-  10k reps — needing no storage and impossible to grant), and a **composed crew
-  emblem** (pick a shape, a symbol and a letter; the app draws it in the graffiti
-  style like the share cards, stored as three numbers rather than an upload).
-  Explicitly parked: a shared wall (storage + moderation), a crew streak (real
-  pressure risk), anything bought or randomised.
-- **The QR invite card was designed and never built.** It needs a vendored MIT
-  QR encoder in `src/vendor/` — the one dependency the app would carry. The
-  invite is link-and-code only until then.
+
+## Sound (added 2026-08-17/18)
+
+**Never Web Audio.** That was tried once for the EMOM cues; iOS silenced all
+~400 lines of it with the ring switch and the whole system was deleted.
+`<audio>` elements only. `src/sound.js` is the entire thing, ~120 lines, no
+network at runtime: every clip is a file in the build, so there is no key to
+leak, no service to fail and nothing to maintain. **A missing clip is silent,
+never an error** — `play()` rejects and the rejection is swallowed.
+
+**Everything is `navigator.audioSession.type = 'ambient'`, music included.**
+Ambient MIXES: Spotify, a podcast, whatever is already playing keeps going
+underneath and is never paused. `playback` would take the channel and stop it,
+and the answer to not wanting our sound is the switch, not a stolen channel.
+Two consequences accepted deliberately: **a silenced phone plays nothing**,
+because ambient obeys the ring switch; and our music over someone else's plays
+both at once. Safari 16.4+ implements this; elsewhere it is a no-op and the old
+rude behaviour stands. **Never verified on a real iPhone** — that check is
+Johnny's.
+
+**Audio cannot start without a gesture.** The first tap of a session primes
+every clip muted, which spends one gesture on all of them. The greeting tries
+immediately on arrival and, if the browser refuses, is HELD for the next tap
+rather than dropped. Whether a browser will allow autoplay cannot be read off
+it; the only honest test is to play and catch the rejection.
+
+**Three settings, and NO master over them.** A master was tried and it was a
+trap: it lived on one button in one build and moved in the next, so a phone was
+left holding `sound:false` with nothing on screen saying so — and the music
+switch, which read through it, could be tapped forever without lighting or
+playing. Each setting now answers only for itself, which also means that stale
+`sound:false` is simply ignored. Prefs are device-local (`db.prefs`), never
+synced: **Voice lines** (`sfx-greeting`, default on), **Button taps**
+(`sfx-click`, default on), **Background music** (`music`, default OFF).
+
+**Voice lines follow two rules, and both were needed.** One voice at a time —
+crossing three tabs quickly otherwise leaves three sentences talking over each
+other. And no line twice in ten seconds — bouncing back to a tab you just left
+otherwise repeats it immediately; measured, three Today/Plan round trips in 1.5s
+now speak once. A line waits 190ms after the tap so the click lands first.
+
+| Trigger | Clip |
+|---|---|
+| App arrives / returns to front | `sfx-greeting` — "The arena awaits, champion" |
+| Any `[data-action]` tap | `sfx-click` (460ms of audible sound, longer than ideal) |
+| Nav → Plan | `sfx-plan` |
+| Plan → Add | `sfx-plan-add` |
+| Add → Exercise | `sfx-add-exercise` |
+| Add → Health habit | `sfx-add-habit` — **file missing** |
+| Nav → Progress, or a Progress card | `sfx-progress` |
+| Nav → Social, or a crew card | `sfx-social` |
+| Nav → Guide, the ? chip, or the 💡 | `sfx-guide` |
+| Music toggle (topbar) | `sfx-music`, 30s loop, mixes |
+
+**Music is deliberately NOT precached** (`globIgnores` in `vite.config.js`). It
+is 704 KB for a feature that is off by default; it is fetched the first time
+someone turns it on. Everything else is precached — 403 KB of speech and taps.
+
+## The arena (rebuilt 2026-08-17)
+
+The background is a picture of a fire that was not lit, so it was lit. All of it
+is CSS over sprite sheets, which means the existing `html.idle` pause and the
+`prefers-reduced-motion` resting state govern it for free — **a GIF would have
+obeyed neither**, and the three sources weigh 6.9 MB against 654 KB of sheets.
+
+- **Ten flame clusters hang from the ceiling**, `scaleY(-1)` so each sprite's
+  base sits behind the opaque topbar and the tips point down. The mask flips
+  with the transform, because a mask applies in the element's own space before
+  the transform maps it.
+- **The floor flames were removed.** Fire at both ends made the screen all edges
+  and no middle. What stands there is `floor-ring.webp` (from `sfx2.gif`) with
+  the Sets mark inside it.
+- **The mark is placed by measurement, not by eye.** The ring's ellipse spans
+  x 5–231 and y 46–119 of a 238×120 frame, so its centre is **49.6% across but
+  68.75% down** — the light rays take the top third, and centring on the box put
+  the mark visibly high. Its squash is **73/226 = 0.323**, the exact factor a
+  circle lying on that floor takes. The plate carries the ring's own **238:120**
+  aspect, or every one of those numbers drifts when it resizes.
+- **One green.** The app had five by accident (artwork 80°, sheets 97° and 129°,
+  frame 137°, accent 144°, ring 158°). Everything is rotated onto **156°**, the
+  ring's hue. `tools/hue.py` holds the single rotation; only saturated pixels
+  move, so the stone stays stone; saturation and value are never touched.
+  Measured after: 155.4–157.8 across every asset and the accent token.
+- **Encode once.** The arena was a JPEG recoloured from a JPEG, and the recolour
+  pass re-encoded every sheet BELOW the quality that made it. Rotation now
+  happens during generation. `icon-sources/` keeps un-rotated originals so a
+  re-run cannot rotate twice. `arena-source.jpg` is the pre-recolour arena.
+- **Contrast belongs in the plate, not the scrim.** The scrim cannot lighten far
+  without letting flames fight text, so the picture carries +16% contrast and
+  +24% saturation and the scrim gave four points back. The unsharp mask is for
+  the upscale: the art is 852 wide and a phone at 3x asks for more.
+- **Loose text is the only thing at risk.** Every card has an opaque back. The
+  Guide's list and the hint under the topbar both sit in flame bands, and the
+  scrim's stops are tuned around exactly those two.
+
+Rebuild art with `python3 tools/fire-sheets.py && python3 tools/greens.py`.
+Crop boxes and frame counts live in those files and nowhere else.
+
+## The profile fire frame
+
+`border-image` was the elegant answer — one rectangle fitting any box — and it
+**painted perfectly in the dev browser and not at all on the phone**. That is
+what made it the wrong tool: a technique that cannot be tested on the device it
+must run on. Both avatars are square, so the nine-slice is baked once in
+`tools/fire-sheets.py` and what ships is an ordinary picture stretched over a
+square box.
+
+Two things are baked into the asset rather than argued with in CSS: the dead
+black margin is cropped, or that padding lands inside the photo and the flame
+frames nothing; and luminance becomes alpha, so black drops out with no blend
+mode — both avatars have `overflow:hidden`, and `mix-blend-mode` inside a
+clipped box is a fight with the stacking context nobody wins. Source is
+`fireframebackup.jpg`, not `fireframe.png`: the latter's fire is thick relative
+to its opening and squared off it ate a third of the box from every edge.
+
+It sits OUTSIDE the picture via a negative inset, which needs `overflow:visible`
+— fine here, since `overflow:hidden` was only ever clipping to a rounded corner
+and there are none. **Crew faces deliberately do not get it**: their ring
+already carries story state and their border carries trained-today, and a third
+meaning on one shape is one too many.
 
 ## Architecture decisions that are settled — do not re-litigate
 
@@ -204,6 +344,32 @@ through it.
   `sets-workout.vercel.app.evil.com` → `bad-redirect`. The hour-long test is the user's.
 
 ## Hard-won facts — do not re-derive these
+
+**A story lives in ONE D1 value, capped at 1,000,000 bytes.** That is why a
+phone video cannot go to the crew as-is, and why proof reaches them as a
+composited copy at 480x854 whose bitrate is computed from the clip's own
+length to land inside 640 KB — then MEASURED, because MediaRecorder treats a
+bitrate as a hint. Below about 120 kbps the still frame goes instead.
+`MAX_STORY_BYTES` is 900 KB and `storyImageOk` accepts `data:video/` too.
+
+**iOS returns a BLACK frame from a video that was seeked but never played.**
+That is what made proof arrive in the crew's story as a black rectangle. The
+canvas is checked with `isBlankCanvas` and only when it comes back blank is the
+clip played for a moment to force a real decode.
+
+**`navigator.share` needs a LIVE user gesture.** An eight-second render outlives
+one, so `share()` refuses and the download fallback drops iOS on a file page.
+The video card is built first and shared by a second, fresh tap.
+
+**`requestAnimationFrame` stops dead when the page is hidden** — and the share
+sheet opening over the app does exactly that. A canvas recording driven by rAF
+then holds ONE frame: a valid MP4, right dimensions, 0.03 seconds. Driven by a
+timer it keeps going. `playableVideoBlob` takes a minimum duration for the same
+reason: `duration > 0` is true of a one-frame file.
+
+**The proof tag is plumbing, not a caption.** `proof:<exercise>` must never
+reach the screen; `storyCaptionText` turns it into "Proof · <exercise>".
+
 
 **A rep total must never be compared against a target that counts sets.** This
 one bug class bit FOUR times in one session, in four different files, and each
@@ -420,6 +586,30 @@ asking.
   the Vercel and Supabase migrations).
 
 ## Lessons that cost time
+
+- **A control that gates another control is a trap.** The sound master lived on
+  one button in one build and moved in the next; a phone kept `sound:false` with
+  nothing on screen saying so, and the music switch read through a dead control
+  forever. It looked like a broken button and was a design fault. Prefer
+  independent settings.
+- **`getComputedStyle` lies in a hidden browser pane.** It reported on and off
+  states as identical, and reported identity transforms for a running animation,
+  because a hidden page defers style recalc. Even an inline `!important` read
+  back unchanged. **Screenshots force a paint and tell the truth.** Two separate
+  sessions of debugging were spent before this was understood.
+- **Grep can invent a bug.** A regex starting mid-selector cut `html.idle ` off
+  the front of a rule and produced a confident, wrong claim that the minifier
+  had mangled it. Match whole rules, or read the file.
+- **Later rule, same specificity, wins.** A narrow-screen `font-size` override
+  was placed BEFORE the rule it needed to beat and silently never applied
+  through two attempts at the same fix.
+- **Measure the gap before closing it.** "A bit too high" cost two overshoots in
+  opposite directions on the flame height. Probing `elementFromPoint` across all
+  five views found the only empty strip for a floating control in one pass.
+- **Verify the format before trusting it.** The proof video's collage was capped
+  at 8s by a constant, and `MediaRecorder` driven by `requestAnimationFrame`
+  produced a valid one-frame MP4 when the page was hidden. Validate the artifact
+  you produced, not the capability you asked about.
 
 - **Don't reason about data you cannot see.** Three wrong top-set fixes came from this.
 - **`main.js` and `googleSync.js` have zero test coverage.** A revert once deleted 178

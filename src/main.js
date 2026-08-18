@@ -6200,6 +6200,12 @@ document.addEventListener('click', async (e) => {
   sound.unlock();
   if (e.target.closest('[data-action]')) sound.play('click');
 
+  // Every share entry point speaks the same line, from the one listener they
+  // all pass through — a per-case call would be eight copies and would miss
+  // the ninth the day someone adds it.
+  const shareBtn = e.target.closest('[data-action^="share"], [data-action="open-invite"]');
+  if (shareBtn) sound.speak('share');
+
   const backdrop = e.target.closest('[data-action="backdrop"]');
   if (backdrop && !e.target.closest('[data-stop]')) { closeModal(); return; }
 

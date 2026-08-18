@@ -26,11 +26,12 @@ const CLIPS = {
   progress: '/sfx-progress.mp3',
   social: '/sfx-social.mp3',
   guide: '/sfx-guide.mp3',
+  share: '/sfx-share.mp3',
 };
 
 /** Which clips are speech. A voice interrupts a voice; a tap never does. */
 const VOICES = new Set(['greeting', 'plan', 'planAdd', 'addExercise',
-  'addHabit', 'progress', 'social', 'guide']);
+  'addHabit', 'progress', 'social', 'guide', 'share']);
 
 /**
  * How this app asks to share the phone's audio.

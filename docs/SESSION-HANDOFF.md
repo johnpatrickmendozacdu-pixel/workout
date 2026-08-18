@@ -54,8 +54,8 @@ Worker's pure helpers only — **not `main.js`, not `googleSync.js`**.
 
 ## State right now — READ THIS FIRST
 
-- `main` = **`394a086`**, pushed, deployed and **byte-verified live** — the js
-  (`index-nZBnyQWZ.js`), the css (`index-4qjW48un.css`) and `sfx-add-habit.mp3`
+- `main` = **`05eb555`**, pushed, deployed and **byte-verified live** — the js
+  (`index-B4aJ1pjo.js`), the css (`index-4qjW48un.css`) and `sfx-add-habit.mp3`
   all hash identical to a local build of that commit.
 - **The three commits before it were never unpushed by choice.** A 215 MB
   `forge what fate has foreseen, the mortal must become more.dmg` was committed
@@ -93,9 +93,6 @@ before wiring it anywhere.
 
 **Raised and not built:**
 
-- **A bell notice for everything since the video work** — the arena, the fire
-  frame, the sound. Nothing has gone out. **Adding an entry to `src/notices.js`
-  IS what sends it; ask Johnny every time.**
 - **The embers are untouched originals** — `linear` motion, one depth plane,
   uniform colour. Next to real fire they are the weakest motion on screen. The
   fix discussed: easing, lateral drift, two depth layers, and origins inside the
@@ -123,6 +120,11 @@ before wiring it anywhere.
   Add an eleventh and check that row again.
 
 ## Sound (added 2026-08-17/18)
+
+**Announced 2026-08-18** — `2026-08-18-sound-and-fire` covers the arena, the
+fire frame and the whole sound system in one notice, approved by Johnny. The
+backlog of unannounced work is now empty.
+
 
 **Never Web Audio.** That was tried once for the EMOM cues; iOS silenced all
 ~400 lines of it with the ring switch and the whole system was deleted.

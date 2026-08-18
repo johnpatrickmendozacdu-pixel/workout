@@ -3023,14 +3023,22 @@ function avatarChipHtml() {
  * sixth chip squeezes the date, which truncates to "Tue, ..." on a narrow
  * phone.
  *
- * It toggles MUSIC and nothing else. There is no master over it any more —
- * a master left on one build and moved in the next is how this switch ended up
- * unable to light or play.
+ * It OPENS the sound sheet rather than muting anything. A single tap that
+ * silenced the app was the wrong shape for three settings: it could only ever
+ * speak for one of them, and the other two had to be hunted for inside Profile.
+ *
+ * What it lights for is "is anything on", read at render from the three
+ * settings themselves. Nothing is stored for it. Keeping it married to music
+ * alone would be a lie the moment the button stopped controlling music.
  */
+function anySoundOn() {
+  return sound.voiceOn() || sound.clickOn() || sound.musicOn();
+}
+
 function musicChipHtml() {
-  const on = sound.musicOn();
-  return `<button class="icon-btn music-chip ${on ? 'on' : ''}" data-action="toggle-music"
-    aria-pressed="${on}" aria-label="${on ? 'Background music on' : 'Background music off'}"
+  const on = anySoundOn();
+  return `<button class="icon-btn music-chip ${on ? 'on' : ''}" data-action="open-sound"
+    aria-label="Sound settings"
     >${on ? ICONS.soundOn : ICONS.soundOff}</button>`;
 }
 
@@ -4585,6 +4593,7 @@ function renderModal() {
   else if (m.type === 'shareChoice') root.innerHTML = modalShareChoice();
   else if (m.type === 'shareReady') root.innerHTML = modalShareReady();
   else if (m.type === 'notices') root.innerHTML = modalNotices();
+  else if (m.type === 'sound') root.innerHTML = modalSound();
   else if (m.type === 'confirmDeleteHabit') root.innerHTML = modalConfirmDeleteHabit(m);
   else if (m.type === 'addChoice') root.innerHTML = modalAddChoice();
   else if (m.type === 'habitForm') root.innerHTML = modalHabitForm();
@@ -4878,6 +4887,49 @@ function modalProof() {
         ? 'Your crew can see this on today’s workout.'
         : (activeCrew() ? 'Not sent to your crew yet.' : 'You are not in a crew, so only you can see this.')}</div>` : ''}
       ${rec && img && !rec.posted && activeCrew() ? `<button class="secondary-btn wide" data-action="repost-proof" data-id="${ex.id}">Send to my crew</button>` : ''}
+    </div>
+  </div>`;
+}
+
+/**
+ * Sound, in one place.
+ *
+ * These three rows used to live at the bottom of Profile, behind a scroll, and
+ * the topbar chip spoke for exactly one of them. Now the chip opens this and
+ * Profile carries none of it — one control, one home.
+ *
+ * "Everything" stores NOTHING. It reads the three settings and writes them
+ * individually, which is the entire lesson from the master switch that was
+ * deleted: a control holding its own state and gating the others is how a phone
+ * ended up silenced with nothing on screen saying so. This is a shortcut for
+ * three taps and cannot outlive them.
+ */
+function modalSound() {
+  const rows = [
+    ['toggle-greeting', 'Voice lines', sound.voiceOn()],
+    ['toggle-click', 'Button taps', sound.clickOn()],
+    ['toggle-music', 'Background music', sound.musicOn()],
+  ];
+  const all = rows.every(([, , on]) => on);
+  return `<div class="modal-backdrop" data-action="backdrop">
+    <div class="modal-sheet" data-stop>
+      <div class="sheet-handle"></div>
+      <div class="sheet-head">
+        <h2>Sound</h2>
+        <button class="sheet-close" data-action="close-modal">${ICONS.close}</button>
+      </div>
+      <div class="sound-rows">
+        <div class="sound-row all">
+          <span>Everything</span>
+          <button class="rest-toggle ${all ? 'on' : ''}" data-action="sound-all"
+            aria-pressed="${all}">${all ? 'On' : 'Off'}</button>
+        </div>
+        ${rows.map(([act, label, on]) => `<div class="sound-row">
+          <span>${label}</span>
+          <button class="rest-toggle ${on ? 'on' : ''}" data-action="${act}" aria-pressed="${on}">${on ? 'On' : 'Off'}</button>
+        </div>`).join('')}
+      </div>
+      <div class="hint">Voice lines are the greeting and the words each screen says as you reach it. Kept on this phone — your crew set their own. Everything here plays OVER whatever you are already listening to rather than stopping it, music included. A phone on silent stays silent.</div>
     </div>
   </div>`;
 }
@@ -5834,19 +5886,6 @@ function modalProfile() {
         </div>
       </div>
       ${bmiBlockHtml(p)}
-      <div class="field">
-        <label>Sound</label>
-        <div class="sound-rows">
-          ${[['toggle-greeting', 'Voice lines', sound.voiceOn()],
-             ['toggle-click', 'Button taps', sound.clickOn()],
-             ['toggle-music', 'Background music', sound.musicOn()]]
-            .map(([act, label, on]) => `<div class="sound-row">
-              <span>${label}</span>
-              <button class="rest-toggle ${on ? 'on' : ''}" data-action="${act}" aria-pressed="${on}">${on ? 'On' : 'Off'}</button>
-            </div>`).join('')}
-        </div>
-        <div class="hint">Voice lines are the greeting and the words each screen says as you reach it. Kept on this phone — your crew set their own. Everything here plays OVER whatever you are already listening to rather than stopping it, music included. A phone on silent stays silent.</div>
-      </div>
       <button class="secondary-btn" style="width:100%" data-action="save-profile">Save profile</button>
     </div>
   </div>`;
@@ -6378,19 +6417,32 @@ document.addEventListener('click', async (e) => {
       renderModal();
       renderTopbar();
       break;
+    case 'open-sound':
+      state.modal = { type: 'sound' };
+      renderModal();
+      break;
+    // Every one of these re-renders the topbar too: the chip lights for "is
+    // anything on", so turning the last thing off has to change it.
     case 'toggle-greeting':
       sound.setGreetingOn(!sound.voiceOn());
-      renderModal();
+      renderModal(); renderTopbar();
       break;
     case 'toggle-click':
       sound.setClickOn(!sound.clickOn());
-      renderModal();
+      renderModal(); renderTopbar();
       break;
     case 'toggle-music':
       sound.setMusicOn(!sound.musicOn());
-      renderTopbar();
-      if (state.modal && state.modal.type === 'profile') renderModal();
+      renderModal(); renderTopbar();
       break;
+    // Not all on means turn everything on; all on means turn everything off.
+    // Three writes, no fourth setting.
+    case 'sound-all': {
+      const on = !(sound.voiceOn() && sound.clickOn() && sound.musicOn());
+      sound.setGreetingOn(on); sound.setClickOn(on); sound.setMusicOn(on);
+      renderModal(); renderTopbar();
+      break;
+    }
     case 'open-add':
       state.modal = { type: 'addChoice' };
       renderModal();

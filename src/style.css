@@ -2416,11 +2416,11 @@
   .sound-rows{ display:flex; flex-direction:column; gap:8px; }
   .sound-row{ display:flex; align-items:center; justify-content:space-between; gap:12px; }
   .sound-row span{ font-size:13.5px; color:var(--text); }
-  .sound-row.master span{ font-weight:700; }
-  .sound-row.master{ padding-bottom:8px; border-bottom:1px solid var(--border); }
-  /* The three under a master that is off are not disabled — they keep their
-     setting, they just cannot be heard — so they are dimmed, not blocked. */
-  .sound-row.muted{ opacity:0.45; }
+  /* "Everything" sits above a rule, because it is a shortcut for the three
+     under it rather than a fourth setting. The dead .muted rule that used to
+     dim rows under a master switch went with the switch. */
+  .sound-row.all span{ font-weight:700; }
+  .sound-row.all{ padding-bottom:8px; border-bottom:1px solid var(--border); }
 
   /* ---------- embers ----------
      Sparks off the same fire the streak burns with. Six of them, each a blurred

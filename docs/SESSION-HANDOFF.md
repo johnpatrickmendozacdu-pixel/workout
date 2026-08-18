@@ -197,6 +197,25 @@ and a second tap inside the window does not.
 is 704 KB for a feature that is off by default; it is fetched the first time
 someone turns it on. Everything else is precached — 403 KB of speech and taps.
 
+## The screen change (2026-08-19)
+
+`src/fx.js` is one exported function. The tab change runs through
+`document.startViewTransition()`, which snapshots the old and new screens and
+animates between them on the compositor; the choreography is two rules in
+`style.css` (`::view-transition-old/new(root)`) and it costs no bytes.
+
+**Reduced motion is refused in fx.js, not CSS** — that is the only reason the
+file exists. A view transition animates snapshot pseudo-elements that no
+`prefers-reduced-motion` rule can select, so the only place to decline is
+before the browser is asked. Verified: with the query faked to `reduce`, zero
+transitions start and the screen still changes.
+
+**Four siblings were built, demoed and cut** on 2026-08-19: the card-to-sheet
+morph (one shared `view-transition-name`), sheet exit animation, a sigil sprite
+burst on `logSet`, and a seal stamp in `offerImage`. Johnny looked at all five
+and kept this one. The standalone demo of all eight ideas is a scratch file
+outside the repo — rebuild it rather than hunting for it.
+
 ## The arena (rebuilt 2026-08-17)
 
 The background is a picture of a fire that was not lit, so it was lit. All of it

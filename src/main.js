@@ -1,6 +1,7 @@
 import './style.css';
 import { registerSW } from 'virtual:pwa-register';
 import * as db from './db/db.js';
+import * as sound from './sound.js';
 import {
   todayISO,
   addDays,
@@ -5804,6 +5805,12 @@ function modalProfile() {
         </div>
       </div>
       ${bmiBlockHtml(p)}
+      <div class="field">
+        <label>Sound</label>
+        <button class="rest-toggle ${sound.soundOn() ? 'on' : ''}" data-action="toggle-sound"
+          aria-pressed="${sound.soundOn()}">${sound.soundOn() ? 'On' : 'Off'}</button>
+        <div class="hint">The greeting when you come back, and a tap on the buttons. Kept on this phone — your crew set their own.</div>
+      </div>
       <button class="secondary-btn" style="width:100%" data-action="save-profile">Save profile</button>
     </div>
   </div>`;
@@ -6151,6 +6158,12 @@ function bindModalEvents() {
 }
 
 document.addEventListener('click', async (e) => {
+  // The first tap of a session is what buys the right to play anything at all
+  // on iOS, so it is spent here — on the one listener every tap already passes
+  // through, rather than a second listener that would have to agree with it.
+  sound.unlock();
+  if (e.target.closest('[data-action]')) sound.play('click');
+
   const backdrop = e.target.closest('[data-action="backdrop"]');
   if (backdrop && !e.target.closest('[data-stop]')) { closeModal(); return; }
 
@@ -6319,6 +6332,10 @@ document.addEventListener('click', async (e) => {
       db.setItem('notices-seen', state.noticesSeen).catch(() => {});
       renderModal();
       renderTopbar();
+      break;
+    case 'toggle-sound':
+      sound.setSoundOn(!sound.soundOn());
+      renderModal();
       break;
     case 'open-add': state.modal = { type: 'addChoice' }; renderModal(); break;
     case 'add-kind':
@@ -7398,6 +7415,9 @@ async function init() {
     // Pauses the flame and the dragon rather than letting them tick on in the
     // background. CSS does the pausing; this only flips the flag.
     document.documentElement.classList.toggle('idle', document.hidden);
+    // Hand the audio channel back the moment the app is not in front. Holding
+    // it in a pocket is what keeps someone else's music paused.
+    if (document.hidden) sound.stopMusic();
     if (document.visibilityState !== 'visible') return;
     // A backgrounded phone stops the interval but not the clock. Coming back is
     // the moment to restart it — and, for a timed exercise, the moment its
@@ -7405,6 +7425,12 @@ async function init() {
     ensureGlobalTick();
     document.documentElement.classList.remove('idle');
     checkVersion();
+    // Announced on every return to front, which is what was asked for. It will
+    // only actually speak once a tap has unlocked the channel, so on a truly
+    // cold open the line lands on the first thing touched rather than the
+    // instant the app appears — iOS gives no way around that.
+    sound.greet();
+    sound.startMusic();
     if (hasSyncAccount() && isOnline()) retryBackupQuietly();
   });
 

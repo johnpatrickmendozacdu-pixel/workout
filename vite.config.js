@@ -54,7 +54,7 @@ export default defineConfig({
         // Precache the built app shell so the installed app opens with zero network.
         // jpg is here for the arena background: without it the ground is a
         // network request, and the app would open black on a train.
-        globPatterns: ['**/*.{js,css,html,png,jpg,webp,svg,webmanifest}'],
+        globPatterns: ['**/*.{js,css,html,png,jpg,webp,mp3,svg,webmanifest}'],
         cleanupOutdatedCaches: true,
         // Activate the new worker immediately and take over open pages, so the
         // very next load runs the new build rather than the previous one.

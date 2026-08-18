@@ -2364,19 +2364,40 @@
      turning it off has to be one tap from anywhere — the same reason a webtoon
      floats its speaker over the panel. Sits above the nav on the right, clear
      of the thumb's path to the tabs. */
+  /* LEFT, not right. The right edge of every row is already spoken for — the
+     share glyph on a done exercise, the chevron on a card, EDIT on the weigh-in
+     — and a floating button there covers whichever one you were reaching for.
+     The left edge above the nav is the only strip of this app that is
+     reliably empty.
+
+     88px up, because the nav's top measured 77px off the bottom: 76 put it one
+     pixel INSIDE the nav. It clears by 11 now.
+
+     Quiet until touched. It is a control you need twice a month, so it sits at
+     half strength over the arena and comes up to full on press — present
+     without competing with the room. */
   #music-toggle{
-    /* 88px, not 76: measured, the nav's top sits 77px off the bottom, so 76
-       put the button one pixel INTO it. Eleven clear is a thumb's worth of
-       separation rather than a coincidence. */
-    position:fixed; right:12px; bottom:calc(env(safe-area-inset-bottom, 0px) + 88px);
-    z-index:40; width:44px; height:44px; display:flex; align-items:center; justify-content:center;
-    background:var(--bg-card); color:var(--text-faint);
-    border:1.5px solid var(--border-strong); cursor:pointer;
-    transition:color .15s ease, border-color .15s ease;
+    position:fixed; left:12px; bottom:calc(env(safe-area-inset-bottom, 0px) + 88px);
+    z-index:40; width:40px; height:40px; display:flex; align-items:center; justify-content:center;
+    background:rgba(20,25,23,0.72); color:var(--text-faint); opacity:0.55;
+    border:1px solid var(--border-strong); cursor:pointer;
+    backdrop-filter:blur(2px); -webkit-backdrop-filter:blur(2px);
+    transition:opacity .15s ease, color .15s ease, border-color .15s ease;
   }
-  #music-toggle.on{ color:var(--accent); border-color:var(--accent); }
-  #music-toggle:active{ transform:scale(0.94); }
+  #music-toggle.on{ color:var(--accent); border-color:var(--accent); opacity:0.8; }
+  #music-toggle:active{ opacity:1; transform:scale(0.94); }
   @media (prefers-reduced-motion: reduce){ #music-toggle{ transition:none; } }
+
+  /* One row per switch, label left and control right — the shape every other
+     setting in this sheet already uses. */
+  .sound-rows{ display:flex; flex-direction:column; gap:8px; }
+  .sound-row{ display:flex; align-items:center; justify-content:space-between; gap:12px; }
+  .sound-row span{ font-size:13.5px; color:var(--text); }
+  .sound-row.master span{ font-weight:700; }
+  .sound-row.master{ padding-bottom:8px; border-bottom:1px solid var(--border); }
+  /* The three under a master that is off are not disabled — they keep their
+     setting, they just cannot be heard — so they are dimmed, not blocked. */
+  .sound-row.muted{ opacity:0.45; }
 
   /* ---------- embers ----------
      Sparks off the same fire the streak burns with. Six of them, each a blurred

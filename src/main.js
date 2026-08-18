@@ -3016,10 +3016,10 @@ function avatarChipHtml() {
 function renderMusicToggle() {
   const el = document.getElementById('music-toggle');
   if (!el) return;
-  const on = sound.musicOn();
+  const on = sound.soundOn();
   el.classList.toggle('on', on);
   el.setAttribute('aria-pressed', String(on));
-  el.setAttribute('aria-label', on ? 'Background music on' : 'Background music off');
+  el.setAttribute('aria-label', on ? 'Sound on' : 'Sound off');
   el.innerHTML = on ? ICONS.soundOn : ICONS.soundOff;
 }
 
@@ -5825,9 +5825,17 @@ function modalProfile() {
       ${bmiBlockHtml(p)}
       <div class="field">
         <label>Sound</label>
-        <button class="rest-toggle ${sound.soundOn() ? 'on' : ''}" data-action="toggle-sound"
-          aria-pressed="${sound.soundOn()}">${sound.soundOn() ? 'On' : 'Off'}</button>
-        <div class="hint">The greeting when you come back, and a tap on the buttons. Kept on this phone — your crew set their own.</div>
+        <div class="sound-rows">
+          ${[['toggle-sound', 'All sound', sound.soundOn()],
+             ['toggle-greeting', 'The arena awaits', db.prefs.get('sfx-greeting', true)],
+             ['toggle-click', 'Button taps', db.prefs.get('sfx-click', true)],
+             ['toggle-music', 'Background music', db.prefs.get('music', false)]]
+            .map(([act, label, on], i) => `<div class="sound-row${i === 0 ? ' master' : ''}${i > 0 && !sound.soundOn() ? ' muted' : ''}">
+              <span>${label}</span>
+              <button class="rest-toggle ${on ? 'on' : ''}" data-action="${act}" aria-pressed="${on}">${on ? 'On' : 'Off'}</button>
+            </div>`).join('')}
+        </div>
+        <div class="hint">Kept on this phone — your crew set their own. Everything here plays OVER what you are already listening to rather than stopping it, music included. A phone on silent stays silent.</div>
       </div>
       <button class="secondary-btn" style="width:100%" data-action="save-profile">Save profile</button>
     </div>
@@ -6351,13 +6359,24 @@ document.addEventListener('click', async (e) => {
       renderModal();
       renderTopbar();
       break;
-    case 'toggle-music':
-      sound.setMusicOn(!sound.musicOn());
-      renderMusicToggle();
-      break;
+    // The floating button is the master: one tap from anywhere, silence.
     case 'toggle-sound':
       sound.setSoundOn(!sound.soundOn());
+      renderMusicToggle();
+      if (state.modal && state.modal.type === 'profile') renderModal();
+      break;
+    case 'toggle-greeting':
+      sound.setGreetingOn(!db.prefs.get('sfx-greeting', true));
       renderModal();
+      break;
+    case 'toggle-click':
+      sound.setClickOn(!db.prefs.get('sfx-click', true));
+      renderModal();
+      break;
+    case 'toggle-music':
+      sound.setMusicOn(!db.prefs.get('music', false));
+      renderModal();
+      renderMusicToggle();
       break;
     case 'open-add': state.modal = { type: 'addChoice' }; renderModal(); break;
     case 'add-kind':

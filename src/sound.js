@@ -46,12 +46,45 @@ let unlocked = false;
 let lastGreetingAt = 0;
 let greetingPending = false;
 
-/** Sounds default ON; music defaults OFF, because music takes the audio channel
- *  from whatever the user is already playing and does not give it back. */
+/**
+ * One master and three switches under it.
+ *
+ * The master is the floating button: one tap from anywhere silences everything,
+ * which is what you want when a phone starts talking in a quiet room. The three
+ * beneath it are in the profile sheet, because choosing WHICH sounds you want
+ * is a settling-in decision, not an emergency.
+ *
+ * Music alone defaults off. The other two are short enough to live alongside
+ * someone's music; a continuous track is not.
+ */
 export const soundOn = () => db.prefs.get('sound', true);
-export const musicOn = () => db.prefs.get('music', false);
-export function setSoundOn(v) { db.prefs.set('sound', !!v); if (!v) stopMusic(); }
-export function setMusicOn(v) { db.prefs.set('music', !!v); if (v) startMusic(); else stopMusic(); }
+export const greetingOn = () => soundOn() && db.prefs.get('sfx-greeting', true);
+export const clickOn = () => soundOn() && db.prefs.get('sfx-click', true);
+export const musicOn = () => soundOn() && db.prefs.get('music', false);
+
+export function setSoundOn(v) { db.prefs.set('sound', !!v); if (!v) stopMusic(); else startMusic(); }
+export function setGreetingOn(v) { db.prefs.set('sfx-greeting', !!v); }
+export function setClickOn(v) { db.prefs.set('sfx-click', !!v); }
+export function setMusicOn(v) { db.prefs.set('music', !!v); if (musicOn()) startMusic(); else stopMusic(); }
+
+/** Whether a given clip is allowed to speak at all. */
+const allowed = (name) =>
+  name === 'music' ? musicOn() : name === 'greeting' ? greetingOn() : clickOn();
+
+/**
+ * Always 'ambient', for everything, including our own music.
+ *
+ * Ambient MIXES rather than seizes: Spotify, a podcast, whatever is already
+ * playing keeps going underneath and is never interrupted or paused. Turning
+ * the channel over to us ('playback') would stop it, and the answer to not
+ * wanting our sound is the switch, not a stolen channel.
+ *
+ * Two consequences, both accepted deliberately. A silenced phone plays nothing,
+ * because ambient obeys the ring switch — which is the right answer to someone
+ * who silenced their phone. And with our music on over someone else's, both
+ * play at once; that is what the switches are for.
+ */
+const SESSION = 'ambient';
 
 function node(name) {
   if (!nodes[name]) {
@@ -69,13 +102,14 @@ function node(name) {
  * the gesture on all of them at once — after this they can start on their own.
  */
 export function unlock() {
-  session('transient');
+  session(SESSION);
   if (unlocked) {
     if (greetingPending) { greetingPending = false; greet(); }
     return;
   }
   unlocked = true;
   for (const name of Object.keys(CLIPS)) {
+    if (name === 'music' && !musicOn()) continue;   // do not fetch 704 KB unasked
     const a = node(name);
     const wasMuted = a.muted;
     a.muted = true;
@@ -98,9 +132,9 @@ export function unlock() {
  * `onBlocked` is how the caller says what to do if it was refused.
  */
 export function play(name, onBlocked) {
-  if (!soundOn()) return;
+  if (!allowed(name)) return;
   const a = node(name);
-  session(name === 'music' ? 'playback' : 'transient');
+  session(SESSION);
   try {
     a.currentTime = 0;
     const p = a.play();
@@ -125,8 +159,8 @@ export function greet() {
 }
 
 export function startMusic() {
-  if (!soundOn() || !musicOn()) return;
-  session('playback');
+  if (!musicOn()) return;
+  session(SESSION);
   const a = node('music');
   const p = a.play();
   if (p && p.catch) p.catch(() => {});
@@ -137,7 +171,5 @@ export function startMusic() {
 export function stopMusic() {
   const a = nodes.music;
   if (a) { try { a.pause(); } catch (e) { /* already stopped */ } }
-  // Back to transient, or the channel stays claimed for playback and the
-  // user's own audio has no reason to come back.
-  session('transient');
+  session(SESSION);
 }

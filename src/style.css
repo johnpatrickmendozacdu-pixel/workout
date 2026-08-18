@@ -2538,6 +2538,19 @@
   .view-enter > *:nth-child(7){animation-delay:156ms;}
   .view-enter > *:nth-child(n+8){animation-delay:180ms;}
 
+  /* ---------- the screen change ----------
+     The browser snapshots the old and new screens and animates between them
+     itself; these two rules are the entire choreography, and they run on the
+     compositor with no JavaScript per frame.
+
+     They cannot be reached by prefers-reduced-motion — a snapshot is not an
+     element you can select — so the transition is declined at the source, in
+     fx.js, before the browser is ever asked. */
+  ::view-transition-old(root){ animation:vt-out .26s cubic-bezier(.2,.8,.2,1) both; }
+  ::view-transition-new(root){ animation:vt-in .30s var(--ease-out) both; }
+  @keyframes vt-out{ to{ opacity:0; transform:translateY(-8px) scale(.99); } }
+  @keyframes vt-in{ from{ opacity:0; transform:translateY(12px) scale(.995); } }
+
   @keyframes viewIn{
     from{opacity:0; transform:translateY(10px);}
     to  {opacity:1; transform:none;}

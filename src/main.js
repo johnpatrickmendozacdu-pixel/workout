@@ -2,6 +2,7 @@ import './style.css';
 import { registerSW } from 'virtual:pwa-register';
 import * as db from './db/db.js';
 import * as sound from './sound.js';
+import * as fx from './fx.js';
 import {
   todayISO,
   addDays,
@@ -6265,7 +6266,9 @@ document.addEventListener('click', async (e) => {
       state.view = btn.dataset.view;
       db.prefs.set('view', state.view);
       state.expandedDay = null;
-      renderNav(); renderTopbar(); renderView(); renderBanner();
+      // The browser animates the swap itself. Without the API the callback
+      // still runs and the screen changes exactly as before.
+      fx.withTransition(() => { renderNav(); renderTopbar(); renderView(); renderBanner(); });
       // The room announces itself. Today has no line — it is where you already
       // are, and a greeting on arrival covers it.
       sound.speak({ plan: 'plan', progress: 'progress', social: 'social', guide: 'guide' }[state.view]);

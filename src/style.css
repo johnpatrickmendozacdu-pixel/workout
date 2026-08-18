@@ -821,11 +821,27 @@
   .guide-sec li::before{content:''; position:absolute; left:0; top:8px; width:5px; height:5px; border-radius:50%; background:var(--border-strong);}
 
   /* the chip row must never push the title off-screen on a narrow phone */
-  .topbar-right{gap:6px;}
-  .help-chip, .rail-btn, .version-chip{width:32px; height:32px;}
+  /* Six chips now that music has one, and the name and date were losing to
+     them — both had truncated to 'Hey, J…' and 'Tue, …'. Measured at 375px: the
+     row was taking 257px of 375 and leaving the titles 80. Four pixels off each
+     chip and two off each gap gives 34 back, which is the difference between a
+     truncated date and a whole one. Nothing was removed to find the room. */
+  /* Music needed a chip, and the name and date were the ones paying for it —
+     both had truncated to 'Hey, J…' and 'Tue, …'. Measured at 375px: the chip
+     row held 227px of 375 and left the titles 57, when the date alone needs
+     114.
+
+     Trimming sizes could not find 57px, so the update chip went instead. Its
+     job had already moved: updates apply themselves on return to front, the
+     bell offers 'Update now' when one is waiting, and Backup & data still has
+     'Force update now'. It was the one control in that row with nothing left
+     to do that somewhere else was not already doing. */
+  .topbar-right{gap:4px;}
+  .help-chip, .rail-btn, .music-chip{width:30px; height:30px;}
+  .avatar-chip{width:32px; height:32px;}
+  .streak-pill{padding-left:7px; padding-right:9px;}
   .avatar-chip{width:34px; height:34px;}
   @media (max-width: 360px){
-    .version-chip{display:none;}   /* still available in Backup & data */
   }
 
   /* ---------- per-exercise streaks ---------- */
@@ -1292,6 +1308,20 @@
      yields instead — measured at 375px with a three-digit streak. */
   .app-title{max-width:190px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .date-heading, .screen-title{white-space:nowrap;}
+
+  /* Placed AFTER the 21px rule above, not before it: same specificity means the
+     later one wins, and the earlier copy of this was simply never applied.
+     Measured at 375px with the music chip in the row, the date needs 114px and
+     has 91; at 18px it needs 98 and the row fits with the greeting intact. */
+  @media (max-width:390px){
+    .date-heading{font-size:17px;}
+    .app-title{font-size:11px; letter-spacing:0.08em;}
+    /* The last six pixels came from here rather than from the date: the pill is
+       information, and it can afford tighter sides more than the heading can
+       afford another point of type. */
+    .streak-pill{padding-left:5px; padding-right:7px;}
+    .topbar-right{gap:3px;}
+  }
 
   .sealed-note{display:flex; align-items:center; justify-content:space-between; gap:12px;}
   .sealed-note span{flex:1;}

@@ -3023,9 +3023,9 @@ function avatarChipHtml() {
  * sixth chip squeezes the date, which truncates to "Tue, ..." on a narrow
  * phone.
  *
- * It toggles MUSIC, not all sound. Making it the master is what silenced the
- * music: the only control for music went into a settings sheet, and music
- * defaults off, so there was nothing to hear. All sound stays in the profile.
+ * It toggles MUSIC and nothing else. There is no master over it any more —
+ * a master left on one build and moved in the next is how this switch ended up
+ * unable to light or play.
  */
 function musicChipHtml() {
   const on = sound.musicOn();
@@ -3058,7 +3058,7 @@ function renderTopbar() {
         <div class="topbar-right">
           <div class="streak-pill flame-l${flameLevel(streak)}" title="Longest run currently going">${ICONS.flame}${streak}</div>
           ${musicChipHtml()}${helpChipHtml()}
-          ${versionChipHtml()}
+          
           ${bellChipHtml()}
           ${avatarChipHtml()}
         </div>
@@ -3070,7 +3070,7 @@ function renderTopbar() {
         <div class="topbar-right">
           <button class="add-btn" data-action="open-add">${ICONS.plus} Add</button>
           ${musicChipHtml()}${helpChipHtml()}
-          ${versionChipHtml()}
+          
           ${bellChipHtml()}
           ${avatarChipHtml()}
         </div>
@@ -3084,7 +3084,7 @@ function renderTopbar() {
             data-action="refresh-crew" aria-label="${state.crew.refreshedAt ? 'Crew up to date' : 'Refresh crew'}"
             ${state.crew.refreshing ? 'disabled' : ''}>${state.crew.refreshedAt ? ICONS.check : ICONS.restore}</button>
           ${musicChipHtml()}${helpChipHtml()}
-          ${versionChipHtml()}
+          
           ${bellChipHtml()}
           ${avatarChipHtml()}
         </div>
@@ -3096,7 +3096,7 @@ function renderTopbar() {
       <div class="topbar-row">
         <div class="topbar-left">${LOGO_MARK}<div class="screen-title">Guide</div></div>
         <div class="topbar-right">
-          ${versionChipHtml()}
+          
           ${bellChipHtml()}
           ${avatarChipHtml()}
         </div>
@@ -3108,7 +3108,7 @@ function renderTopbar() {
         <div class="topbar-right">
           <button class="icon-btn" data-action="open-data">${ICONS.gear}</button>
           ${musicChipHtml()}${helpChipHtml()}
-          ${versionChipHtml()}
+          
           ${bellChipHtml()}
           ${avatarChipHtml()}
         </div>
@@ -5837,11 +5837,10 @@ function modalProfile() {
       <div class="field">
         <label>Sound</label>
         <div class="sound-rows">
-          ${[['toggle-sound', 'All sound', sound.soundOn()],
-             ['toggle-greeting', 'The arena awaits', db.prefs.get('sfx-greeting', true)],
-             ['toggle-click', 'Button taps', db.prefs.get('sfx-click', true)],
-             ['toggle-music', 'Background music', db.prefs.get('music', false)]]
-            .map(([act, label, on], i) => `<div class="sound-row${i === 0 ? ' master' : ''}${i > 0 && !sound.soundOn() ? ' muted' : ''}">
+          ${[['toggle-greeting', 'The arena awaits', sound.greetingOn()],
+             ['toggle-click', 'Button taps', sound.clickOn()],
+             ['toggle-music', 'Background music', sound.musicOn()]]
+            .map(([act, label, on]) => `<div class="sound-row">
               <span>${label}</span>
               <button class="rest-toggle ${on ? 'on' : ''}" data-action="${act}" aria-pressed="${on}">${on ? 'On' : 'Off'}</button>
             </div>`).join('')}
@@ -6370,22 +6369,16 @@ document.addEventListener('click', async (e) => {
       renderModal();
       renderTopbar();
       break;
-    // The floating button is the master: one tap from anywhere, silence.
-    case 'toggle-sound':
-      sound.setSoundOn(!sound.soundOn());
-      renderTopbar();
-      if (state.modal && state.modal.type === 'profile') renderModal();
-      break;
     case 'toggle-greeting':
-      sound.setGreetingOn(!db.prefs.get('sfx-greeting', true));
+      sound.setGreetingOn(!sound.greetingOn());
       renderModal();
       break;
     case 'toggle-click':
-      sound.setClickOn(!db.prefs.get('sfx-click', true));
+      sound.setClickOn(!sound.clickOn());
       renderModal();
       break;
     case 'toggle-music':
-      sound.setMusicOn(!db.prefs.get('music', false));
+      sound.setMusicOn(!sound.musicOn());
       renderTopbar();
       if (state.modal && state.modal.type === 'profile') renderModal();
       break;

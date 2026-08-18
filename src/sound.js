@@ -47,25 +47,28 @@ let lastGreetingAt = 0;
 let greetingPending = false;
 
 /**
- * One master and three switches under it.
+ * Three switches, and NO master over them.
  *
- * The master is the floating button: one tap from anywhere silences everything,
- * which is what you want when a phone starts talking in a quiet room. The three
- * beneath it are in the profile sheet, because choosing WHICH sounds you want
- * is a settling-in decision, not an emergency.
+ * There was a master, and it was a trap. It lived on one button in one build
+ * and moved in the next, so a phone could be left holding sound:false with
+ * nothing on screen saying so — and then the music switch, which read through
+ * it, could be tapped forever without lighting up or playing anything. A
+ * control that silently decides whether another control works is worse than no
+ * control.
  *
- * Music alone defaults off. The other two are short enough to live alongside
- * someone's music; a continuous track is not.
+ * Each of these answers only for itself, which also means the stale sound:false
+ * left on any phone by the old master is now simply ignored.
+ *
+ * Music alone defaults off: the other two are short enough to live alongside
+ * someone else's audio, and a continuous track is not.
  */
-export const soundOn = () => db.prefs.get('sound', true);
-export const greetingOn = () => soundOn() && db.prefs.get('sfx-greeting', true);
-export const clickOn = () => soundOn() && db.prefs.get('sfx-click', true);
-export const musicOn = () => soundOn() && db.prefs.get('music', false);
+export const greetingOn = () => db.prefs.get('sfx-greeting', true);
+export const clickOn = () => db.prefs.get('sfx-click', true);
+export const musicOn = () => db.prefs.get('music', false);
 
-export function setSoundOn(v) { db.prefs.set('sound', !!v); if (!v) stopMusic(); else startMusic(); }
 export function setGreetingOn(v) { db.prefs.set('sfx-greeting', !!v); }
 export function setClickOn(v) { db.prefs.set('sfx-click', !!v); }
-export function setMusicOn(v) { db.prefs.set('music', !!v); if (musicOn()) startMusic(); else stopMusic(); }
+export function setMusicOn(v) { db.prefs.set('music', !!v); if (v) startMusic(); else stopMusic(); }
 
 /** Whether a given clip is allowed to speak at all. */
 const allowed = (name) =>

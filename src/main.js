@@ -1316,6 +1316,8 @@ const ICONS = {
   bell: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 8-3 8h18s-3-1-3-8M13.7 21a2 2 0 0 1-3.4 0" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
   camera: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M4 8h3.2l1.4-2h6.8l1.4 2H20v11H4z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="miter"/><circle cx="12" cy="13" r="3.3" stroke="currentColor" stroke-width="1.8"/></svg>`,
   chevron: `<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  soundOn: `<svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M4 9v6h4l5 4V5L8 9H4z" fill="currentColor"/><path d="M16.5 8.5a5 5 0 010 7M19 6a8.5 8.5 0 010 12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`,
+  soundOff: `<svg width="17" height="17" viewBox="0 0 24 24" fill="none"><path d="M4 9v6h4l5 4V5L8 9H4z" fill="currentColor"/><path d="M17 9.5l4 5M21 9.5l-4 5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`,
   trash: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M4 7h16M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2m-9 0l1 12a1 1 0 001 1h6a1 1 0 001-1l1-12" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
   up: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M6 15l6-6 6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
   down: `<svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
@@ -3003,6 +3005,22 @@ function avatarChipHtml() {
   return `<button class="avatar-chip ${signedIn ? 'signed-in' : 'signed-out'}${p.avatar ? ' has-photo' : ''}" data-action="open-profile" aria-label="Profile">
     ${photo}
   </button>`;
+}
+
+/**
+ * The one control that is always on screen. Music takes the phone's audio from
+ * whatever else is playing, so switching it off has to be one tap from
+ * anywhere — the same reason a webtoon puts its speaker over the page rather
+ * than in a settings menu.
+ */
+function renderMusicToggle() {
+  const el = document.getElementById('music-toggle');
+  if (!el) return;
+  const on = sound.musicOn();
+  el.classList.toggle('on', on);
+  el.setAttribute('aria-pressed', String(on));
+  el.setAttribute('aria-label', on ? 'Background music on' : 'Background music off');
+  el.innerHTML = on ? ICONS.soundOn : ICONS.soundOff;
 }
 
 function renderTopbar() {
@@ -6333,6 +6351,10 @@ document.addEventListener('click', async (e) => {
       renderModal();
       renderTopbar();
       break;
+    case 'toggle-music':
+      sound.setMusicOn(!sound.musicOn());
+      renderMusicToggle();
+      break;
     case 'toggle-sound':
       sound.setSoundOn(!sound.soundOn());
       renderModal();
@@ -7411,6 +7433,12 @@ async function init() {
   tryResumeSync().catch(() => {});
   document.documentElement.classList.toggle('idle', document.hidden);
   checkVersion();
+  renderMusicToggle();
+  // Said on arrival, not only on coming back. It tries immediately; where the
+  // browser wants a gesture first the line is held for the next tap rather
+  // than dropped, so it still arrives — just a moment later.
+  sound.greet();
+  sound.startMusic();
   document.addEventListener('visibilitychange', () => {
     // Pauses the flame and the dragon rather than letting them tick on in the
     // background. CSS does the pausing; this only flips the flag.

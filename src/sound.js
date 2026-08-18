@@ -19,9 +19,32 @@ const CLIPS = {
   music: '/sfx-music.mp3',
 };
 
+/**
+ * How this app asks to share the phone's audio.
+ *
+ * Without this, playing anything at all seizes the channel and whatever the
+ * user had going — Spotify, a podcast — stops and never comes back. There is
+ * no way to duck or mix from an <audio> element alone.
+ *
+ * navigator.audioSession is the API for it, and 'transient' is the exact case:
+ * other audio is interrupted for the length of the clip and RESUMES when it
+ * ends. Music is different — if someone deliberately turns our music on, it is
+ * meant to be the thing playing, so that asks for 'playback'.
+ *
+ * Safari 16.4 and up supports it, which is the platform that matters here.
+ * Everywhere else this is a no-op and the old behaviour stands: a short
+ * interruption that does not resume. Nothing breaks, it is just less polite.
+ */
+function session(type) {
+  try {
+    if (navigator.audioSession) navigator.audioSession.type = type;
+  } catch (e) { /* not supported, and not worth an error */ }
+}
+
 const nodes = {};
 let unlocked = false;
 let lastGreetingAt = 0;
+let greetingPending = false;
 
 /** Sounds default ON; music defaults OFF, because music takes the audio channel
  *  from whatever the user is already playing and does not give it back. */
@@ -46,7 +69,11 @@ function node(name) {
  * the gesture on all of them at once — after this they can start on their own.
  */
 export function unlock() {
-  if (unlocked) return;
+  session('transient');
+  if (unlocked) {
+    if (greetingPending) { greetingPending = false; greet(); }
+    return;
+  }
   unlocked = true;
   for (const name of Object.keys(CLIPS)) {
     const a = node(name);
@@ -57,17 +84,31 @@ export function unlock() {
     try { a.pause(); a.currentTime = 0; } catch (e) { /* not ready yet */ }
     a.muted = wasMuted;
   }
+  if (greetingPending) { greetingPending = false; greet(); }
   if (musicOn()) startMusic();
 }
 
-export function play(name) {
-  if (!soundOn() || !unlocked) return;
+/**
+ * Tries, rather than asking permission first.
+ *
+ * Whether a browser will play without a gesture is not something you can read
+ * off it — Chrome decides from how much the user has engaged with the site,
+ * iOS refuses flatly until a gesture, and desktop usually allows it. So the
+ * clip is played and the rejection is caught, which is the only honest test.
+ * `onBlocked` is how the caller says what to do if it was refused.
+ */
+export function play(name, onBlocked) {
+  if (!soundOn()) return;
   const a = node(name);
+  session(name === 'music' ? 'playback' : 'transient');
   try {
     a.currentTime = 0;
     const p = a.play();
-    if (p && p.catch) p.catch(() => {});
-  } catch (e) { /* a clip that will not play is not worth an error */ }
+    if (p && p.catch) {
+      p.then(() => { unlocked = true; })
+       .catch(() => { if (onBlocked) onBlocked(); });
+    }
+  } catch (e) { if (onBlocked) onBlocked(); }
 }
 
 /** Once per return-to-front, but never twice inside five seconds: iOS fires
@@ -77,11 +118,15 @@ export function greet() {
   const now = Date.now();
   if (now - lastGreetingAt < 5000) return;
   lastGreetingAt = now;
-  play('greeting');
+  // Blocked means the browser wanted a gesture first. The line is not dropped,
+  // it is held for the very next tap — so on a cold open it lands on whatever
+  // is touched first rather than being lost.
+  play('greeting', () => { greetingPending = true; lastGreetingAt = 0; });
 }
 
 export function startMusic() {
-  if (!soundOn() || !musicOn() || !unlocked) return;
+  if (!soundOn() || !musicOn()) return;
+  session('playback');
   const a = node('music');
   const p = a.play();
   if (p && p.catch) p.catch(() => {});
@@ -92,4 +137,7 @@ export function startMusic() {
 export function stopMusic() {
   const a = nodes.music;
   if (a) { try { a.pause(); } catch (e) { /* already stopped */ } }
+  // Back to transient, or the channel stays claimed for playback and the
+  // user's own audio has no reason to come back.
+  session('transient');
 }

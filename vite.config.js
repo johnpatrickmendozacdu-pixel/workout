@@ -55,6 +55,12 @@ export default defineConfig({
         // jpg is here for the arena background: without it the ground is a
         // network request, and the app would open black on a train.
         globPatterns: ['**/*.{js,css,html,png,jpg,webp,mp3,svg,webmanifest}'],
+        // 704 KB of music for a feature that is OFF by default has no business
+        // in the install. It is fetched the first time someone turns music on
+        // and cached by the browser from then; the cost is that music needs one
+        // online moment before it works offline. The greeting and the click are
+        // small and on by default, so those stay precached.
+        globIgnores: ['**/sfx-music.mp3'],
         cleanupOutdatedCaches: true,
         // Activate the new worker immediately and take over open pages, so the
         // very next load runs the new build rather than the previous one.

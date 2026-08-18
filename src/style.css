@@ -2359,6 +2359,25 @@
     .firelight{animation:none !important; opacity:0.85;}
   }
 
+  /* The music switch, over the page rather than inside a menu.
+     Music takes the phone's audio channel from whatever else is playing, so
+     turning it off has to be one tap from anywhere — the same reason a webtoon
+     floats its speaker over the panel. Sits above the nav on the right, clear
+     of the thumb's path to the tabs. */
+  #music-toggle{
+    /* 88px, not 76: measured, the nav's top sits 77px off the bottom, so 76
+       put the button one pixel INTO it. Eleven clear is a thumb's worth of
+       separation rather than a coincidence. */
+    position:fixed; right:12px; bottom:calc(env(safe-area-inset-bottom, 0px) + 88px);
+    z-index:40; width:44px; height:44px; display:flex; align-items:center; justify-content:center;
+    background:var(--bg-card); color:var(--text-faint);
+    border:1.5px solid var(--border-strong); cursor:pointer;
+    transition:color .15s ease, border-color .15s ease;
+  }
+  #music-toggle.on{ color:var(--accent); border-color:var(--accent); }
+  #music-toggle:active{ transform:scale(0.94); }
+  @media (prefers-reduced-motion: reduce){ #music-toggle{ transition:none; } }
+
   /* ---------- embers ----------
      Sparks off the same fire the streak burns with. Six of them, each a blurred
      dot that rises and fades; the whole effect is transform and opacity, so it

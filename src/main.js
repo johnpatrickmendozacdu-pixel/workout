@@ -3013,7 +3013,33 @@ function avatarChipHtml() {
  * anywhere — the same reason a webtoon puts its speaker over the page rather
  * than in a settings menu.
  */
+/**
+ * The topbar is a different height on Today than on Plan — the greeting line
+ * only exists on one of them — so the sound button is told where the bar ends
+ * rather than given a number that is right on one screen and wrong on four.
+ */
+function syncTopbarHeight() {
+  const bar = document.getElementById('topbar');
+  if (!bar) return;
+  const h = Math.round(bar.getBoundingClientRect().height);
+  if (h) document.documentElement.style.setProperty('--topbar-h', h + 'px');
+}
+
+/**
+ * Watched rather than re-measured at each call site. Calling it after a render
+ * meant measuring the OLD bar — Today's is taller than the rest, and the number
+ * lagged a view behind, which put the button four pixels inside the topbar.
+ * A ResizeObserver fires when the bar has actually changed size, which is the
+ * only moment the answer is different.
+ */
+function watchTopbarHeight() {
+  const bar = document.getElementById('topbar');
+  if (!bar || typeof ResizeObserver === 'undefined') return;
+  new ResizeObserver(syncTopbarHeight).observe(bar);
+}
+
 function renderMusicToggle() {
+  syncTopbarHeight();
   const el = document.getElementById('music-toggle');
   if (!el) return;
   const on = sound.soundOn();
@@ -7452,6 +7478,7 @@ async function init() {
   tryResumeSync().catch(() => {});
   document.documentElement.classList.toggle('idle', document.hidden);
   checkVersion();
+  watchTopbarHeight();
   renderMusicToggle();
   // Said on arrival, not only on coming back. It tries immediately; where the
   // browser wants a gesture first the line is held for the next tap rather

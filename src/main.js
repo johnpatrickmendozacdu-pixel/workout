@@ -5837,7 +5837,7 @@ function modalProfile() {
       <div class="field">
         <label>Sound</label>
         <div class="sound-rows">
-          ${[['toggle-greeting', 'The arena awaits', sound.greetingOn()],
+          ${[['toggle-greeting', 'Voice lines', sound.voiceOn()],
              ['toggle-click', 'Button taps', sound.clickOn()],
              ['toggle-music', 'Background music', sound.musicOn()]]
             .map(([act, label, on]) => `<div class="sound-row">
@@ -5845,7 +5845,7 @@ function modalProfile() {
               <button class="rest-toggle ${on ? 'on' : ''}" data-action="${act}" aria-pressed="${on}">${on ? 'On' : 'Off'}</button>
             </div>`).join('')}
         </div>
-        <div class="hint">Kept on this phone — your crew set their own. Everything here plays OVER what you are already listening to rather than stopping it, music included. A phone on silent stays silent.</div>
+        <div class="hint">Voice lines are the greeting and the words each screen says as you reach it. Kept on this phone — your crew set their own. Everything here plays OVER whatever you are already listening to rather than stopping it, music included. A phone on silent stays silent.</div>
       </div>
       <button class="secondary-btn" style="width:100%" data-action="save-profile">Save profile</button>
     </div>
@@ -6221,6 +6221,9 @@ document.addEventListener('click', async (e) => {
       db.prefs.set('view', state.view);
       state.expandedDay = null;
       renderNav(); renderTopbar(); renderView(); renderBanner();
+      // The room announces itself. Today has no line — it is where you already
+      // are, and a greeting on arrival covers it.
+      sound.speak({ plan: 'plan', progress: 'progress', social: 'social', guide: 'guide' }[state.view]);
       break;
 
     case 'open-proof-story': {
@@ -6370,7 +6373,7 @@ document.addEventListener('click', async (e) => {
       renderTopbar();
       break;
     case 'toggle-greeting':
-      sound.setGreetingOn(!sound.greetingOn());
+      sound.setGreetingOn(!sound.voiceOn());
       renderModal();
       break;
     case 'toggle-click':
@@ -6382,12 +6385,17 @@ document.addEventListener('click', async (e) => {
       renderTopbar();
       if (state.modal && state.modal.type === 'profile') renderModal();
       break;
-    case 'open-add': state.modal = { type: 'addChoice' }; renderModal(); break;
+    case 'open-add':
+      state.modal = { type: 'addChoice' };
+      renderModal();
+      sound.speak('planAdd');
+      break;
     case 'add-kind':
       state.modal = btn.dataset.kind === 'habit'
         ? { type: 'habitForm', preset: 'keto', kind: 'meals' }
         : { type: 'exerciseForm', exId: null };
       renderModal();
+      sound.speak(btn.dataset.kind === 'habit' ? 'addHabit' : 'addExercise');
       break;
     case 'pick-habit-preset': {
       // Picking a preset refills the form. It is a starting form, not a link.
@@ -6738,6 +6746,7 @@ document.addEventListener('click', async (e) => {
       renderModal();
       break;
     case 'open-member': {
+      sound.speak('social');
       state.modal = { type: 'crewMember', memberId: btn.dataset.id };
       renderModal();
       // Looking at someone is the view. Fire and forget: a failed record must
@@ -6802,12 +6811,14 @@ document.addEventListener('click', async (e) => {
       break;
     }
     case 'toggle-stat-help':
+      sound.speak('guide');
       state.statHelp[btn.dataset.key] = !state.statHelp[btn.dataset.key];
       renderView();
       break;
     case 'open-guide':
       state.modal = { type: 'screenGuide' };
       renderModal();
+      sound.speak('guide');
       break;
     case 'toggle-group': {
       // Flip whatever is actually on screen — the rendered state carries the
@@ -7161,6 +7172,7 @@ document.addEventListener('click', async (e) => {
       renderView();
       break;
     case 'toggle-ex-history':
+      sound.speak('progress');
           state.openExercise = state.openExercise === btn.dataset.id ? null : btn.dataset.id;
       renderView();
       break;

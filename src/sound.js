@@ -14,10 +14,23 @@
 import * as db from './db/db.js';
 
 const CLIPS = {
-  greeting: '/sfx-greeting.mp3',
   click: '/sfx-click.mp3',
   music: '/sfx-music.mp3',
+  // Spoken lines. Every one of these is a VOICE — see speak(), which is what
+  // stops them talking over each other.
+  greeting: '/sfx-greeting.mp3',
+  plan: '/sfx-plan.mp3',
+  planAdd: '/sfx-plan-add.mp3',
+  addExercise: '/sfx-add-exercise.mp3',
+  addHabit: '/sfx-add-habit.mp3',      // not recorded yet — silent until it is
+  progress: '/sfx-progress.mp3',
+  social: '/sfx-social.mp3',
+  guide: '/sfx-guide.mp3',
 };
+
+/** Which clips are speech. A voice interrupts a voice; a tap never does. */
+const VOICES = new Set(['greeting', 'plan', 'planAdd', 'addExercise',
+  'addHabit', 'progress', 'social', 'guide']);
 
 /**
  * How this app asks to share the phone's audio.
@@ -62,17 +75,22 @@ let greetingPending = false;
  * Music alone defaults off: the other two are short enough to live alongside
  * someone else's audio, and a continuous track is not.
  */
-export const greetingOn = () => db.prefs.get('sfx-greeting', true);
+/** One setting for every spoken line, greeting included — they are the same
+ *  kind of thing, and a screen full of switches for one voice is not a
+ *  setting, it is a form. The key keeps its old name so nobody's choice is
+ *  reset by the rename. */
+export const voiceOn = () => db.prefs.get('sfx-greeting', true);
+export const greetingOn = voiceOn;
 export const clickOn = () => db.prefs.get('sfx-click', true);
 export const musicOn = () => db.prefs.get('music', false);
 
-export function setGreetingOn(v) { db.prefs.set('sfx-greeting', !!v); }
+export function setGreetingOn(v) { db.prefs.set('sfx-greeting', !!v); if (!v) stopVoice(); }
 export function setClickOn(v) { db.prefs.set('sfx-click', !!v); }
 export function setMusicOn(v) { db.prefs.set('music', !!v); if (v) startMusic(); else stopMusic(); }
 
 /** Whether a given clip is allowed to speak at all. */
 const allowed = (name) =>
-  name === 'music' ? musicOn() : name === 'greeting' ? greetingOn() : clickOn();
+  name === 'music' ? musicOn() : VOICES.has(name) ? voiceOn() : clickOn();
 
 /**
  * Always 'ambient', for everything, including our own music.
@@ -151,6 +169,44 @@ export function play(name, onBlocked) {
 /** Once per return-to-front, but never twice inside five seconds: iOS fires
  *  visibilitychange in pairs often enough that the greeting would talk over
  *  its own tail. */
+let speaking = null;
+const spokenAt = {};
+
+/** A line is not repeated inside this window. Tabbing out and straight back
+ *  would otherwise fire the same sentence twice in two seconds. */
+const VOICE_COOLDOWN_MS = 10000;
+/** Long enough for the tap to land first, short enough to feel like one event.
+ *  Johnny asked for the click, then the line — not both at once. */
+const AFTER_TAP_MS = 190;
+
+export function stopVoice() {
+  if (speaking && nodes[speaking]) {
+    try { nodes[speaking].pause(); nodes[speaking].currentTime = 0; } catch (e) { /* fine */ }
+  }
+  speaking = null;
+}
+
+/**
+ * One voice at a time, and never the same line twice in a breath.
+ *
+ * Without the first rule, crossing three tabs quickly leaves three sentences
+ * talking over each other; without the second, bouncing back to a tab you just
+ * left repeats it immediately. Both are what makes a voice go from characterful
+ * to irritating in a day.
+ */
+export function speak(name) {
+  if (!voiceOn() || !CLIPS[name]) return;
+  const now = Date.now();
+  if (now - (spokenAt[name] || 0) < VOICE_COOLDOWN_MS) return;
+  spokenAt[name] = now;
+  stopVoice();
+  speaking = name;
+  setTimeout(() => {
+    if (speaking !== name) return;      // something else started talking
+    play(name, () => { speaking = null; });
+  }, AFTER_TAP_MS);
+}
+
 export function greet() {
   const now = Date.now();
   if (now - lastGreetingAt < 5000) return;

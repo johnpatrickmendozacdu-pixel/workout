@@ -16,6 +16,16 @@
  */
 export const NOTICES = [
   {
+    id: '2026-08-19-screen-change',
+    date: '2026-08-19',
+    title: 'Screens hand over now',
+    body: [
+      'Moving between Today, Plan, Progress, Social and Guide is no longer a cut. One screen steps back as the next one settles in, so a tab change feels like going somewhere rather than a swap.',
+      'Your phone draws it, not the app — there is no new code running while you use Sets and nothing was added to the download. On a phone that cannot do it, tabs change exactly as they always did.',
+      'If your phone is set to reduce motion, Sets does not do this at all.',
+    ],
+  },
+  {
     id: '2026-08-18-sound-and-fire',
     date: '2026-08-18',
     title: 'Sets has a voice, and the fire is lit',

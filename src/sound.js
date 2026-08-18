@@ -22,7 +22,7 @@ const CLIPS = {
   plan: '/sfx-plan.mp3',
   planAdd: '/sfx-plan-add.mp3',
   addExercise: '/sfx-add-exercise.mp3',
-  addHabit: '/sfx-add-habit.mp3',      // not recorded yet — silent until it is
+  addHabit: '/sfx-add-habit.mp3',      
   progress: '/sfx-progress.mp3',
   social: '/sfx-social.mp3',
   guide: '/sfx-guide.mp3',

@@ -54,9 +54,9 @@ Worker's pure helpers only — **not `main.js`, not `googleSync.js`**.
 
 ## State right now — READ THIS FIRST
 
-- `main` = **`5652f06`**, pushed, deployed and **byte-verified live** — both the
-  js (`index-BBd6e5iQ.js`) and the css (`index-4qjW48un.css`) hash identical to
-  a local build of that commit.
+- `main` = **`394a086`**, pushed, deployed and **byte-verified live** — the js
+  (`index-nZBnyQWZ.js`), the css (`index-4qjW48un.css`) and `sfx-add-habit.mp3`
+  all hash identical to a local build of that commit.
 - **The three commits before it were never unpushed by choice.** A 215 MB
   `forge what fate has foreseen, the mortal must become more.dmg` was committed
   inside `a69ddbd`, GitHub rejects any push carrying a file over 100 MB, and the
@@ -71,22 +71,23 @@ Worker's pure helpers only — **not `main.js`, not `googleSync.js`**.
   `story-delete` and `story-video`. Both pastes are done; nothing is pending
   there.
 
-## The one thing that is wired and silent
+## Nothing is wired and silent any more
 
-`sfx-add-habit.mp3` does not exist. Picking Plan → Add → Health habit asks for
-it, gets nothing, and carries on: verified, no error, the sheet still opens.
-The line is "forge what fate has foreseen, the mortal must become more" — and
-what arrived under that name is a **215 MB `.dmg`**, a disk image, not audio.
-That is almost certainly a download that handed back an installer instead of the
-clip. It needs re-downloading as an mp3; nothing else is wrong.
+Every clip `src/sound.js` names now exists in `public/`, checked one by one.
+`sfx-add-habit.mp3` — "forge what fate has foreseen, the mortal must become
+more" — arrived as audio on 2026-08-18 and needed no code change; the wiring
+had been there since the day it was written, swallowing the miss.
+
+**One recording is not used by anything:**
+`ElevenLabs_2026-08-18T14_48_15_Viraj…mp3` in `~/Downloads`, 90 KB, still under
+its export name. It matches no shipped clip by size. Ask Johnny what it is
+before wiring it anywhere.
 
 ## Next up
 
 **Immediately, in order:**
 
-1. **Re-download the health-habit line as audio** and drop it in `public/` as
-   `sfx-add-habit.mp3`. No code change — it is already wired.
-2. **Johnny listens on his phone.** Three things only a real iPhone can answer:
+1. **Johnny listens on his phone.** Three things only a real iPhone can answer:
    does Spotify keep playing underneath (ambient), does the silent switch mute
    everything, and is the 460ms click too long when tapping the keypad fast.
 
@@ -168,7 +169,7 @@ now speak once. A line waits 190ms after the tap so the click lands first.
 | Nav → Plan | `sfx-plan` |
 | Plan → Add | `sfx-plan-add` |
 | Add → Exercise | `sfx-add-exercise` |
-| Add → Health habit | `sfx-add-habit` — **file missing** |
+| Add → Health habit | `sfx-add-habit` |
 | Nav → Progress, or a Progress card | `sfx-progress` |
 | Nav → Social, or a crew card | `sfx-social` |
 | Nav → Guide, the ? chip, or the 💡 | `sfx-guide` |

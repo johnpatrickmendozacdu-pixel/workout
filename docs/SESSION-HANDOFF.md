@@ -54,37 +54,39 @@ Worker's pure helpers only — **not `main.js`, not `googleSync.js`**.
 
 ## State right now — READ THIS FIRST
 
-- `main` = **`a69ddbd`**, and it is **committed but NOT pushed**. The voice-line
-  work is local only. Live is still the previous build. Push, then byte-verify
-  BOTH the js and the css asset against a build of the pushed commit — checking
-  only the js has hidden a css-only change here before.
+- `main` = **`5652f06`**, pushed, deployed and **byte-verified live** — both the
+  js (`index-BBd6e5iQ.js`) and the css (`index-4qjW48un.css`) hash identical to
+  a local build of that commit.
+- **The three commits before it were never unpushed by choice.** A 215 MB
+  `forge what fate has foreseen, the mortal must become more.dmg` was committed
+  inside `a69ddbd`, GitHub rejects any push carrying a file over 100 MB, and the
+  whole push failed for it. The dmg was stripped from those three commits with
+  `filter-branch`, so **their SHAs changed** (`a69ddbd`→`2a66ff5`,
+  `cb8e031`→`4c4d2e4`). `*.dmg` is now in `.gitignore`. The file is still on
+  disk, untouched.
 - **430 tests pass** (`npm test`). Same coverage as ever: the pure domain layer
   and the Worker's pure helpers. Not `main.js`, not `sound.js`, not
   `googleSync.js`.
 - **Worker = build `2026-08-17.12`**, deployed and confirmed by curl, carrying
   `story-delete` and `story-video`. Both pastes are done; nothing is pending
   there.
-- An untracked file sits in the repo root: **`before gods and ancestors
-  prevail.mp3`**. Nobody has said what it is for. It may be the missing
-  health-habit line under a different name — **ask before wiring it**.
 
 ## The one thing that is wired and silent
 
 `sfx-add-habit.mp3` does not exist. Picking Plan → Add → Health habit asks for
 it, gets nothing, and carries on: verified, no error, the sheet still opens.
-Johnny said the line was "forge what fate has foreseen, the mortal must become
-more" and that it was in the folder; it was not. Either that file arrives under
-that name, or `before gods and ancestors prevail.mp3` is it.
+The line is "forge what fate has foreseen, the mortal must become more" — and
+what arrived under that name is a **215 MB `.dmg`**, a disk image, not audio.
+That is almost certainly a download that handed back an installer instead of the
+clip. It needs re-downloading as an mp3; nothing else is wrong.
 
 ## Next up
 
 **Immediately, in order:**
 
-1. **Push `a69ddbd` and byte-verify** — js AND css.
-2. **Decide what `before gods and ancestors prevail.mp3` is.** Untracked in the
-   repo root. If it is the health-habit line, rename it `sfx-add-habit.mp3` into
-   `public/` and it works with no code change.
-3. **Johnny listens on his phone.** Three things only a real iPhone can answer:
+1. **Re-download the health-habit line as audio** and drop it in `public/` as
+   `sfx-add-habit.mp3`. No code change — it is already wired.
+2. **Johnny listens on his phone.** Three things only a real iPhone can answer:
    does Spotify keep playing underneath (ambient), does the silent switch mute
    everything, and is the 460ms click too long when tapping the keypad fast.
 
@@ -171,6 +173,14 @@ now speak once. A line waits 190ms after the tap so the click lands first.
 | Nav → Social, or a crew card | `sfx-social` |
 | Nav → Guide, the ? chip, or the 💡 | `sfx-guide` |
 | Music toggle (topbar) | `sfx-music`, 30s loop, mixes |
+| Any share button, and the crew invite | `sfx-share` — "Before gods and ancestors prevail" |
+
+**Every share entry point speaks from the one click listener**, matched by
+`[data-action^="share"]` plus `open-invite`, not from the eight `case` arms.
+Eight per-case calls would be eight copies and would still miss the ninth
+someone adds. The ten-second voice cooldown is what stops share-choice →
+share-session-only speaking twice; verified in the browser, both fire the clip
+and a second tap inside the window does not.
 
 **Music is deliberately NOT precached** (`globIgnores` in `vite.config.js`). It
 is 704 KB for a feature that is off by default; it is fetched the first time

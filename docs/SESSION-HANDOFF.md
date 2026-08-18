@@ -149,6 +149,14 @@ immediately on arrival and, if the browser refuses, is HELD for the next tap
 rather than dropped. Whether a browser will allow autoplay cannot be read off
 it; the only honest test is to play and catch the rejection.
 
+**The topbar chip OPENS the sound sheet; it mutes nothing.** One tap could
+only ever speak for one of three settings, and the other two sat behind a
+scroll at the bottom of Profile — which now carries none of them. `modalSound()`
+is the single home. **`Everything` stores nothing**: it reads the three settings
+and writes them one at a time, so it is a shortcut for three taps and cannot
+outlive them. The chip lights for *is anything on*, derived at render — married
+to music alone it would lie the moment it stopped controlling music.
+
 **Three settings, and NO master over them.** A master was tried and it was a
 trap: it lived on one button in one build and moved in the next, so a phone was
 left holding `sound:false` with nothing on screen saying so — and the music

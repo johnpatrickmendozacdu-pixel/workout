@@ -16,6 +16,17 @@
  */
 export const NOTICES = [
   {
+    id: '2026-08-18-sound-and-fire',
+    date: '2026-08-18',
+    title: 'Sets has a voice, and the fire is lit',
+    body: [
+      'The arena burns now. Flames hang from the ceiling, the mark sits inside a ring of light on the floor, and your profile picture is framed in fire. It is all drawn by the app rather than a video, so it costs you nothing and stops moving when you are not looking.',
+      'It also speaks. Open Sets and it greets you, and each room says its own name as you arrive. Buttons click. There is background music too, off unless you turn it on.',
+      'Three separate switches in Settings — voice, taps, music — and none of them is hiding behind another. Turn off what you like, keep what you like.',
+      'Everything plays over whatever you already had going: Spotify, a podcast, anything. It never pauses your music. And a phone on silent stays silent, as it should.',
+    ],
+  },
+  {
     id: '2026-08-17-video-proof',
     date: '2026-08-17',
     title: 'Proof can be a video now',

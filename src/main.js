@@ -3014,39 +3014,24 @@ function avatarChipHtml() {
  * than in a settings menu.
  */
 /**
- * The topbar is a different height on Today than on Plan — the greeting line
- * only exists on one of them — so the sound button is told where the bar ends
- * rather than given a number that is right on one screen and wrong on four.
+ * The music switch, in the topbar with the other chips.
+ *
+ * It floated over the arena before, and there is nowhere down there that is not
+ * something: the ring and the Sets mark own the floor, the nav owns the bottom,
+ * and Guide has controls up the left. The topbar is the only opaque surface in
+ * the app, so a control belongs in it. The cost is real and worth naming — a
+ * sixth chip squeezes the date, which truncates to "Tue, ..." on a narrow
+ * phone.
+ *
+ * It toggles MUSIC, not all sound. Making it the master is what silenced the
+ * music: the only control for music went into a settings sheet, and music
+ * defaults off, so there was nothing to hear. All sound stays in the profile.
  */
-function syncTopbarHeight() {
-  const bar = document.getElementById('topbar');
-  if (!bar) return;
-  const h = Math.round(bar.getBoundingClientRect().height);
-  if (h) document.documentElement.style.setProperty('--topbar-h', h + 'px');
-}
-
-/**
- * Watched rather than re-measured at each call site. Calling it after a render
- * meant measuring the OLD bar — Today's is taller than the rest, and the number
- * lagged a view behind, which put the button four pixels inside the topbar.
- * A ResizeObserver fires when the bar has actually changed size, which is the
- * only moment the answer is different.
- */
-function watchTopbarHeight() {
-  const bar = document.getElementById('topbar');
-  if (!bar || typeof ResizeObserver === 'undefined') return;
-  new ResizeObserver(syncTopbarHeight).observe(bar);
-}
-
-function renderMusicToggle() {
-  syncTopbarHeight();
-  const el = document.getElementById('music-toggle');
-  if (!el) return;
-  const on = sound.soundOn();
-  el.classList.toggle('on', on);
-  el.setAttribute('aria-pressed', String(on));
-  el.setAttribute('aria-label', on ? 'Sound on' : 'Sound off');
-  el.innerHTML = on ? ICONS.soundOn : ICONS.soundOff;
+function musicChipHtml() {
+  const on = sound.musicOn();
+  return `<button class="icon-btn music-chip ${on ? 'on' : ''}" data-action="toggle-music"
+    aria-pressed="${on}" aria-label="${on ? 'Background music on' : 'Background music off'}"
+    >${on ? ICONS.soundOn : ICONS.soundOff}</button>`;
 }
 
 function renderTopbar() {
@@ -3072,7 +3057,7 @@ function renderTopbar() {
         </div>
         <div class="topbar-right">
           <div class="streak-pill flame-l${flameLevel(streak)}" title="Longest run currently going">${ICONS.flame}${streak}</div>
-          ${helpChipHtml()}
+          ${musicChipHtml()}${helpChipHtml()}
           ${versionChipHtml()}
           ${bellChipHtml()}
           ${avatarChipHtml()}
@@ -3084,7 +3069,7 @@ function renderTopbar() {
         <div class="topbar-left">${LOGO_MARK}<div class="screen-title">Plan</div></div>
         <div class="topbar-right">
           <button class="add-btn" data-action="open-add">${ICONS.plus} Add</button>
-          ${helpChipHtml()}
+          ${musicChipHtml()}${helpChipHtml()}
           ${versionChipHtml()}
           ${bellChipHtml()}
           ${avatarChipHtml()}
@@ -3098,7 +3083,7 @@ function renderTopbar() {
           <button class="icon-btn crew-refresh ${state.crew.refreshing ? 'spinning' : ''} ${state.crew.refreshedAt ? 'done' : ''}"
             data-action="refresh-crew" aria-label="${state.crew.refreshedAt ? 'Crew up to date' : 'Refresh crew'}"
             ${state.crew.refreshing ? 'disabled' : ''}>${state.crew.refreshedAt ? ICONS.check : ICONS.restore}</button>
-          ${helpChipHtml()}
+          ${musicChipHtml()}${helpChipHtml()}
           ${versionChipHtml()}
           ${bellChipHtml()}
           ${avatarChipHtml()}
@@ -3122,7 +3107,7 @@ function renderTopbar() {
         <div class="topbar-left">${LOGO_MARK}<div class="screen-title">Progress</div></div>
         <div class="topbar-right">
           <button class="icon-btn" data-action="open-data">${ICONS.gear}</button>
-          ${helpChipHtml()}
+          ${musicChipHtml()}${helpChipHtml()}
           ${versionChipHtml()}
           ${bellChipHtml()}
           ${avatarChipHtml()}
@@ -6388,7 +6373,7 @@ document.addEventListener('click', async (e) => {
     // The floating button is the master: one tap from anywhere, silence.
     case 'toggle-sound':
       sound.setSoundOn(!sound.soundOn());
-      renderMusicToggle();
+      renderTopbar();
       if (state.modal && state.modal.type === 'profile') renderModal();
       break;
     case 'toggle-greeting':
@@ -6401,8 +6386,8 @@ document.addEventListener('click', async (e) => {
       break;
     case 'toggle-music':
       sound.setMusicOn(!db.prefs.get('music', false));
-      renderModal();
-      renderMusicToggle();
+      renderTopbar();
+      if (state.modal && state.modal.type === 'profile') renderModal();
       break;
     case 'open-add': state.modal = { type: 'addChoice' }; renderModal(); break;
     case 'add-kind':
@@ -7478,8 +7463,6 @@ async function init() {
   tryResumeSync().catch(() => {});
   document.documentElement.classList.toggle('idle', document.hidden);
   checkVersion();
-  watchTopbarHeight();
-  renderMusicToggle();
   // Said on arrival, not only on coming back. It tries immediately; where the
   // browser wants a gesture first the line is held for the next tap rather
   // than dropped, so it still arrives — just a moment later.

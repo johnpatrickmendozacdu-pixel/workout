@@ -2376,32 +2376,10 @@
      Quiet until touched. It is a control you need twice a month, so it sits at
      half strength over the arena and comes up to full on press — present
      without competing with the room. */
-  /* Directly under the topbar, on the right.
-     Probed every view for what actually sits at each candidate spot: above the
-     nav and the mid-left edge both land on real controls on Guide, and the
-     bottom is where the ring and the Sets mark live. The strip under the topbar
-     is the one place empty on all five — the hints that live there are
-     left-aligned, and the cards start below it.
-
-     Anchored to the topbar's MEASURED height, published as --topbar-h, because
-     Today's bar is taller than the rest and a fixed number would be right on
-     one screen and wrong on four. */
-  #music-toggle{
-    position:fixed; right:12px; top:calc(var(--topbar-h, 64px) + 8px);
-    z-index:40; width:34px; height:34px; display:flex; align-items:center; justify-content:center;
-    cursor:pointer;
-    background:var(--bg-card); color:var(--text-faint);
-    border:1.5px solid var(--border-strong);
-    transition:background .15s ease, color .15s ease, border-color .15s ease;
-  }
-  /* On is FILLED, off is an outline — the same language the signed-in avatar
-     and the Rest toggle already use. Colour alone was not enough of a
-     difference to read at 34px; it looked on either way. */
-  #music-toggle.on{
-    background:var(--accent); color:var(--accent-ink); border-color:var(--accent);
-  }
-  #music-toggle:active{ transform:scale(0.94); }
-  @media (prefers-reduced-motion: reduce){ #music-toggle{ transition:none; } }
+  /* The music chip lights up like every other state in this app: filled when
+     on, outline when off. Colour alone did not read at chip size — it looked on
+     either way, which is exactly what was reported. */
+  .music-chip.on{ background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
 
   /* One row per switch, label left and control right — the shape every other
      setting in this sheet already uses. */

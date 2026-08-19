@@ -3702,7 +3702,10 @@ function viewToday() {
   if (todo.length) {
     html += `<div class="section-label">To do${todo.length > 1 ? ` · ${todo.length}` : ''}</div>`;
     html += renderTodoList(todo, todoCard);
-  } else if (scheduled.length) {
+  } else if (scheduled.length && !awaiting.length) {
+    // Never while something still needs proof: "All done today" sat directly
+    // under a card saying the day was NOT finished, and two accent-framed
+    // boxes argued with each other on the one screen that must be plain.
     // The day's own card hangs off the moment the day is declared over, so it
     // needs no row of its own on a screen whose whole job is what is left.
     // Two lines became one: "Every target met. Rest up." only repeated the

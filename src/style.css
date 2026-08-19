@@ -2279,22 +2279,13 @@
     will-change:transform;
     animation:fire-strip 1.6s steps(10) infinite;
   }
-  /* Dead centre of the ELLIPSE, not of the box.
-     Measured on the sheet: the ellipse spans x 5-231 and y 46-119 of a 238x120
-     frame, so its centre is 49.6% across but 68.75% down — the light rays take
-     the top third of the frame, and centring on the box put the mark visibly
-     high. Its squash is 73/226 = 0.323, which is exactly the factor a circle
-     lying on that floor needs, so the mark is scaled by the same number rather
-     than a guess. Standing it upright would make it a sign hovering above the
-     circle instead of something burned into the stone.
-     Width 68% leaves even margin inside the ellipse on both axes. */
-  .floor-mark{
-    position:absolute; left:49.6%; top:68.75%; width:68%; aspect-ratio:1;
-    transform:translate(-50%,-50%) scaleY(0.323);
-    background:url('/floor-mark.webp') center/contain no-repeat;
-    opacity:0.66; pointer-events:none;
-    animation:frame-breathe 3.4s ease-in-out infinite;
-  }
+  /* There is no mark on the floor. The ring is the floor now.
+
+     It carried the app icon first, which read as a decal stuck to the stone,
+     then the wall's own sigil, which sat in the room properly — and the room
+     was still too busy with it there. The ring alone is the quiet version, and
+     quiet is what the floor is for: it is the part of the screen the cards sit
+     over. */
 
   /* Option 1: the ring is wide enough that every ember, wherever it starts,
      rises out of it. The embers are not touched. */
@@ -2305,10 +2296,9 @@
      See the #embers override further down. */
   html.opt2 .floor-plate{ left:-4%; width:108%; top:66%; }
 
-  html.idle .floor-ring i, html.idle .floor-mark{ animation-play-state:paused; }
+  html.idle .floor-ring i{ animation-play-state:paused; }
   @media (prefers-reduced-motion: reduce){
     .floor-ring i{ animation:none; }
-    .floor-mark{ animation:none; }
   }
 
   /* The fire burns down from the ceiling too, so the frame reads as a room

@@ -55,21 +55,3 @@ for rel in ICONS:
     rotate_to_target(im, FROM['icon']).save(OUT / rel, 'PNG', optimize=True)
     print(f'{rel}: -> {(OUT / rel).stat().st_size / 1024:.0f} KB')
 
-# The mark burned into the floor is the sigil off the WALL, not the app icon.
-# The icon is a flat silver S drawn on a tile; laid on stone it read as a decal
-# stuck to the floor rather than as part of the room. The wall carries the same
-# mark cut in cracked stone with the green running through it, and the floor is
-# the same room, so the floor now carries that one.
-#
-# Ring centre and radius were measured on the finished arena: (422, 602) r=156.
-# Luminance becomes alpha exactly as before, so it floats free of the wall
-# behind it; the 26/3.2 curve is what makes it read as carved at 0.66 opacity
-# under a 0.323 squash — as cut it disappeared into the stone, and any stronger
-# it started looking like a sticker again.
-CX, CY, RAD = 422, 602, 156
-sigil = arena.crop((CX - RAD, CY - RAD, CX + RAD, CY + RAD))
-sigil.putalpha(sigil.convert('L').point(
-    lambda p: 0 if p < 26 else min(255, int((p - 26) * 3.2))))
-mark = sigil.resize((320, 320), Image.LANCZOS)
-mark.save(OUT / 'floor-mark.webp', 'WEBP', quality=92, method=6)
-print(f'floor-mark.webp: {(OUT / "floor-mark.webp").stat().st_size / 1024:.0f} KB')

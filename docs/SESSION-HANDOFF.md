@@ -54,8 +54,8 @@ Worker's pure helpers only — **not `main.js`, not `googleSync.js`**.
 
 ## State right now — READ THIS FIRST
 
-- `main` = **`ded239f`**, pushed, deployed and **byte-verified live** — the js
-  (`index-DcBtvOie.js`), the css (`index-4qjW48un.css`) and `sfx-add-habit.mp3`
+- `main` = **`b96214e`**, pushed, deployed and **byte-verified live** — the js
+  (`index-CsxTD0_c.js`), the css (`index-4qjW48un.css`) and `sfx-add-habit.mp3`
   all hash identical to a local build of that commit.
 - **The three commits before it were never unpushed by choice.** A 215 MB
   `forge what fate has foreseen, the mortal must become more.dmg` was committed
@@ -238,6 +238,52 @@ here at all. Structure was verified instead: what animates, what does not.
 morph (one shared `view-transition-name`), sheet exit animation, a sigil sprite
 burst on `logSet`, and a seal stamp in `offerImage`. The standalone demo of all
 eight ideas is a scratch file outside the repo — rebuild it rather than hunting.
+
+## The arena burns (2026-08-19)
+
+The picture is no longer still. Three layers, all CSS over the existing
+`.arena-stage`, all transform/opacity on the compositor — no JavaScript, no
+network, and they obey `html.idle` and `prefers-reduced-motion` like everything
+else in there.
+
+- **The lava** (`.arena-lava`): a seamless molten tile (`lava-tex.webp`, 8 KB)
+  scrolled by three sheets at 9s/14s/24s under `lava-mask.webp`, cut from the
+  picture's own hot pixels. Plus a 6.5s surge, because brightness that moves is
+  what reads as molten.
+- **The fire** (`.arena-flames`): the app's own 24-frame sheets. Four up the
+  standing walls (**15.61%..33.22%**, **67.72%..85.68%**), three falling out of
+  the gate arches (**26.88%, 56.81%, 75.23%**) — every number column-profiled
+  off the artwork, never eyeballed.
+- **The sigil** (`.arena-sigil`): its glow cut out of `arena.webp` by channel,
+  breathing at 5.5s while a charge runs the ring at 3.4s. Coprime on purpose.
+
+**Rules that were paid for, and must not be undone:**
+
+1. **One gate over every flame.** A sprite over the weapon rack paints fire onto
+   solid iron — those were the "ghost flames", reported three times. The whole
+   group is clipped by `flame-mask.webp`, so ghosts are impossible rather than
+   avoided by nudging boxes.
+2. **No two sprite bands may overlap.** Walls end at 54.8%, plumes start at
+   55.1%. Two screens on one pixel is what blew out into patches that read as
+   cheap. Unevenness went 9.02x -> 4.48x once they were separated.
+3. **The lava mask is levelled column by column.** The right pool is far
+   brighter than the left in the artwork (37.6 vs 11.5 across the width). Where
+   it flows is the picture's; how much is even.
+4. **Contrast, never brightness.** `brightness()` drags everything toward white,
+   which IS the cheap look. Verified: **0 pixels driven to white**.
+5. **`fire-sheets.py` crushes each sheet's black floor to zero.** These are
+   screen-blended and screen adds what it is given: `fire-body`'s black sat at
+   RGB(3,2,17) with 63% of the sheet a dim blue floor, which painted a blue
+   rectangle wherever a sprite landed on dark stone. Fixed in the generator, so
+   there is still exactly one of each sheet — do not ship a "cleaned" copy.
+
+**Cost:** +241 KB precached (51 entries, 2742 KiB). Everything else is free:
+no service, no key, no endpoint, nothing to maintain.
+
+**Never verified running on a real device from here** — the browser pane is
+permanently `document.hidden`, so `html.idle` pauses all of it and
+`requestAnimationFrame` never runs. Structure was verified instead (what
+animates, what is gated, what is paused); smoothness is Johnny's call.
 
 ## The arena (rebuilt 2026-08-17)
 

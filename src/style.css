@@ -2378,7 +2378,138 @@
   @keyframes breathe-b{ 0%,100%{transform:scaleY(1);} 50%{transform:scaleY(1.06);} }
 
   /* Off-screen app, nothing burning either. */
+
+  /* ---------- the lava, flowing ----------
+     Not a warp of the photograph and not baked frames: a seamless molten
+     texture scrolls under a mask cut from the picture's OWN hot pixels, so the
+     light moves inside the shapes the lava already occupies. Three sheets at
+     different scales and speeds, none a multiple of another, because one sheet
+     reads as a texture being dragged and three read as something turning over.
+
+     The mask was levelled column by column. The right-hand pool is far brighter
+     than the left in the artwork — measured 37.6 against 11.5 across the width —
+     and left alone the flow blazed on one side and barely showed on the other.
+     Where it flows is the picture's; how much is even.
+
+     Everything here is transform and opacity on the compositor. No filter runs
+     per frame, nothing is measured in JavaScript, and there is no network. */
+  .arena-lava{
+    position:absolute; left:0.82%; top:46.94%; width:99.06%; height:47.54%;
+    overflow:hidden; pointer-events:none; mix-blend-mode:screen;
+    -webkit-mask:url('/lava-mask.webp') 0 0/100% 100% no-repeat;
+            mask:url('/lava-mask.webp') 0 0/100% 100% no-repeat;
+    animation:lava-surge 6.5s ease-in-out infinite;
+  }
+  .arena-lava i{
+    position:absolute; left:-60%; top:-60%; width:220%; height:220%;
+    background:url('/lava-tex.webp') 0 0/38% auto repeat;
+    will-change:transform;
+  }
+  .arena-lava i.f1{ opacity:1;   animation:lava-a 9s linear infinite; }
+  .arena-lava i.f2{ opacity:.72; background-size:61% auto; filter:saturate(1.4) brightness(1.2);
+                    animation:lava-b 14s linear infinite; }
+  .arena-lava i.f3{ opacity:.5;  background-size:88% auto; filter:saturate(1.25);
+                    animation:lava-c 24s linear infinite; }
+  @keyframes lava-a{ to{ transform:translate3d(-13%,-34%,0); } }
+  @keyframes lava-b{ to{ transform:translate3d(7%,-18%,0); } }
+  @keyframes lava-c{ to{ transform:translate3d(-4%,-22%,0); } }
+  /* Brightness that moves is what reads as molten rather than as a texture on
+     a conveyor belt. */
+  @keyframes lava-surge{ 0%,100%{ opacity:.86; } 50%{ opacity:1; } }
+
+  /* ---------- fire, only where the picture is already alight ----------
+     One gate over the whole group. A pocket placed over the weapon rack — dark
+     iron with no fire behind it — paints a flame onto solid metal, and that is
+     what "ghost flames" were. Rather than nudging boxes until they miss it, the
+     group is clipped to where the artwork genuinely burns.
+
+     The blend sits on the CONTAINER so the group screens against the picture
+     once, instead of each sprite screening against its neighbours and blowing
+     out wherever two overlapped. */
+  .arena-flames{
+    position:absolute; inset:0; pointer-events:none;
+    mix-blend-mode:screen; filter:blur(0.3px);
+    -webkit-mask:url('/flame-mask.webp') 0 0/100% 100% no-repeat;
+            mask:url('/flame-mask.webp') 0 0/100% 100% no-repeat;
+  }
+  /* Contrast, not brightness. Brightness alone drags everything toward white,
+     which is exactly what makes an overlay look cheap over a photograph; a
+     little contrast and half a pixel of blur lets the sprites sit inside it. */
+  .arena-flame{
+    position:absolute; overflow:hidden; pointer-events:none;
+    filter:saturate(1.65) contrast(1.12);
+    -webkit-mask-image:radial-gradient(ellipse 70% 86% at 50% 60%,#000 54%,transparent 100%);
+            mask-image:radial-gradient(ellipse 70% 86% at 50% 60%,#000 54%,transparent 100%);
+  }
+  .arena-flame i{
+    display:block; width:2400%; height:100%;
+    background-repeat:no-repeat; background-size:100% 100%;
+    will-change:transform; animation:fire-strip steps(24) infinite;
+  }
+
+  /* The two standing walls, measured off the picture: x 15.61%..33.22% and
+     67.72%..85.68%. Two pockets each, because 18% of the screen in one element
+     drags fire-body's square frame into a smear. */
+  .arena-flame.tall{ top:47.6%; height:7.2%; opacity:.92; }
+  .arena-flame.tall i{ background-image:url('/fire-body.webp'); }
+  .arena-flame.t1{ left:15.6%; width:9%; } .arena-flame.t1 i{ animation-duration:1.5s; }
+  .arena-flame.t2{ left:24.2%; width:9%; } .arena-flame.t2 i{ animation-duration:1.7s; animation-name:fire-mir; }
+  .arena-flame.t3{ left:67.7%; width:9%; } .arena-flame.t3 i{ animation-duration:1.6s; animation-name:fire-mir; }
+  .arena-flame.t4{ left:76.7%; width:9%; } .arena-flame.t4 i{ animation-duration:1.4s; }
+
+  /* The three gates. Each plume's centre came from column-profiling the
+     picture's heat in the row beneath the arches: 26.88%, 56.81%, 75.23%. They
+     hang DOWNWARD because that is what the arches do — light falls out of them
+     and pools on the floor.
+
+     These bands never touch the walls above: the walls end at 54.8% and the
+     plumes start at 55.1%, so no pixel is ever lit by two sprites. Stacking two
+     screens on one spot is what produced the blown-out patches. */
+  .arena-flame.gate{
+    -webkit-mask-image:radial-gradient(ellipse 66% 84% at 50% 40%,#000 50%,transparent 100%);
+            mask-image:radial-gradient(ellipse 66% 84% at 50% 40%,#000 50%,transparent 100%);
+  }
+  .arena-flame.gate i{ background-image:url('/fire-column.webp'); animation-name:fire-fall; }
+  .arena-flame.g1{ left:22.68%; top:55.1%; width:8.4%; height:8.2%; opacity:1; }
+  .arena-flame.g2{ left:53.11%; top:55.3%; width:7.4%; height:7.2%; opacity:.9; }
+  .arena-flame.g3{ left:71.03%; top:55.1%; width:8.4%; height:8.2%; opacity:1; }
+  .arena-flame.g1 i{ animation-duration:0.95s; }
+  .arena-flame.g2 i{ animation-duration:1.15s; }
+  .arena-flame.g3 i{ animation-duration:1.05s; }
+  @keyframes fire-fall{ from{ transform:translateX(0) scaleY(-1); }
+                          to{ transform:translateX(-100%) scaleY(-1); } }
+  @keyframes fire-mir{  from{ transform:translateX(0) scaleX(-1); }
+                          to{ transform:translateX(-100%) scaleX(-1); } }
+
+  /* ---------- the sigil on the wall ----------
+     The glow is not drawn art: it was cut out of arena.webp by channel, the
+     green energy already in the cracks, so it lands on exactly the stone it
+     came from. It breathes at 5.5s while a charge runs the ring at 3.4s —
+     coprime on purpose, so the arc never arrives on the same swell twice. */
+  .arena-sigil{
+    position:absolute; left:17.14%; top:18.68%; width:65.61%; height:22.58%;
+    background:url('/sigil-glow.webp') center/contain no-repeat;
+    mix-blend-mode:screen; pointer-events:none;
+    animation:sigil-breathe 5.5s ease-in-out infinite;
+  }
+  .arena-sigil.sweep{
+    filter:brightness(2.3); animation:sigil-charge 3.4s linear infinite;
+    -webkit-mask:conic-gradient(from var(--sweep,0deg),transparent 0deg,#000 26deg,transparent 62deg);
+            mask:conic-gradient(from var(--sweep,0deg),transparent 0deg,#000 26deg,transparent 62deg);
+  }
+  /* A registered property, because animating the whole mask-image is a swap
+     between two unrelated images and simply does not move. Where @property is
+     unsupported the arc holds still and the breathing carries it. */
+  @property --sweep{ syntax:'<angle>'; inherits:false; initial-value:0deg; }
+  @keyframes sigil-breathe{
+    0%,100%{ opacity:.32; filter:brightness(.85); }
+    50%    { opacity:.95; filter:brightness(1.75); } }
+  @keyframes sigil-charge{ to{ --sweep:360deg; } }
+
   html.idle #arena i, html.idle .firelight{animation-play-state:paused;}
+  html.idle .arena-lava, html.idle .arena-lava i,
+  html.idle .arena-flame i,
+  html.idle .arena-sigil{ animation-play-state:paused; }
 
   /* A resting state, not a deleted one. The global 0.001ms rule would freeze
      each strip on whatever frame it happened to hold; pinning them to frame
@@ -2387,6 +2518,12 @@
   @media (prefers-reduced-motion: reduce){
     #arena i{animation:none !important; transform:translateX(0) !important;}
     .firelight{animation:none !important; opacity:0.85;}
+    /* The containers carry animations of their own — the surge and the sigil —
+       and neither is an <i>, so the rule above does not reach them. */
+    .arena-lava, .arena-sigil{ animation:none !important; }
+    /* The plumes hang upside down. Zeroing the transform above would stand them
+       back up at rest, which is a frame the picture never contains. */
+    .arena-flame.gate i{ transform:scaleY(-1) !important; }
   }
 
   /* The music switch, over the page rather than inside a menu.

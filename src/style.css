@@ -2741,6 +2741,48 @@
   .view-enter > *:nth-child(7){animation-delay:156ms;}
   .view-enter > *:nth-child(n+8){animation-delay:180ms;}
 
+  /* ---------- the emblem gate ----------
+     Plan and Progress arrive closed: one emblem on the floor of the arena,
+     cut in the same cracked stone as the sigil on the wall. Tap it and the
+     screen opens; leave the tab and it closes again.
+
+     The emblem floats rather than sits — a slow bob, and the glow breathing
+     under it — because a still image on a dark floor reads as decoration and
+     this one has to read as the way in. */
+  /* Low, standing in the ring rather than high on the wall. Placed at 8vh it
+     landed straight on the wall sigil and the screen had two emblems stacked on
+     each other; the floor between the fire and the nav is the empty part of the
+     picture and the only place a third object belongs. */
+  .emblem-gate{
+    display:flex; flex-direction:column; align-items:center; gap:12px;
+    padding:52vh 16px 0;
+  }
+  .emblem{
+    appearance:none; background:none; border:0; padding:0; cursor:pointer;
+    width:170px; height:170px; position:relative;
+    -webkit-tap-highlight-color:transparent;
+    animation:emblem-float 5.5s ease-in-out infinite;
+  }
+  .emblem-art{
+    position:absolute; inset:0; background:center/contain no-repeat;
+    filter:drop-shadow(0 0 18px rgba(62,224,159,.35));
+    animation:emblem-breathe 3.6s ease-in-out infinite;
+  }
+  .emblem:active{ scale:.95; }
+  .emblem-label{
+    margin:0; font-size:12.5px; letter-spacing:.14em; text-transform:uppercase;
+    color:var(--text-dim);
+    /* The label is the indication that it is a control at all. It pulses with
+       the emblem rather than on its own, so the pair reads as one object. */
+    animation:emblem-breathe 3.6s ease-in-out infinite;
+  }
+  @keyframes emblem-float{ 0%,100%{ transform:translateY(0); } 50%{ transform:translateY(-9px); } }
+  @keyframes emblem-breathe{ 0%,100%{ opacity:.62; } 50%{ opacity:1; } }
+  html.idle .emblem, html.idle .emblem-art, html.idle .emblem-label{ animation-play-state:paused; }
+  @media (prefers-reduced-motion: reduce){
+    .emblem, .emblem-art, .emblem-label{ animation:none; opacity:1; }
+  }
+
   /* ---------- the screen change ----------
      The browser snapshots the outgoing and incoming screens and animates
      between them on the compositor. No library, no per-frame JavaScript, and

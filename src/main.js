@@ -94,6 +94,12 @@ const REP_PAD = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 20, 25, 30, 50];
 /* ============================= STATE ============================= */
 const state = {
   view: db.prefs.get('view', 'today'),
+  /** Which screens have been opened this visit. Cleared on every tab change, so
+   *  Plan and Progress always come back closed — the point is that the arena is
+   *  what you see when you arrive, and opening one is a decision you make each
+   *  time rather than a setting you forget you set. Today is never gated: it is
+   *  the screen you came to use. */
+  revealed: new Set(),
   exercises: [],
   setsLog: {},
   timersLog: {},
@@ -3171,13 +3177,30 @@ function renderTopbar() {
  */
 let lastRenderedView = null;
 
+/** Plan and Progress open behind an emblem; Today, Social and Guide do not.
+ *  Today is the daily loop and must never have a door; Social is a roster you
+ *  glance at; Guide already folds itself. */
+const GATED = { plan: ['emblem-sword', 'Open your plan'],
+                progress: ['emblem-armour', 'See your progress'] };
+
+function emblemHtml() {
+  const [art, label] = GATED[state.view];
+  return `<div class="emblem-gate">
+      <button class="emblem" data-action="reveal-view" aria-label="${escapeHtml(label)}">
+        <span class="emblem-art" style="background-image:url('/${art}.webp')"></span>
+      </button>
+      <p class="emblem-label">${escapeHtml(label)}</p>
+    </div>`;
+}
+
 function renderView() {
   const el = document.getElementById('view-container');
   if (!el) return;
   const arriving = state.view !== lastRenderedView;
   lastRenderedView = state.view;
   el.classList.remove('view-enter');
-  if (state.view === 'today') el.innerHTML = viewToday();
+  if (GATED[state.view] && !state.revealed.has(state.view)) el.innerHTML = emblemHtml();
+  else if (state.view === 'today') el.innerHTML = viewToday();
   else if (state.view === 'plan') el.innerHTML = viewPlan();
   else if (state.view === 'guide') el.innerHTML = guideBodyHtml();
   else if (state.view === 'social') el.innerHTML = viewSocial();
@@ -6340,6 +6363,9 @@ document.addEventListener('click', async (e) => {
         }
       }
       state.view = btn.dataset.view;
+      // Leaving a screen closes it. Coming back to an emblem is the whole idea;
+      // coming back to the wall of cards you left would make this a setting.
+      state.revealed.clear();
       db.prefs.set('view', state.view);
       state.expandedDay = null;
       // The browser animates the swap itself. Without the API the callback
@@ -6496,6 +6522,10 @@ document.addEventListener('click', async (e) => {
       renderModal();
       renderTopbar();
       break;
+    case 'reveal-view':
+      fx.withTransition(() => { state.revealed.add(state.view); renderView(); });
+      break;
+
     case 'open-sound':
       state.modal = { type: 'sound' };
       renderModal();

@@ -2985,13 +2985,18 @@
      other edge. 34px inside the share button's own 44px box keeps the two
      snug — one control set, not two — and there were two of these rules
      fighting each other before, of which only the second ever applied. */
+  /* Grey, and no box. In accent green with a border it was the brightest thing
+     on a finished row — louder than the reps it sits beside and fighting the
+     fire behind it. It matches the share glyph next to it now: the two are the
+     same kind of thing, so they look like it, and neither pulls the eye off
+     the arena. */
   .done-proof{
     flex:0 0 auto; width:34px; height:34px; margin:0 -2px 0 0;
     display:flex; align-items:center; justify-content:center;
-    background:none; border:1px solid var(--accent); color:var(--accent);
+    background:none; border:none; color:var(--text-faint);
   }
   .done-proof svg{ width:14px; height:14px; }
-  .done-proof:active{ transform:scale(0.9); }
+  .done-proof:active{ color:var(--accent); transform:scale(0.9); }
   .proof-view{
     flex:0 0 auto; width:30px; height:30px; padding:0; display:flex; align-items:center; justify-content:center;
     background:none; border:1px solid var(--accent); color:var(--accent); margin:0 8px;

@@ -6,9 +6,29 @@
     --paper:#0A0C0B;
     --bg:#0A0C0B;
     --bg-elevated:#141917;
-    --bg-card:#141917;
+    /* Translucent, so the arena runs UNDERNEATH the cards instead of stopping
+       at every card edge. The screen was not cluttered because it holds too
+       much — it was cluttered because 44 surfaces painted a solid wall over the
+       picture, and the background only survived in the gaps between them.
+
+       0.80 is a floor, not a taste: at the brightest the scrimmed arena ever
+       gets behind a card, RGB(146,181,174), this keeps body text at 10.3:1 and
+       the muted text at 5.1:1, both above the 4.5:1 readability bar. 0.74 puts
+       the muted text under it, so it is the last stop before something becomes
+       hard to read on a fire.
+
+       Sheets are NOT affected — they use --bg-elevated and stay solid, because
+       a sheet is a task you are doing, not scenery you are looking past. */
+    --bg-card:rgba(20,25,23,0.80);
     --bg-card-hover:#1B211F;
-    --surface:#141917;
+    /* The brutalist panels — Today's cards, the exercise card, the timer
+       buttons. Same 0.80 as --bg-card and for the same reason: these are the
+       biggest surfaces on the screen, so they are most of the wall.
+       --surface-solid is for the handful of places see-through is wrong: a
+       chart dot's outline exists to punch a hole in the line behind it, and an
+       avatar is a picture, not scenery. */
+    --surface:rgba(20,25,23,0.80);
+    --surface-solid:#141917;
     --silver:#C3C9C4;
     --silver-deep:#7C857F;
     --ink:#D8DEDA;             /* rule and primary text — light on black */
@@ -1426,6 +1446,8 @@
   .done-tick svg{width:17px; height:17px;}
   .done-name{flex:1; min-width:0; font-size:14.5px; font-weight:600;
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  /* Reps and the finishing time set as one quiet string so the row reads as a
+     line rather than a table, and the background shows between the columns. */
   .done-num{font-family:var(--font-mono); font-size:12.5px; color:var(--text-faint);}
 
   /* ---------- crew ----------
@@ -1773,8 +1795,8 @@
   .traj svg{width:100%; height:auto; display:block; overflow:visible;}
   .traj-line{fill:none; stroke:var(--silver); stroke-width:2; stroke-linejoin:round; stroke-linecap:round;}
   .traj-target{fill:none; stroke:#3A423F; stroke-width:2; stroke-dasharray:5 4;}
-  .traj-dot.hit{fill:var(--accent); stroke:var(--surface); stroke-width:2;}
-  .traj-dot.short{fill:var(--surface); stroke:var(--silver); stroke-width:2;}
+  .traj-dot.hit{fill:var(--accent); stroke:var(--surface-solid); stroke-width:2;}
+  .traj-dot.short{fill:var(--surface-solid); stroke:var(--silver); stroke-width:2;}
   .traj-label{
     fill:var(--text); font-family:var(--font-mono); font-size:11px; font-weight:700;
   }
@@ -1815,12 +1837,12 @@
      Square, like everything else here: a circular crop would be the only
      rounded thing in a zero-radius design. */
   .avatar-photo{width:100%; height:100%; object-fit:cover; display:block;}
-  .avatar-chip.has-photo{padding:0; overflow:hidden; background:var(--surface);}
+  .avatar-chip.has-photo{padding:0; overflow:hidden; background:var(--surface-solid);}
   .profile-photo-block{margin-bottom:16px; text-align:center;}
   /* square, like every other surface here — the circle was the one rounded
      thing left in a zero-radius design */
   .profile-avatar-big{border-radius:0; margin-bottom:0;}
-  .profile-avatar-big.has-photo{padding:0; overflow:hidden; background:var(--surface); border:2px solid var(--ink);}
+  .profile-avatar-big.has-photo{padding:0; overflow:hidden; background:var(--surface-solid); border:2px solid var(--ink);}
   .profile-avatar-big.has-photo img{width:100%; height:100%; object-fit:cover; display:block;}
   .profile-photo-actions{display:flex; gap:8px; justify-content:center; margin-top:10px;}
   .photo-btn{
@@ -1955,7 +1977,7 @@
 /* ---- Weekly weight chart (reuses trajectory look) ---- */
 .traj-chart{width:100%;height:auto;display:block;margin:6px 0 4px;}
 .traj-chart .traj-dot{fill:var(--silver);}
-.traj-chart .traj-dot-current{fill:var(--accent);stroke:var(--surface);stroke-width:2;}
+.traj-chart .traj-dot-current{fill:var(--accent);stroke:var(--surface-solid);stroke-width:2;}
 
 /* A one-off has no schedule to choose, so the field states the fact instead of
    offering a control that would only ever have one answer. */
@@ -2167,6 +2189,24 @@
   /* The same four stops the canvas used to carry, now ABOVE the fire — the
      flames are part of the picture and get dimmed with it, rather than
      burning through the layer that makes text readable. */
+  /* Shorter versions of the two blocks that were costing the most height for
+     the least information: the all-done card lost its second line, and the
+     weigh-in row is a line rather than a card. Both were pushing the wall
+     sigil off the screen. */
+  .all-clear.compact{ padding:14px 16px; gap:10px; }
+  .all-clear.compact b{ font-size:17px; }
+  .habit-done{ padding:9px 12px; min-height:0; }
+  /* One row, one number: the prompt is now a label and a button side by side
+     rather than a paragraph with a button under it. */
+  .habit-card{ padding:10px 12px; min-height:0; align-items:center; }
+  .habit-text b{ font-size:15px; }
+  .habit-done-text{ font-size:13.5px; }
+
+  /* Lifted by ~18 points across every stop on 2026-08-19. These were tuned
+     around loose text — the hint lines that used to sit straight on the
+     picture — and those retire after five opens now, so the cover they needed
+     is cover the arena was paying for and nobody was using. The cards carry
+     their own 0.80 fill, so text legibility never depended on this. */
   .arena-scrim{
     position:absolute; inset:0; pointer-events:none;
     /* The last stop used to lift to 0.40 because the artwork's floor was dark
@@ -2186,12 +2226,12 @@
        the same stops, four points lighter, plus the text-shadow that was
        always the real guard. */
     background:linear-gradient(180deg,
-      rgba(10,12,11,0.52) 0%,
-      rgba(10,12,11,0.54) 22%,
-      rgba(10,12,11,0.54) 40%,
-      rgba(10,12,11,0.58) 60%,
-      rgba(10,12,11,0.59) 82%,
-      rgba(10,12,11,0.54) 100%);
+      rgba(10,12,11,0.34) 0%,
+      rgba(10,12,11,0.36) 22%,
+      rgba(10,12,11,0.36) 40%,
+      rgba(10,12,11,0.40) 60%,
+      rgba(10,12,11,0.41) 82%,
+      rgba(10,12,11,0.36) 100%);
   }
 
   .fire-band, .fire-brazier{
@@ -2272,29 +2312,27 @@
      is stretched and every number below drifts with it; with it, the mark can be
      placed from the measured ellipse and stay placed at any size. */
   .floor-plate{ position:absolute; left:6%; width:88%; top:72%; aspect-ratio:238/120; pointer-events:none; }
-  .floor-ring{ position:absolute; inset:0; overflow:hidden; pointer-events:none; opacity:0.8; }
+  /* Screened and dimmed, so it is light ON the floor rather than a picture of a
+     ring laid over it. Painted with alpha at 0.8 it replaced the stone it
+     covered and read as a decal: measured, it lifted that patch of floor from
+     7.6 to 17.4, more than doubling it. Screen lets the tiles show through the
+     glow the way real light does, and 0.5 puts the lift at about +6 instead of
+     +10 — visible, not a spotlight. */
+  .floor-ring{ position:absolute; inset:0; overflow:hidden; pointer-events:none;
+    opacity:0.5; mix-blend-mode:screen; }
   .floor-ring i{
     display:block; width:1000%; height:100%;
     background:url('/floor-ring.webp') 0 0 / 100% 100% no-repeat;
     will-change:transform;
     animation:fire-strip 1.6s steps(10) infinite;
   }
-  /* Dead centre of the ELLIPSE, not of the box.
-     Measured on the sheet: the ellipse spans x 5-231 and y 46-119 of a 238x120
-     frame, so its centre is 49.6% across but 68.75% down — the light rays take
-     the top third of the frame, and centring on the box put the mark visibly
-     high. Its squash is 73/226 = 0.323, which is exactly the factor a circle
-     lying on that floor needs, so the mark is scaled by the same number rather
-     than a guess. Standing it upright would make it a sign hovering above the
-     circle instead of something burned into the stone.
-     Width 68% leaves even margin inside the ellipse on both axes. */
-  .floor-mark{
-    position:absolute; left:49.6%; top:68.75%; width:68%; aspect-ratio:1;
-    transform:translate(-50%,-50%) scaleY(0.323);
-    background:url('/floor-mark.webp') center/contain no-repeat;
-    opacity:0.66; pointer-events:none;
-    animation:frame-breathe 3.4s ease-in-out infinite;
-  }
+  /* There is no mark on the floor. The ring is the floor now.
+
+     It carried the app icon first, which read as a decal stuck to the stone,
+     then the wall's own sigil, which sat in the room properly — and the room
+     was still too busy with it there. The ring alone is the quiet version, and
+     quiet is what the floor is for: it is the part of the screen the cards sit
+     over. */
 
   /* Option 1: the ring is wide enough that every ember, wherever it starts,
      rises out of it. The embers are not touched. */
@@ -2303,12 +2341,35 @@
   /* Option 2: a big ring, and the embers restricted to it — they start inside
      the ellipse and nowhere else, so the ring is visibly what is throwing them.
      See the #embers override further down. */
-  html.opt2 .floor-plate{ left:-4%; width:108%; top:66%; }
+  /* The ring covers the whole floor and runs off both edges on purpose — the
+     floor is bigger than the screen, so a ring that fits inside the screen
+     reads as a small circle sitting on it rather than as the ground burning.
+     It is dead centre: -45% + 190% = 145%, so the midpoint is exactly 50%.
 
-  html.idle .floor-ring i, html.idle .floor-mark{ animation-play-state:paused; }
+     115%, and the curvature at the screen edge is the whole argument. Measured
+     as the fall from mid-screen to the edge: 190% drops 2.3 points, which is so
+     flat it reads as a straight band — an arc, not a ring. 115% drops 4.7, so
+     both flanks visibly turn down and run off the sides while the bottom of the
+     ellipse stays on screen: enough of the shape to read as a circle that
+     continues past the frame.
+
+     Wider is NOT better here, and that is the thing to remember. 108% closed
+     too early inside the frame; 190% stopped closing at all. The window is
+     narrow.
+
+     The numbers are tied to each other: the plate carries the sheet's 238:120,
+     so 72% of the stage width is 16.7% of its height, and the ellipse's centre
+     sits 68.75% down its own frame — putting the ring's true centre at 85.5%.
+     The plate top is NOT where the ring appears: the ellipse sits 68.75% down
+     its own frame, so the top always reads 11.5 points above the centre. 61.5%
+     puts the ring's centre at 73%, which is the line Johnny drew across the
+     floor. It has been 88.5% (under the nav) and 78% (still too low) on the way
+     here — move this number, not the one you wish the ring had. */
+  html.opt2 .floor-plate{ left:-7.5%; width:115%; top:65.8%; }
+
+  html.idle .floor-ring i{ animation-play-state:paused; }
   @media (prefers-reduced-motion: reduce){
     .floor-ring i{ animation:none; }
-    .floor-mark{ animation:none; }
   }
 
   /* The fire burns down from the ceiling too, so the frame reads as a room
@@ -2378,7 +2439,138 @@
   @keyframes breathe-b{ 0%,100%{transform:scaleY(1);} 50%{transform:scaleY(1.06);} }
 
   /* Off-screen app, nothing burning either. */
+
+  /* ---------- the lava, flowing ----------
+     Not a warp of the photograph and not baked frames: a seamless molten
+     texture scrolls under a mask cut from the picture's OWN hot pixels, so the
+     light moves inside the shapes the lava already occupies. Three sheets at
+     different scales and speeds, none a multiple of another, because one sheet
+     reads as a texture being dragged and three read as something turning over.
+
+     The mask was levelled column by column. The right-hand pool is far brighter
+     than the left in the artwork — measured 37.6 against 11.5 across the width —
+     and left alone the flow blazed on one side and barely showed on the other.
+     Where it flows is the picture's; how much is even.
+
+     Everything here is transform and opacity on the compositor. No filter runs
+     per frame, nothing is measured in JavaScript, and there is no network. */
+  .arena-lava{
+    position:absolute; left:0.82%; top:46.94%; width:99.06%; height:47.54%;
+    overflow:hidden; pointer-events:none; mix-blend-mode:screen;
+    -webkit-mask:url('/lava-mask.webp') 0 0/100% 100% no-repeat;
+            mask:url('/lava-mask.webp') 0 0/100% 100% no-repeat;
+    animation:lava-surge 6.5s ease-in-out infinite;
+  }
+  .arena-lava i{
+    position:absolute; left:-60%; top:-60%; width:220%; height:220%;
+    background:url('/lava-tex.webp') 0 0/38% auto repeat;
+    will-change:transform;
+  }
+  .arena-lava i.f1{ opacity:1;   animation:lava-a 9s linear infinite; }
+  .arena-lava i.f2{ opacity:.72; background-size:61% auto; filter:saturate(1.4) brightness(1.2);
+                    animation:lava-b 14s linear infinite; }
+  .arena-lava i.f3{ opacity:.5;  background-size:88% auto; filter:saturate(1.25);
+                    animation:lava-c 24s linear infinite; }
+  @keyframes lava-a{ to{ transform:translate3d(-13%,-34%,0); } }
+  @keyframes lava-b{ to{ transform:translate3d(7%,-18%,0); } }
+  @keyframes lava-c{ to{ transform:translate3d(-4%,-22%,0); } }
+  /* Brightness that moves is what reads as molten rather than as a texture on
+     a conveyor belt. */
+  @keyframes lava-surge{ 0%,100%{ opacity:.86; } 50%{ opacity:1; } }
+
+  /* ---------- fire, only where the picture is already alight ----------
+     One gate over the whole group. A pocket placed over the weapon rack — dark
+     iron with no fire behind it — paints a flame onto solid metal, and that is
+     what "ghost flames" were. Rather than nudging boxes until they miss it, the
+     group is clipped to where the artwork genuinely burns.
+
+     The blend sits on the CONTAINER so the group screens against the picture
+     once, instead of each sprite screening against its neighbours and blowing
+     out wherever two overlapped. */
+  .arena-flames{
+    position:absolute; inset:0; pointer-events:none;
+    mix-blend-mode:screen; filter:blur(0.3px);
+    -webkit-mask:url('/flame-mask.webp') 0 0/100% 100% no-repeat;
+            mask:url('/flame-mask.webp') 0 0/100% 100% no-repeat;
+  }
+  /* Contrast, not brightness. Brightness alone drags everything toward white,
+     which is exactly what makes an overlay look cheap over a photograph; a
+     little contrast and half a pixel of blur lets the sprites sit inside it. */
+  .arena-flame{
+    position:absolute; overflow:hidden; pointer-events:none;
+    filter:saturate(1.65) contrast(1.12);
+    -webkit-mask-image:radial-gradient(ellipse 70% 86% at 50% 60%,#000 54%,transparent 100%);
+            mask-image:radial-gradient(ellipse 70% 86% at 50% 60%,#000 54%,transparent 100%);
+  }
+  .arena-flame i{
+    display:block; width:2400%; height:100%;
+    background-repeat:no-repeat; background-size:100% 100%;
+    will-change:transform; animation:fire-strip steps(24) infinite;
+  }
+
+  /* The two standing walls, measured off the picture: x 15.61%..33.22% and
+     67.72%..85.68%. Two pockets each, because 18% of the screen in one element
+     drags fire-body's square frame into a smear. */
+  .arena-flame.tall{ top:47.6%; height:7.2%; opacity:.92; }
+  .arena-flame.tall i{ background-image:url('/fire-body.webp'); }
+  .arena-flame.t1{ left:15.6%; width:9%; } .arena-flame.t1 i{ animation-duration:1.5s; }
+  .arena-flame.t2{ left:24.2%; width:9%; } .arena-flame.t2 i{ animation-duration:1.7s; animation-name:fire-mir; }
+  .arena-flame.t3{ left:67.7%; width:9%; } .arena-flame.t3 i{ animation-duration:1.6s; animation-name:fire-mir; }
+  .arena-flame.t4{ left:76.7%; width:9%; } .arena-flame.t4 i{ animation-duration:1.4s; }
+
+  /* The three gates. Each plume's centre came from column-profiling the
+     picture's heat in the row beneath the arches: 26.88%, 56.81%, 75.23%. They
+     hang DOWNWARD because that is what the arches do — light falls out of them
+     and pools on the floor.
+
+     These bands never touch the walls above: the walls end at 54.8% and the
+     plumes start at 55.1%, so no pixel is ever lit by two sprites. Stacking two
+     screens on one spot is what produced the blown-out patches. */
+  .arena-flame.gate{
+    -webkit-mask-image:radial-gradient(ellipse 66% 84% at 50% 40%,#000 50%,transparent 100%);
+            mask-image:radial-gradient(ellipse 66% 84% at 50% 40%,#000 50%,transparent 100%);
+  }
+  .arena-flame.gate i{ background-image:url('/fire-column.webp'); animation-name:fire-fall; }
+  .arena-flame.g1{ left:22.68%; top:55.1%; width:8.4%; height:8.2%; opacity:1; }
+  .arena-flame.g2{ left:53.11%; top:55.3%; width:7.4%; height:7.2%; opacity:.9; }
+  .arena-flame.g3{ left:71.03%; top:55.1%; width:8.4%; height:8.2%; opacity:1; }
+  .arena-flame.g1 i{ animation-duration:0.95s; }
+  .arena-flame.g2 i{ animation-duration:1.15s; }
+  .arena-flame.g3 i{ animation-duration:1.05s; }
+  @keyframes fire-fall{ from{ transform:translateX(0) scaleY(-1); }
+                          to{ transform:translateX(-100%) scaleY(-1); } }
+  @keyframes fire-mir{  from{ transform:translateX(0) scaleX(-1); }
+                          to{ transform:translateX(-100%) scaleX(-1); } }
+
+  /* ---------- the sigil on the wall ----------
+     The glow is not drawn art: it was cut out of arena.webp by channel, the
+     green energy already in the cracks, so it lands on exactly the stone it
+     came from. It breathes at 5.5s while a charge runs the ring at 3.4s —
+     coprime on purpose, so the arc never arrives on the same swell twice. */
+  .arena-sigil{
+    position:absolute; left:17.14%; top:18.68%; width:65.61%; height:22.58%;
+    background:url('/sigil-glow.webp') center/contain no-repeat;
+    mix-blend-mode:screen; pointer-events:none;
+    animation:sigil-breathe 5.5s ease-in-out infinite;
+  }
+  .arena-sigil.sweep{
+    filter:brightness(2.3); animation:sigil-charge 3.4s linear infinite;
+    -webkit-mask:conic-gradient(from var(--sweep,0deg),transparent 0deg,#000 26deg,transparent 62deg);
+            mask:conic-gradient(from var(--sweep,0deg),transparent 0deg,#000 26deg,transparent 62deg);
+  }
+  /* A registered property, because animating the whole mask-image is a swap
+     between two unrelated images and simply does not move. Where @property is
+     unsupported the arc holds still and the breathing carries it. */
+  @property --sweep{ syntax:'<angle>'; inherits:false; initial-value:0deg; }
+  @keyframes sigil-breathe{
+    0%,100%{ opacity:.32; filter:brightness(.85); }
+    50%    { opacity:.95; filter:brightness(1.75); } }
+  @keyframes sigil-charge{ to{ --sweep:360deg; } }
+
   html.idle #arena i, html.idle .firelight{animation-play-state:paused;}
+  html.idle .arena-lava, html.idle .arena-lava i,
+  html.idle .arena-flame i,
+  html.idle .arena-sigil{ animation-play-state:paused; }
 
   /* A resting state, not a deleted one. The global 0.001ms rule would freeze
      each strip on whatever frame it happened to hold; pinning them to frame
@@ -2387,6 +2579,12 @@
   @media (prefers-reduced-motion: reduce){
     #arena i{animation:none !important; transform:translateX(0) !important;}
     .firelight{animation:none !important; opacity:0.85;}
+    /* The containers carry animations of their own — the surge and the sigil —
+       and neither is an <i>, so the rule above does not reach them. */
+    .arena-lava, .arena-sigil{ animation:none !important; }
+    /* The plumes hang upside down. Zeroing the transform above would stand them
+       back up at rest, which is a frame the picture never contains. */
+    .arena-flame.gate i{ transform:scaleY(-1) !important; }
   }
 
   /* The music switch, over the page rather than inside a menu.
@@ -2475,7 +2673,12 @@
      shorter distance, so they read as thrown up by the circle instead of
      drifting past it. Written as a block so it can be deleted in one piece if
      option 1 wins. */
-  html.opt2 #embers i{ bottom:22%; }
+  /* Out of the ring's centre — 84.2% down the stage, so 15.8% up from the
+     bottom. The whole ellipse is on screen again at this width, so the centre
+     is a real place on the floor rather than a point below the nav bar.
+     The height is unchanged because the ring did not move vertically, only
+     inward; the spread below is what had to follow it. */
+  html.opt2 #embers i{ bottom:15.8%; }
   html.opt2 #embers i:nth-child(1){left:34%;}
   html.opt2 #embers i:nth-child(2){left:44%;}
   html.opt2 #embers i:nth-child(3){left:53%;}
@@ -2778,16 +2981,28 @@
     background:none; border:1px solid var(--accent); color:var(--accent);
   }
   .proof-view svg{width:14px; height:14px;}
+  /* Paired with the share glyph at the end of the row, not stranded at the
+     other edge. 34px inside the share button's own 44px box keeps the two
+     snug — one control set, not two — and there were two of these rules
+     fighting each other before, of which only the second ever applied. */
+  /* Grey, and no box. In accent green with a border it was the brightest thing
+     on a finished row — louder than the reps it sits beside and fighting the
+     fire behind it. It matches the share glyph next to it now: the two are the
+     same kind of thing, so they look like it, and neither pulls the eye off
+     the arena. */
+  /* Reads as 34px so the pair sits snug against the 44px share glyph, but
+     TAPS at 44 — the padding grows the hit area and the negative margin gives
+     the space straight back, so nothing on the row moves by a pixel. 34 was a
+     look number applied to a reach problem: 10px short on both axes, 8px from
+     its neighbour, on the one control you press with a thumb mid-workout. */
   .done-proof{
-    flex:0 0 auto; width:36px; height:36px; margin-right:8px;
+    flex:0 0 auto; width:34px; height:34px; box-sizing:content-box;
+    padding:5px; margin:-5px -7px -5px -5px;
     display:flex; align-items:center; justify-content:center;
-    background:none; border:1px solid var(--accent); color:var(--accent);
+    background:none; border:none; color:var(--text-faint);
   }
-
-  .done-proof{
-    flex:0 0 auto; width:34px; height:34px; display:flex; align-items:center; justify-content:center;
-    background:none; border:1px solid var(--accent); color:var(--accent); margin-right:8px;
-  }
+  .done-proof svg{ width:14px; height:14px; }
+  .done-proof:active{ color:var(--accent); transform:scale(0.9); }
   .proof-view{
     flex:0 0 auto; width:30px; height:30px; padding:0; display:flex; align-items:center; justify-content:center;
     background:none; border:1px solid var(--accent); color:var(--accent); margin:0 8px;

@@ -55,11 +55,3 @@ for rel in ICONS:
     rotate_to_target(im, FROM['icon']).save(OUT / rel, 'PNG', optimize=True)
     print(f'{rel}: -> {(OUT / rel).stat().st_size / 1024:.0f} KB')
 
-# The Sets mark, lifted off the square tile it was drawn on: luminance becomes
-# alpha, so the mark and its ring float free of the plate behind them.
-tile = Image.open(OUT / 'icons/icon-512.png').convert('RGB')
-tile.putalpha(tile.convert('L').point(
-    lambda p: 0 if p < 26 else min(255, int((p - 26) * 1.5))))
-mark = tile.crop(tile.getchannel('A').getbbox()).resize((320, 320), Image.LANCZOS)
-mark.save(OUT / 'floor-mark.webp', 'WEBP', quality=92, method=6)
-print(f'floor-mark.webp: {(OUT / "floor-mark.webp").stat().st_size / 1024:.0f} KB')

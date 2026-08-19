@@ -2539,17 +2539,35 @@
   .view-enter > *:nth-child(n+8){animation-delay:180ms;}
 
   /* ---------- the screen change ----------
-     The browser snapshots the old and new screens and animates between them
-     itself; these two rules are the entire choreography, and they run on the
-     compositor with no JavaScript per frame.
+     The browser snapshots the outgoing and incoming screens and animates
+     between them on the compositor. No library, no per-frame JavaScript, and
+     nothing added to the download.
 
-     They cannot be reached by prefers-reduced-motion — a snapshot is not an
-     element you can select — so the transition is declined at the source, in
-     fx.js, before the browser is ever asked. */
-  ::view-transition-old(root){ animation:vt-out .26s cubic-bezier(.2,.8,.2,1) both; }
-  ::view-transition-new(root){ animation:vt-in .30s var(--ease-out) both; }
-  @keyframes vt-out{ to{ opacity:0; transform:translateY(-8px) scale(.99); } }
-  @keyframes vt-in{ from{ opacity:0; transform:translateY(12px) scale(.995); } }
+     ONLY the content area is named, and that is the whole trick. Left to
+     itself the transition captures the entire page, so the topbar and the nav
+     bar under your thumb faded and slid on every tap — which does not read as
+     polish, it reads as the phone struggling. Naming #view-container hands the
+     browser one rectangle to animate and leaves the chrome, the arena and the
+     fire exactly where they are.
+
+     Opacity and a 6px lift, never scale: scaling a full-screen snapshot
+     resamples a texture the size of the display on a phone at 3x, and that is
+     the frame that drops.
+
+     None of this can be reached by prefers-reduced-motion — a snapshot is not
+     an element you can select — so the transition is declined at the source,
+     in fx.js, before the browser is ever asked. */
+  #view-container{ view-transition-name:screen; }
+
+  /* The chrome does not move. Both snapshots hold still and the new one is
+     painted over the old, so the topbar and nav simply are what they are. */
+  ::view-transition-old(root),
+  ::view-transition-new(root){ animation:none; }
+
+  ::view-transition-old(screen){ animation:screen-out .14s ease-in both; }
+  ::view-transition-new(screen){ animation:screen-in .20s var(--ease-out) both; }
+  @keyframes screen-out{ to{ opacity:0; transform:translateY(-6px); } }
+  @keyframes screen-in{ from{ opacity:0; transform:translateY(8px); } }
 
   @keyframes viewIn{
     from{opacity:0; transform:translateY(10px);}

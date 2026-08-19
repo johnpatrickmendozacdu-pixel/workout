@@ -3146,7 +3146,9 @@ function renderView() {
   else if (state.view === 'guide') el.innerHTML = guideBodyHtml();
   else if (state.view === 'social') el.innerHTML = viewSocial();
   else el.innerHTML = viewProgress();
-  if (arriving) {
+  // Not while a view transition is running it: the screen is already moving,
+  // and a stagger on top of it is a second animation over the same pixels.
+  if (arriving && !fx.running()) {
     // Reading offsetWidth restarts the animation: without it the class is
     // removed and re-added inside one frame and the browser sees no change.
     void el.offsetWidth;

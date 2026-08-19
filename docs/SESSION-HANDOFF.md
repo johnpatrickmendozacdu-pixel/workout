@@ -32,14 +32,13 @@ one Cloudflare variable — never a code change.
   back and makes a cycle.
 - `src/notices.js` — the bell's contents, as data. Adding an entry IS what sends
   it to everyone.
-- `src/domain/habits.js` — pure, every health-habit rule (5 AM day, slots, the
-  immutability guard, streaks, presets). The merge lives in `domain.js` instead,
-  next to the others, so `habits.js` never imports back and makes a cycle.
+- `src/fx.js` — the screen change, and nothing else. One function plus a gate.
 - `src/main.js` — all rendering and events (large; no test coverage)
 - `src/sound.js` — every clip, the audio session, the three settings. No network.
 - `tools/hue.py` — the one hue rotation both art generators share.
 - `tools/fire-sheets.py` — flame sheets, floor ring, profile frame, from the
-  source GIFs. `tools/greens.py` — the arena plate, the icons, the floor mark.
+  source GIFs, each with its black floor crushed to zero. `tools/greens.py` —
+  the arena plate and the icons. It no longer makes a floor mark; there is none.
 - `src/guide.js` — the Guide tab's content, as data. No logic.
 - `src/categories.js` — the nine categories and their icon lookup. No logic.
 - `tools/slice-icons.py` — cuts the icons out of the committed source art. Re-run
@@ -49,7 +48,7 @@ one Cloudflare variable — never a code change.
 - `src/sync/googleSync.js` — self-contained Google auth + Drive (no test coverage)
 - `worker/` — the Cloudflare token-broker (deployed separately, see below)
 
-**420 tests, all passing** (`npm test`). They cover the pure domain layer and the
+**430 tests, all passing** (`npm test`). They cover the pure domain layer and the
 Worker's pure helpers only — **not `main.js`, not `googleSync.js`**.
 
 ## State right now — READ THIS FIRST

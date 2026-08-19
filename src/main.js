@@ -2941,8 +2941,44 @@ async function checkVersion() {
  * gets out of the way. Kept in prefs (localStorage), not synced data: it is
  * about this device's reader, not the workout record.
  */
-function tipHtml(key, text) {
-  return `<p class="tip" data-tip="${key}">${escapeHtml(text)}</p>`;
+/**
+ * A hint you have read five times is not a hint any more, it is furniture.
+ *
+ * Every tip already carried a key and nothing read it, so all eight showed
+ * forever — on a two-exercise day roughly half of Today was teaching rather
+ * than doing. They retire after FIVE app opens, which is a few days of real
+ * use: long enough to learn the gesture, short enough that the screen gets
+ * quieter the more you use it.
+ *
+ * Counted per SESSION, never per render. render() runs on every state change,
+ * so counting renders would burn all five opens inside the first minute — the
+ * Set is what makes an open worth exactly one.
+ *
+ * Nothing is lost when a tip goes: every one of these is also in the ? sheet
+ * for the screen you are standing on, and again in the Guide tab. This only
+ * stops the app repeating itself to someone who already knows.
+ */
+const TIP_RETIRE_AFTER = 5;
+const tipsCountedThisSession = new Set();
+
+/** Someone with a week of training behind them does not need to be told how to
+ *  log a rep, and should not have to wait five more opens to stop being told.
+ *  A phone with five logged days starts at the cap instead of at zero. */
+const alreadyKnows = () => Object.keys(state.setsLog || {}).length >= TIP_RETIRE_AFTER;
+
+function tipHtml(key, text, cls = 'tip') {
+  // Asked outright rather than used as the stored value's default: the first
+  // render happens before the log has loaded, so a counter of 1 is already on
+  // disk by the time we know how experienced this phone is — and a stored value
+  // beats a fallback every time.
+  if (alreadyKnows()) return '';
+  const seen = db.prefs.get(`tip:${key}`, 0);
+  if (seen >= TIP_RETIRE_AFTER) return '';
+  if (!tipsCountedThisSession.has(key)) {
+    tipsCountedThisSession.add(key);
+    db.prefs.set(`tip:${key}`, seen + 1);
+  }
+  return `<p class="${cls}" data-tip="${key}">${escapeHtml(text)}</p>`;
 }
 
 function railButtonsHtml() {
@@ -3654,7 +3690,9 @@ function viewToday() {
   if (onBreak.length) {
     html += `<p class="break-nudge resting">🌙 Resting today: ${onBreak.map((e) => escapeHtml(e.name)).join(', ')}</p>`;
   } else if (scheduled.length) {
-    html += `<p class="break-nudge">Not training one today? Open it and take a break — the streak holds.</p>`;
+    // Retires like the rest of them — it kept its own class only because it is
+    // centred and sits between the cards rather than above them.
+    html += tipHtml('break-nudge', 'Not training one today? Open it and take a break — the streak holds.', 'break-nudge');
   }
 
   html += habitsSectionHtml();

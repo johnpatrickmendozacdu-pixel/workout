@@ -68,4 +68,20 @@ export function withTransition(apply) {
   const done = () => { animating = false; };
   if (t.finished && t.finished.then) t.finished.then(done, done);
   else done();
+
+  // startViewTransition hands back THREE promises and only `finished` was
+  // claimed. `ready` rejects on its own whenever the browser drops the
+  // transition — a hidden tab, the share sheet opening over the app — and with
+  // nothing awaiting it the rejection surfaces as an uncaught
+  // InvalidStateError. The screen has already changed by then, so there is
+  // nothing to report and nothing to do but claim it.
+  if (t.ready && t.ready.catch) t.ready.catch(() => {});
+
+  // And a throw inside apply() is swallowed by updateCallbackDone: the state
+  // changes, the DOM does not, and it reads as a dead button. That cost a whole
+  // round once, when targetMet was called without being imported. Log it —
+  // control flow is the browser's to decide, but silence is not.
+  if (t.updateCallbackDone && t.updateCallbackDone.catch) {
+    t.updateCallbackDone.catch((err) => { console.error('[fx] render threw inside the screen change:', err); });
+  }
 }

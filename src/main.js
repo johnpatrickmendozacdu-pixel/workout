@@ -2173,7 +2173,13 @@ async function buildSessionImage(ex, session) {
 
   const cat = categoryOf(ex);
   g.fillStyle = FAINT; g.font = "600 26px 'JetBrains Mono', ui-monospace, monospace";
-  g.fillText([cat ? cat.label.toUpperCase() : null, session.dateLabel.toUpperCase()].filter(Boolean).join(' · '), nameX, SAFE_TOP + 22);
+  // The finishing clock joins the metadata line rather than the figures. It
+  // answers WHEN, which is what the date beside it answers; the TIME tile below
+  // answers what it TOOK. Set as a fourth tile the two would sit side by side
+  // under near-identical labels, and a card that has to be studied has failed.
+  // filter(Boolean) already drops it on an exercise finished without a clock.
+  g.fillText([cat ? cat.label.toUpperCase() : null, session.dateLabel.toUpperCase(),
+    session.finishedClock ? session.finishedClock.toUpperCase() : null].filter(Boolean).join(' · '), nameX, SAFE_TOP + 22);
   g.shadowColor = 'transparent'; g.shadowBlur = 0;
 
   // The day's number is the headline here, the way the streak is on the other
@@ -2570,6 +2576,7 @@ async function buildProofCollage(exId) {
       pct: target > 0 ? Math.min(1, progressValue(ex, arr) / target) : 1,
       short: false,
       dateLabel: formatDisplayDate(d, { weekday: 'short', day: 'numeric', month: 'short' }),
+      finishedClock: formatClock(timer && timer.finishedAt),
       headline: target > 0 ? 'Target met' : 'Session complete',
       photo,
     });
@@ -2646,6 +2653,7 @@ async function buildProofVideoCollage(exId, opts) {
       pct: target > 0 ? Math.min(1, progressValue(ex, arr) / target) : 1,
       short: false,
       dateLabel: formatDisplayDate(d, { weekday: 'short', day: 'numeric', month: 'short' }),
+      finishedClock: formatClock(timer && timer.finishedAt),
       headline: target > 0 ? 'Target met' : 'Session complete',
       overlayOnly: true,
     });
@@ -2786,23 +2794,28 @@ async function shareSessionImage(exId) {
   if (!ex) return;
   const d = todayISO();
   const arr = getSetsFor(exId, d);
-  const total = calcTotal(arr);
   const target = getEffectiveTarget(ex, d);
   const timer = getTimerPure(state.timersLog, d, exId);
   const s = exerciseStats(ex, state.setsLog, state.timersLog, null, state.streakOverrides);
-  const short = timerPhase(timer) === 'gaveup' && target > 0 && total < target;
+  // calcTotal() here compared a REP TOTAL against a target that counts SETS:
+  // giving up at 2 of 3 sets with 12 reps logged read as 12 < 3, false, and the
+  // card headlined "Target met" on a session that was abandoned. progressValue
+  // is the one place that rule lives — the two lines below already used it.
+  const scored = progressValue(ex, arr);
+  const short = timerPhase(timer) === 'gaveup' && target > 0 && scored < target;
   showToast('Building image…');
   let blob;
   try {
     blob = await buildSessionImage(ex, {
-      total: progressValue(ex, arr), target,
+      total: scored, target,
       timeMode: isTimeMode(ex),
       sets: arr.length,
       streak: s.currentStreak,
       elapsed: formatDuration(timerElapsedMs(timer, Date.now())),
-      pct: target > 0 ? Math.min(1, progressValue(ex, arr) / target) : 1,
+      pct: target > 0 ? Math.min(1, scored / target) : 1,
       short,
       dateLabel: formatDisplayDate(d, { weekday: 'short', day: 'numeric', month: 'short' }),
+      finishedClock: formatClock(timer && timer.finishedAt),
       headline: short ? 'Ended early — it still counts'
         : (target > 0 ? 'Target met' : 'Session complete'),
     });
@@ -3672,16 +3685,28 @@ function viewToday() {
   const doneRow = (r) => {
     // Ended early is closed out, not won: it keeps the quiet row but takes a
     // flag instead of the tick, and shows the shortfall honestly.
-    const short = r.endedEarly && r.hasTarget && r.total < r.target;
+    // r.total is reps; r.target may count sets. r.scored is progressValue —
+    // reps in reps mode, set count in sets mode — which is the only value that
+    // may be measured against a target. Wrong here, a sets-mode give-up lost
+    // its flag, its colour AND its shortfall, and read as a clean finish.
+    const short = r.endedEarly && r.hasTarget && r.scored < r.target;
     // The camera sits NEXT TO the share glyph rather than at the far left where
     // it used to be: two controls at opposite ends of a row read as two
     // unrelated things and cost the arena the whole left margin. Paired at the
     // end they read as one set of controls for one finished exercise.
+    //
+    // The row carries only what the card cannot. The reps and the finishing
+    // clock both live in the logger this row opens — the number as its
+    // headline, the clock on the timer block — so printing them here was the
+    // same fact twice, over the brightest band of the picture. What is left is
+    // the shortfall on a day that ended early, which the flag glyph can mark
+    // but cannot quantify, and the word Rest, which is the only text alternative
+    // the moon has. A finished row says its name and nothing else.
     return `<div class="done-row${short ? ' ended-early' : ''}">
       <button class="done-open" data-action="open-logger" data-id="${r.ex.id}">
         <span class="done-tick">${r.rest ? '🌙' : (short ? ICONS.flag : ICONS.check)}</span>
         <span class="done-name">${escapeHtml(r.ex.name)}</span>
-        <span class="done-num">${r.rest ? 'Rest' : (r.setsMode ? `${r.scored} set${r.scored === 1 ? '' : 's'} · ${r.total} ${escapeHtml(r.ex.unit)}` : (short ? `${r.scored} of ${r.target}` : `${r.total} ${escapeHtml(r.ex.unit)}`))}${r.timer && r.timer.finishedAt ? `<i class="done-at">${escapeHtml(formatClock(r.timer.finishedAt))}</i>` : ''}</span>
+        ${r.rest || short ? `<span class="done-num">${r.rest ? 'Rest' : `${r.scored} of ${r.target}`}</span>` : ''}
       </button>
       ${r.rest || !proofFor(state.proofLog, today, r.ex.id) ? '' : `<button class="done-proof" data-action="open-proof" data-id="${r.ex.id}" aria-label="See the proof for ${escapeHtml(r.ex.name)}">${ICONS.camera}</button>`}
       ${r.rest ? '' : `<button class="done-share" data-action="${proofFor(state.proofLog, today, r.ex.id) ? 'share-choice' : 'share-session'}" data-id="${r.ex.id}" aria-label="Share ${escapeHtml(r.ex.name)}">${ICONS.share}</button>`}

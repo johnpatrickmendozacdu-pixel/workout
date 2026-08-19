@@ -1436,8 +1436,14 @@
     display:flex; align-items:center; gap:11px; flex:1; min-width:0; text-align:left;
     min-height:52px; background:transparent; border:none; padding:6px 2px; color:inherit;
   }
+  /* The pair leans together. Both keep a full 44x44 target; the glyphs simply
+     stop sitting in the middle of it and move to the facing edges, which takes
+     the gap from 22.5px to 8 without costing a pixel of reach. Centred, the
+     two boxes had to overlap to look close, and an overlap silently hands one
+     button a strip of the other's target. */
   .done-share{
-    flex:0 0 auto; width:44px; height:44px; display:flex; align-items:center; justify-content:center;
+    flex:0 0 auto; width:44px; height:44px; padding:0 0 0 4px;
+    display:flex; align-items:center; justify-content:flex-start;
     background:transparent; border:none; color:var(--text-faint);
   }
   .done-share svg{width:15px; height:15px;}
@@ -1614,11 +1620,6 @@
   .story-dots i{width:6px; height:6px; border-radius:999px; background:var(--border-strong); display:block;}
   .story-dots i.on{background:var(--accent);}
 
-  /* the time a day was finished — an aside, never a headline */
-  .done-at{
-    display:inline-block; font-style:normal; margin-left:8px; font-family:var(--font-mono);
-    font-size:10.5px; color:var(--text-faint);
-  }
   .exday-at{
     display:block; font-style:normal; font-family:var(--font-mono);
     font-size:9.5px; color:var(--text-faint); letter-spacing:0.04em;
@@ -2996,9 +2997,8 @@
      look number applied to a reach problem: 10px short on both axes, 8px from
      its neighbour, on the one control you press with a thumb mid-workout. */
   .done-proof{
-    flex:0 0 auto; width:34px; height:34px; box-sizing:content-box;
-    padding:5px; margin:-5px -7px -5px -5px;
-    display:flex; align-items:center; justify-content:center;
+    flex:0 0 auto; width:44px; height:44px; padding:0 4px 0 0;
+    display:flex; align-items:center; justify-content:flex-end;
     background:none; border:none; color:var(--text-faint);
   }
   .done-proof svg{ width:14px; height:14px; }

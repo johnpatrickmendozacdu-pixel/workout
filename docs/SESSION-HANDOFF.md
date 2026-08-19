@@ -54,22 +54,15 @@ Worker's pure helpers only — **not `main.js`, not `googleSync.js`**.
 
 ## State right now — READ THIS FIRST
 
-- `main` = **`b96214e`**, pushed, deployed and **byte-verified live** — the js
-  (`index-CsxTD0_c.js`), the css (`index-4qjW48un.css`) and `sfx-add-habit.mp3`
-  all hash identical to a local build of that commit.
-- **The three commits before it were never unpushed by choice.** A 215 MB
-  `forge what fate has foreseen, the mortal must become more.dmg` was committed
-  inside `a69ddbd`, GitHub rejects any push carrying a file over 100 MB, and the
-  whole push failed for it. The dmg was stripped from those three commits with
-  `filter-branch`, so **their SHAs changed** (`a69ddbd`→`2a66ff5`,
-  `cb8e031`→`4c4d2e4`). `*.dmg` is now in `.gitignore`. The file is still on
-  disk, untouched.
+- `main` = **`383c49f`**, pushed, deployed and **byte-verified live** (js
+  `index-CToQky0I.js`, css `index-BjTTilX1.css`).
 - **430 tests pass** (`npm test`). Same coverage as ever: the pure domain layer
   and the Worker's pure helpers. Not `main.js`, not `sound.js`, not
   `googleSync.js`.
-- **Worker = build `2026-08-17.12`**, deployed and confirmed by curl, carrying
-  `story-delete` and `story-video`. Both pastes are done; nothing is pending
-  there.
+- **Worker = build `2026-08-17.12`**, untouched this session.
+- **Branch `emblems` is pushed and NOT merged.** It gates Plan and Progress
+  behind a tappable emblem (see "Ideas parked on a branch"). Production returns
+  404 for `emblem-armour.webp` / `emblem-sword.webp` — confirmed by curl.
 
 ## Nothing is wired and silent any more
 
@@ -87,16 +80,30 @@ before wiring it anywhere.
 
 **Immediately, in order:**
 
-1. **Johnny listens on his phone.** Three things only a real iPhone can answer:
-   does Spotify keep playing underneath (ambient), does the silent switch mute
-   everything, and is the 460ms click too long when tapping the keypad fast.
+1. **Johnny QAs the last change on his phone.** Content now starts below the
+   wall sigil, which costs a scroll on a full Today. If he does not want the
+   scroll, the alternative is to move the PICTURE instead of the content —
+   shift the arena down so the sigil sits in the empty floor band — but that
+   pushes the fire and the ring lower and the ring ends up behind the nav.
+2. **Decide on `emblems`.** Pushed, not merged. If it lands, Social and Guide
+   want their own emblems before it ships.
+3. **Still never verified on a real iPhone:** whether Spotify keeps playing
+   under the voice lines (ambient), whether the silent switch mutes everything,
+   whether the 460ms click is too long on fast keypad taps, and whether any of
+   the new arena motion costs frames.
 
 **Raised and not built:**
 
 - **The embers are untouched originals** — `linear` motion, one depth plane,
-  uniform colour. Next to real fire they are the weakest motion on screen. The
-  fix discussed: easing, lateral drift, two depth layers, and origins inside the
-  floor ring so they lift out of it.
+  uniform colour. Next to the lava and the gate plumes they are now clearly the
+  weakest motion on screen. The fix discussed: easing, lateral drift, two depth
+  layers.
+- **Section labels could go when there is only one section** ("DONE", "HEALTH
+  HABIT" above a single group each). Raised, not done.
+- **A bell notice for everything since the sound release** — the screen change
+  went out, but the burning arena, the translucent cards, the retiring tips and
+  the layout work have not. **Adding an entry to `src/notices.js` IS what sends
+  it; ask Johnny every time.**
 - **`sfx1.png` is unused** — a smoke-and-embers plate, sparks are orange so it
   would need the hue rotation. Held back deliberately: it would be a seventh
   layer on a screen already called cluttered. If it lands, it should REPLACE the
@@ -197,95 +204,125 @@ and a second tap inside the window does not.
 is 704 KB for a feature that is off by default; it is fetched the first time
 someone turns it on. Everything else is precached — 403 KB of speech and taps.
 
-## The screen change (2026-08-19)
+## The look, rebuilt over 2026-08-19
+
+The whole day was one argument: **the arena and the cards were fighting, and
+the cards were winning.** What follows is what actually moved the needle, in
+the order it was found. Do not re-litigate these by eye — every number was
+measured, and eye-tuning is what produced the four wrong versions in between.
+
+### The screen change
 
 `src/fx.js` is one exported function plus a gate. The tab change runs through
-`document.startViewTransition()`; the choreography is four rules in
-`style.css` and it costs no bytes.
+`document.startViewTransition()`.
 
-**Only `#view-container` is named** (`view-transition-name:screen`), and that is
-the whole reason it feels smooth. Left alone the API captures the entire page,
-so the topbar and the nav bar under your thumb faded, slid and scaled on every
-tap — reported as "my screen is lagging", and it was not lag, it was the chrome
-animating. `::view-transition-old/new(root)` are pinned to `animation:none` so
-the chrome, the arena and the fire hold still.
+1. **Name only `#view-container`** (`view-transition-name:screen`). Unnamed, the
+   API captures the whole page and the topbar and nav animate on every tap —
+   reported as "my screen is lagging", and it was not lag, it was the chrome
+   moving. `::view-transition-old/new(root)` are pinned to `animation:none`.
+2. **Never `skipTransition()`.** Letting a newer tap abort a running one
+   rejects promises nobody awaits: 14 fast taps produced **ten unhandled
+   `InvalidStateError`s**. A tap arriving mid-animation now gets no transition.
+3. **No `scale()`** on a full-screen snapshot — it resamples a display-sized
+   texture at 3x. Opacity and a 6px lift only.
+4. **The stagger sits out** while a transition runs (`fx.running()` answers "is
+   one running NOW", never "could one run", so first paint keeps its entrance).
+5. **Reduced motion is refused in fx.js, not CSS** — a snapshot is not an
+   element any rule can select.
 
-**Opacity and a 6px lift, never `scale()`.** Scaling a full-screen snapshot
-resamples a texture the size of the display on a phone at 3x.
+### The arena burns
 
-**The stagger sits out while a transition runs.** `fx.running()` answers "is one
-running NOW", never "could one run" — the first paint of the app still gets its
-staggered entrance, because nothing is transitioning there.
+Three layers over `.arena-stage`, all transform/opacity, no JS, no network,
+governed by `html.idle` and `prefers-reduced-motion` like everything else.
 
-**An interrupted tap gets NO transition, and never `skipTransition()`.** The
-first version called `skipTransition()` so a newer tap could start its own;
-aborting a transition rejects promises nobody awaits, and fourteen fast taps
-produced **ten unhandled `InvalidStateError`s** plus five animations each
-cutting off the last. A tap arriving mid-animation now just changes the screen
-instantly. Measured after the change: zero rejections, zero console errors, the
-hurried taps land on the right screen, and a settled tap still animates.
-
-**Reduced motion is refused in fx.js, not CSS** — a snapshot is not an element
-any `prefers-reduced-motion` rule can select, so the only place to decline is
-before asking. Verified with the query faked to `reduce`: zero transitions
-start, screen still changes.
-
-**Smoothness on a real iPhone is still Johnny's call** — `requestAnimationFrame`
-does not run in the hidden browser pane, so frame timing cannot be measured
-here at all. Structure was verified instead: what animates, what does not.
-
-**Four siblings were built, demoed and cut** on 2026-08-19: the card-to-sheet
-morph (one shared `view-transition-name`), sheet exit animation, a sigil sprite
-burst on `logSet`, and a seal stamp in `offerImage`. The standalone demo of all
-eight ideas is a scratch file outside the repo — rebuild it rather than hunting.
-
-## The arena burns (2026-08-19)
-
-The picture is no longer still. Three layers, all CSS over the existing
-`.arena-stage`, all transform/opacity on the compositor — no JavaScript, no
-network, and they obey `html.idle` and `prefers-reduced-motion` like everything
-else in there.
-
-- **The lava** (`.arena-lava`): a seamless molten tile (`lava-tex.webp`, 8 KB)
-  scrolled by three sheets at 9s/14s/24s under `lava-mask.webp`, cut from the
-  picture's own hot pixels. Plus a 6.5s surge, because brightness that moves is
-  what reads as molten.
-- **The fire** (`.arena-flames`): the app's own 24-frame sheets. Four up the
+- **Lava** (`.arena-lava`): a seamless molten tile (`lava-tex.webp`) scrolled by
+  three sheets at 9s/14s/24s under `lava-mask.webp`, plus a 6.5s surge.
+- **Fire** (`.arena-flames`): the app's own 24-frame sheets. Four up the
   standing walls (**15.61%..33.22%**, **67.72%..85.68%**), three falling out of
   the gate arches (**26.88%, 56.81%, 75.23%**) — every number column-profiled
-  off the artwork, never eyeballed.
-- **The sigil** (`.arena-sigil`): its glow cut out of `arena.webp` by channel,
+  off the artwork.
+- **Sigil** (`.arena-sigil`): its glow cut out of `arena.webp` by channel,
   breathing at 5.5s while a charge runs the ring at 3.4s. Coprime on purpose.
 
-**Rules that were paid for, and must not be undone:**
+**Five rules that were paid for:**
 
-1. **One gate over every flame.** A sprite over the weapon rack paints fire onto
-   solid iron — those were the "ghost flames", reported three times. The whole
-   group is clipped by `flame-mask.webp`, so ghosts are impossible rather than
-   avoided by nudging boxes.
-2. **No two sprite bands may overlap.** Walls end at 54.8%, plumes start at
-   55.1%. Two screens on one pixel is what blew out into patches that read as
-   cheap. Unevenness went 9.02x -> 4.48x once they were separated.
-3. **The lava mask is levelled column by column.** The right pool is far
-   brighter than the left in the artwork (37.6 vs 11.5 across the width). Where
-   it flows is the picture's; how much is even.
-4. **Contrast, never brightness.** `brightness()` drags everything toward white,
-   which IS the cheap look. Verified: **0 pixels driven to white**.
-5. **`fire-sheets.py` crushes each sheet's black floor to zero.** These are
-   screen-blended and screen adds what it is given: `fire-body`'s black sat at
-   RGB(3,2,17) with 63% of the sheet a dim blue floor, which painted a blue
-   rectangle wherever a sprite landed on dark stone. Fixed in the generator, so
-   there is still exactly one of each sheet — do not ship a "cleaned" copy.
+1. **One gate over every flame** (`flame-mask.webp`). A sprite over the weapon
+   rack paints fire onto solid iron — the "ghost flames", reported three times.
+2. **No two sprite bands may overlap.** Two screens on one pixel blows out into
+   patches that read as cheap.
+3. **The lava mask is levelled column by column** — the artwork's right pool is
+   3x the left (37.6 vs 11.5), so an ungated flow blazes on one side only.
+4. **Contrast, never brightness.** `brightness()` drags toward white, which IS
+   the cheap look. Target: zero pixels driven to white.
+5. **`tools/fire-sheets.py` crushes each sheet's black floor to zero.** Screen
+   blending adds what it is given and `fire-body`'s black sat at RGB(3,2,17) —
+   63% of the sheet a dim blue floor that painted a rectangle on dark stone.
+   Fixed in the generator; never ship a second "cleaned" copy of a sheet.
 
-**Cost:** +241 KB precached (51 entries, 2742 KiB). Everything else is free:
-no service, no key, no endpoint, nothing to maintain.
+**Chasing one number alone backfired once:** tuning the flame gate purely for
+low ghosting strangled the effect into a dim wash. Measure ghosting AND
+strength together.
 
-**Never verified running on a real device from here** — the browser pane is
-permanently `document.hidden`, so `html.idle` pauses all of it and
-`requestAnimationFrame` never runs. Structure was verified instead (what
-animates, what is gated, what is paused); smoothness is Johnny's call.
+### The floor: ring and mark
 
-## The arena (rebuilt 2026-08-17)
+- **There is no mark on the floor.** It carried the app icon (read as a decal),
+  then the wall's own sigil (better, still too busy), and now nothing. The ring
+  alone is the quiet version, and the floor is the part of the screen the cards
+  sit over.
+- **The ring is 115% wide, centred, crest at 76%.** Width is set by CURVATURE at
+  the screen edge, not by size: 108% drops 6.2 points from mid-screen to the
+  edge and reads as a dome closing early; 190% drops 2.3 and reads as a straight
+  band; **115% drops 4.6**, which is the only one that reads as a circle
+  continuing past the frame. **Wider is not better. The window is narrow.**
+- **The plate `top` is NOT where the ring appears, and the gap scales with the
+  width.** Change the width and recompute the top and the ember origin — never
+  carry them over. Four wrong placements came from moving one of the three.
+- **The ring is screened at 0.5, not alpha at 0.8.** Painted with alpha it
+  replaced the stone and lifted that patch of floor from 7.6 to 17.4 — more than
+  doubling it — which is exactly why it read as a cheap addition.
+
+### Decluttering, and what actually worked
+
+- **Cards are translucent** (`--surface` and `--bg-card` at `rgba(20,25,23,0.80)`).
+  The screen was never cluttered because it holds too much; it was cluttered
+  because 44 surfaces painted a solid wall over the picture. **0.80 is a floor,
+  not a taste**: at the brightest the scrimmed arena reaches behind a card,
+  RGB(146,181,174), it holds body text at 10.3:1 and muted text at 5.1:1 —
+  0.74 puts muted text under the 4.5:1 bar. Sheets stay solid (`--bg-elevated`).
+- **The scrim came down ~18 points** at every stop. Those stops were tuned
+  around loose text that now retires.
+- **Tips retire after five app opens**, counted per SESSION (render() runs on
+  every state change, so counting renders spends all five in the first minute).
+  A phone with five logged days starts retired — asked outright, never as the
+  stored value's default, because the first render happens before the log loads.
+- **Guide folds by phase.** Every other view ended around 59% of the height;
+  Guide ended at 100%. Three rows at rest now, 36.8%.
+- **Content starts below the wall sigil** (`#view-container{padding-top:32vh}`).
+  The sigil occupies 18.6%..41.2% and the view started at 9.1% — they were
+  competing for the same band, so no amount of compacting could ever clear it.
+  **Cost: a full Today now scrolls to reach the health habit.**
+
+### Judged on the wrong screen for hours
+
+Placement was assessed on **Guide**, whose list fills the height and scrolls —
+the one view where nothing behind it can ever look uncluttered. Judge layout on
+Today and Plan.
+
+## Ideas parked on a branch
+
+**`emblems` (pushed, not merged).** Plan arrives as a flaming sword, Progress as
+a suit of armour, both cut in the wall sigil's cracked stone and lit from
+inside. Tap to open; leaving the tab closes it again. Today is deliberately
+never gated — a door in front of the daily loop is the thing that killed the
+tuck. The emblem stands in the ring at 62% of the height; placed high it landed
+straight on the wall sigil.
+
+**The tuck was built, shipped and reverted the same day.** A silhouette with an
+ember at the heart pulled the whole screen into the fire. It worked — screen
+level actions stayed, item-level actions went with the items — and Johnny still
+cut it. What it was hiding was better fixed by removing weight.
+
+## The arena (rebuilt 2026-08-17)## The arena (rebuilt 2026-08-17)
 
 The background is a picture of a fire that was not lit, so it was lit. All of it
 is CSS over sprite sheets, which means the existing `html.idle` pause and the
@@ -453,6 +490,41 @@ through it.
   `sets-workout.vercel.app.evil.com` → `bad-redirect`. The hour-long test is the user's.
 
 ## Hard-won facts — do not re-derive these
+
+**The dev browser pane is permanently `document.hidden`.** Three consequences,
+each of which looked like a bug in the app: `html.idle` is always on, so every
+arena animation sits paused; `requestAnimationFrame` never runs, so frame timing
+and smoothness cannot be measured here at all; and view transitions abort with
+`InvalidStateError`. Remove the `idle` class by hand to see motion, and leave
+real smoothness to Johnny's phone.
+
+**Trusted clicks time out in that pane.** `computer` clicks by coordinate or ref
+hang for 30s; `javascript_tool` with `el.click()` goes through the same listener
+and works. What a scripted click cannot prove: it is not a user gesture, so
+audio autoplay and `navigator.share` still need a real device.
+
+**The log's db key is `sets-log`, not `setsLog`.** Seeding the wrong one wastes a
+round: the write succeeds, the app ignores it, and Today renders as if nothing
+was logged. Exercises are `exercises`, timers `timers-log`, proof `proof-log`.
+
+**A percentage `background-position` resolves against (container − image), not
+as a plain offset.** With a 14-frame strip at `background-size:1400%`, "-500%"
+lands nowhere near frame 5 and the layer goes blank. Step sprite sheets with
+`translateX` on an inner element — the shape `.fire-band i` has always used.
+
+**A CSS mask reads the ALPHA channel by default.** A greyscale mask image is
+opaque everywhere and masks nothing — it floods the whole element. Put the mask
+in the alpha channel rather than relying on `mask-mode:luminance`.
+
+**Removing a glow and compositing it back must be additive.** Multiplying the
+base by (1 − alpha) and then painting the glow over it multiplies by (1 − alpha)
+twice and leaves the whole band dimmer than the picture ships.
+
+**`main.js` imports from `domain.js` selectively.** `targetMet` was not among
+them; calling it threw inside a view-transition callback, where the rejection is
+swallowed by design — so state changed, the DOM did not, and it looked like a
+dead button. If a render function goes quiet, wrap the transition callback and
+surface the throw.
 
 **A story lives in ONE D1 value, capped at 1,000,000 bytes.** That is why a
 phone video cannot go to the crew as-is, and why proof reaches them as a
@@ -658,12 +730,13 @@ asking.
 | Proof of workout | An exercise is not finished until it is photographed. Card on Today says "Done — one photo to finish it" with **Keep going** beside **Add proof**. Take a photo or upload one, 3 retakes, explained once. Only applies from `meta.proofSince` (first run of that build) — nothing already done was affected. A camera button on the Done row re-opens it. |
 | Target mode | Plan → target → **Reps** or **Sets**. Sets counts sets ("2 sets · 6 reps", "1 SET LEFT"), never a fraction. Both targets are remembered per exercise (`targetByMode`); switching restores the other, and an unset reps target prefills from `bestSessionTotal`. `targetMode` has NO dated history on purpose — the mode is what the number means, and past days were always counted the way they were counted. |
 | Category clusters | Three or more exercises sharing a category fold into one row on Today (`clusterByCategory`, threshold 3). Below three, nothing changes — two cards were never the problem. |
-| Arena | A 156KB JPEG at `public/arena.jpg`, on `<html>` so embers (z-index -1) rise in front of it. `jpg` had to be added to the precache globs or the ground would be a network request. Scrim is four stops; `#firelight` adds light over the flame band. |
+| Arena | `public/arena.webp`, plus three live layers over it: flowing lava, seven flame sprites and the breathing wall sigil (see "The arena burns"). The scrim is four stops, lifted ~18 points on 2026-08-19. Content starts below the sigil at 32vh. |
 | Effects | Streak flame lights at day one and climbs (`flameLevel`, 0-4). 22 embers. All transform/opacity, no per-frame JS, paused when the app is not visible, with a resting state under `prefers-reduced-motion` (the global 0.001ms rule DELETES a looping animation whose first and last frames are both opacity 0). |
+| Tips | Eight inline hints, each keyed. They retire after five app opens (counted per session) and never appear at all on a phone with five logged days. Everything they say is also in the ? sheet and the Guide. |
 | What's new | A bell in the topbar, **in the version chip's old slot** — once updates apply themselves, "which build am I on" belongs in Backup & data, not on every screen. Notices are a data file (`src/notices.js`) shipped **inside the build**: the release is the delivery mechanism, so there is no endpoint, no table and no network dependency in the topbar. Read state is per-device (`notices-seen`), never synced, and a fresh install starts with everything read. **Adding an entry is what sends it — never add one without asking Johnny, every time.** |
 | Health habits | Plan → Add → Health habit. Listed on Plan; tap to rename, re-schedule or delete. Delete **archives** (`active:false`) — habits carry no tombstone key, so a hard delete would come back from Drive. Today collapses a meals habit to one row; a one-tap habit never collapses, because its row is the action. | Recurring, no target, own streak. Two shapes: **meals** (six slots — breakfast, morning snack, lunch, afternoon snack, dinner, evening snack) and **plain** (one tap a day). Each slot is Kept / Skipped / Broke. A day is **clean** (nothing broke, ≥1 kept), **broken** (anything broke), **neutral** (nothing logged, or all skipped) or **off plan**. Neutral and off-plan days are gaps the streak steps over. Three presets — Keto, No alcohol, Sleep by 11 — which are **copied, never linked**. |
 | Weigh-in | Daily weigh-in, weekly-average line chart. Never touches any exercise streak. Deliberately not a "health habit": it stores a number BMI and the chart read. |
-| Guide | **Two of them, deliberately.** The Guide tab (book icon, 4th slot) is the full 12-step walkthrough, collapsed on arrival, content as data in `src/guide.js`. The topbar **?** opens a short sheet about the screen you are standing on (`modalGuide`). The Guide screen carries no ? of its own. They were merged once and it was worse — the user asked for both back. |
+| Guide | Folded by phase — three rows at rest, open one for its steps, open a step for its notes. **Two guides, deliberately.** The Guide tab (book icon, 4th slot) is the full 12-step walkthrough, collapsed on arrival, content as data in `src/guide.js`. The topbar **?** opens a short sheet about the screen you are standing on (`modalGuide`). The Guide screen carries no ? of its own. They were merged once and it was worse — the user asked for both back. |
 | Categories | Ten, in `src/categories.js`. The exercise stores the **category key, never the picture**, so artwork can be redrawn without touching a single saved exercise. Icons are cut from committed source art by `tools/slice-icons.py` — a grid (`icon-source.png`) plus per-category singles. Exercises saved before categories show no icon until edited; that blank is deliberate. |
 | Timed exercises | Plan → How you measure it → **Time** (number + min/hr). No keypad on Today: a dormant clock with Start, then the usual Pause / Resume / Give up / Complete. Nothing auto-completes — reaching the target pauses and asks *Take the win / Keep going* the next tick you are looking at it. Progress swaps in Longest session, First day, Average session, Lifetime, all as durations. |
 | Share image (foot) | Every card signs itself: the crew's name and motto, your role and class with their art, your profile name and photo. Drawn from the crew you are looking at; absent entirely when you are in none. |

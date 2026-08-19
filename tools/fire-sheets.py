@@ -62,35 +62,6 @@ def lit_bbox(im):
     return box
 
 
-def crush_black(im, knee=0.11):
-    """Take the sheet's near-black floor all the way to zero.
-
-    These sheets are screen-blended, and screen ADDS whatever it is given: a
-    'black' background sitting at RGB(3,2,17) paints a dim blue rectangle
-    wherever the sprite lands. Over the bright band the sheets were drawn for
-    that is invisible, which is why it went unnoticed — put one over dark stone
-    and it reads as a grey smudge with a straight edge.
-
-    Measured on fire-body before this: 0.00% of the sheet was true black and
-    63.37% of it was a dim blue floor. Each pixel is scaled by its own
-    luminance, so the flames themselves are untouched and only the floor moves.
-    """
-    px = list(im.get_flattened_data())
-    out = []
-    for (r, g, b) in px:
-        lum = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255
-        if lum <= 0:
-            f = 0.0
-        elif lum < knee * 3:
-            f = min(1.0, max(0.0, (lum - knee) / (1 - knee)) / lum)
-        else:
-            f = 1.0
-        out.append((int(r * f), int(g * f), int(b * f)))
-    cleaned = Image.new('RGB', im.size)
-    cleaned.putdata(out)
-    return cleaned
-
-
 def build(name, src, count, height, hue_key):
     im = Image.open(ROOT / src)
     box = lit_bbox(im) or (0, 0, im.width, im.height)
@@ -107,7 +78,6 @@ def build(name, src, count, height, hue_key):
     # than the one that made it — the profile frame went out at 74 having been
     # written at 84. One pass, one encode, no generation loss.
     sheet = rotate_to_target(sheet, FROM[hue_key])
-    sheet = crush_black(sheet)
     path = OUT / f'{name}.webp'
     # 82, not 88. These are blurred fire behind a mask at about half opacity —
     # the detail 88 buys is not visible through any of that, and it cost 60 KB.

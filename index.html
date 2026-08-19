@@ -47,6 +47,7 @@
     <div class="arena-stage">
       <div class="floor-plate">
         <div class="floor-ring"><i></i></div>
+        <div class="floor-mark"></div>
       </div>
       <div class="fire-band fire-top u1"><i></i></div>
       <div class="fire-band fire-top u2 mir"><i></i></div>
@@ -61,29 +62,6 @@
       <div class="fire-brazier b1"><i></i></div>
       <div class="fire-brazier b2"><i></i></div>
       <div class="fire-brazier b3"><i></i></div>
-      <!-- The lava, flowing. A molten texture scrolls under a mask cut from the
-           picture's own hot pixels, so the light moves inside the shapes the
-           lava already occupies and never spills onto the stone. -->
-      <div class="arena-lava"><i class="f1"></i><i class="f2"></i><i class="f3"></i></div>
-
-      <!-- Fire where the picture is already alight, and nowhere else: the whole
-           group is clipped by flame-mask, which is why a sprite can never paint
-           a flame onto the weapon rack. Four up the standing walls, three
-           falling out of the gate arches. -->
-      <div class="arena-flames">
-        <div class="arena-flame tall t1"><i></i></div>
-        <div class="arena-flame tall t2"><i></i></div>
-        <div class="arena-flame tall t3"><i></i></div>
-        <div class="arena-flame tall t4"><i></i></div>
-        <div class="arena-flame gate g1"><i></i></div>
-        <div class="arena-flame gate g2"><i></i></div>
-        <div class="arena-flame gate g3"><i></i></div>
-      </div>
-
-      <!-- The sigil on the wall: its own glow, cut out of the picture by
-           channel, breathing while a charge runs the ring. -->
-      <div class="arena-sigil"></div>
-      <div class="arena-sigil sweep"></div>
       <div class="firelight"></div>
       <div class="arena-scrim"></div>
     </div>

@@ -2941,44 +2941,8 @@ async function checkVersion() {
  * gets out of the way. Kept in prefs (localStorage), not synced data: it is
  * about this device's reader, not the workout record.
  */
-/**
- * A hint you have read five times is not a hint any more, it is furniture.
- *
- * Every tip already carried a key and nothing read it, so all eight showed
- * forever — on a two-exercise day roughly half of Today was teaching rather
- * than doing. They retire after FIVE app opens, which is a few days of real
- * use: long enough to learn the gesture, short enough that the screen gets
- * quieter the more you use it.
- *
- * Counted per SESSION, never per render. render() runs on every state change,
- * so counting renders would burn all five opens inside the first minute — the
- * Set is what makes an open worth exactly one.
- *
- * Nothing is lost when a tip goes: every one of these is also in the ? sheet
- * for the screen you are standing on, and again in the Guide tab. This only
- * stops the app repeating itself to someone who already knows.
- */
-const TIP_RETIRE_AFTER = 5;
-const tipsCountedThisSession = new Set();
-
-/** Someone with a week of training behind them does not need to be told how to
- *  log a rep, and should not have to wait five more opens to stop being told.
- *  A phone with five logged days starts at the cap instead of at zero. */
-const alreadyKnows = () => Object.keys(state.setsLog || {}).length >= TIP_RETIRE_AFTER;
-
-function tipHtml(key, text, cls = 'tip') {
-  // Asked outright rather than used as the stored value's default: the first
-  // render happens before the log has loaded, so a counter of 1 is already on
-  // disk by the time we know how experienced this phone is — and a stored value
-  // beats a fallback every time.
-  if (alreadyKnows()) return '';
-  const seen = db.prefs.get(`tip:${key}`, 0);
-  if (seen >= TIP_RETIRE_AFTER) return '';
-  if (!tipsCountedThisSession.has(key)) {
-    tipsCountedThisSession.add(key);
-    db.prefs.set(`tip:${key}`, seen + 1);
-  }
-  return `<p class="${cls}" data-tip="${key}">${escapeHtml(text)}</p>`;
+function tipHtml(key, text) {
+  return `<p class="tip" data-tip="${key}">${escapeHtml(text)}</p>`;
 }
 
 function railButtonsHtml() {
@@ -3205,57 +3169,28 @@ function renderView() {
  * It reads GUIDE_SECTIONS and nothing else. No app state, no derived numbers,
  * so it cannot go stale against your data and there is nothing here to break.
  */
-/**
- * Folded by phase, not laid out flat.
- *
- * Fourteen step rows filled the screen and kept going — Guide was the only
- * screen in the app that covered the arena from the topbar to the nav, and it
- * is the one screen with no cards to see past. Measured: every other view ends
- * around 59% of the height, Guide ended at 100%.
- *
- * So the phases carry the fold. Four rows at rest; open one and its steps
- * appear; open a step and its notes appear. It reuses the same toggle-group
- * machinery Plan's schedule groups run on, so there is no second accordion in
- * the codebase — only a second thing folded by it.
- */
 function guideBodyHtml() {
-  const phases = [];
-  GUIDE_SECTIONS.forEach((sec, i) => {
-    const last = phases[phases.length - 1];
-    if (!last || last.phase !== sec.phase) phases.push({ phase: sec.phase, steps: [{ sec, i }] });
-    else last.steps.push({ sec, i });
-  });
-
-  const body = phases.map((ph) => {
-    const key = `phase:${ph.phase}`;
-    const open = groupOpen('guide', key, phases.length);
-    const first = ph.steps[0].i + 1;
-    const last = ph.steps[ph.steps.length - 1].i + 1;
-    const head = `<button class="group-head" data-action="toggle-group" data-view="guide" data-key="${escapeHtml(key)}" data-open="${open}" aria-expanded="${open}">
-        <span class="group-head-label">${escapeHtml(ph.phase)}</span>
-        <span class="group-head-meta">${open ? '' : `Steps ${first}–${last}`}</span>
+  let lastPhase = null;
+  const sections = GUIDE_SECTIONS.map((sec, i) => {
+    const open = groupOpen('guide', sec.id, GUIDE_SECTIONS.length);
+    // The phase label is emitted on change rather than stored as a nesting
+    // level, so the step numbers stay one flat run from 1 to 12.
+    const label = sec.phase !== lastPhase
+      ? `<div class="section-label">${escapeHtml(sec.phase)}</div>` : '';
+    lastPhase = sec.phase;
+    const head = `<button class="guide-row ${open ? 'open' : ''}" data-action="toggle-group" data-view="guide" data-key="${sec.id}" data-open="${open}" aria-expanded="${open}">
+        <span class="guide-step">${i + 1}</span>
+        <span class="guide-title">${escapeHtml(sec.title)}</span>
         <span class="group-chev ${open ? 'open' : ''}">${ICONS.chevron}</span>
       </button>`;
-    if (!open) return head;
-
-    const steps = ph.steps.map(({ sec, i }) => {
-      const so = groupOpen('guide', sec.id, GUIDE_SECTIONS.length);
-      const row = `<button class="guide-row ${so ? 'open' : ''}" data-action="toggle-group" data-view="guide" data-key="${sec.id}" data-open="${so}" aria-expanded="${so}">
-          <span class="guide-step">${i + 1}</span>
-          <span class="guide-title">${escapeHtml(sec.title)}</span>
-          <span class="group-chev ${so ? 'open' : ''}">${ICONS.chevron}</span>
-        </button>`;
-      if (!so) return row;
-      const notes = sec.notes.map((n) => `<li>${escapeHtml(n)}</li>`).join('');
-      return `${row}<div class="guide-body">
-          <p class="guide-lead">${escapeHtml(sec.lead)}</p>
-          <ul class="guide-notes">${notes}</ul>
-        </div>`;
-    }).join('');
-    return head + steps;
+    if (!open) return label + head;
+    const notes = sec.notes.map((n) => `<li>${escapeHtml(n)}</li>`).join('');
+    return `${label}${head}<div class="guide-body">
+        <p class="guide-lead">${escapeHtml(sec.lead)}</p>
+        <ul class="guide-notes">${notes}</ul>
+      </div>`;
   }).join('');
-
-  return `<p class="guide-intro">${escapeHtml(GUIDE_INTRO)}</p>${body}`;
+  return `<p class="guide-intro">${escapeHtml(GUIDE_INTRO)}</p>${sections}`;
 }
 
 /**
@@ -3451,17 +3386,13 @@ function weighInCardHtml() {
     return `<div class="section-label">Health habit</div>
       <button class="habit-done" data-action="open-weigh-in">
         <span class="habit-done-tick">${ICONS.check}</span>
-        <span class="habit-done-text">Weigh in · <b>${formatWeight(todayEntry.w, 'kg')}</b></span>
+        <span class="habit-done-text">Weighed in today · <b>${formatWeight(todayEntry.w, 'kg')}</b></span>
         <span class="habit-done-edit">Edit</span>
       </button>`;
   }
   return `<div class="section-label">Health habit</div>
     <div class="habit-card">
-      <!-- The second line is a tip, and tips retire; this one never did because
-           it was baked into the card. It says what the ? sheet and the Guide
-           both already say, and it was the tallest thing on a row that exists
-           to hold one number. -->
-      <div class="habit-text"><b>Weigh in</b></div>
+      <div class="habit-text"><b>Daily weigh-in</b><span>A few seconds each morning. Your weekly average is on Progress.</span></div>
       <button class="habit-btn" data-action="open-weigh-in">Log weight</button>
     </div>
     ${tipHtml('weigh-in', 'Tracked apart from exercises — weighing in never touches a streak. Log daily; Progress shows the weekly-average trend.')}`;
@@ -3673,17 +3604,16 @@ function viewToday() {
     // Ended early is closed out, not won: it keeps the quiet row but takes a
     // flag instead of the tick, and shows the shortfall honestly.
     const short = r.endedEarly && r.hasTarget && r.total < r.target;
-    // The camera sits NEXT TO the share glyph rather than at the far left where
-    // it used to be: two controls at opposite ends of a row read as two
-    // unrelated things and cost the arena the whole left margin. Paired at the
-    // end they read as one set of controls for one finished exercise.
+    // The row is a container rather than one button, because it now carries two
+    // actions — open it, or share it. A rest day has nothing to put on a card,
+    // so it keeps the row it always had and no share.
     return `<div class="done-row${short ? ' ended-early' : ''}">
+      ${proofFor(state.proofLog, today, r.ex.id) ? `<button class="done-proof" data-action="open-proof" data-id="${r.ex.id}" aria-label="View proof for ${escapeHtml(r.ex.name)}">${ICONS.camera}</button>` : ''}
       <button class="done-open" data-action="open-logger" data-id="${r.ex.id}">
         <span class="done-tick">${r.rest ? '🌙' : (short ? ICONS.flag : ICONS.check)}</span>
         <span class="done-name">${escapeHtml(r.ex.name)}</span>
         <span class="done-num">${r.rest ? 'Rest' : (r.setsMode ? `${r.scored} set${r.scored === 1 ? '' : 's'} · ${r.total} ${escapeHtml(r.ex.unit)}` : (short ? `${r.scored} of ${r.target}` : `${r.total} ${escapeHtml(r.ex.unit)}`))}${r.timer && r.timer.finishedAt ? `<i class="done-at">${escapeHtml(formatClock(r.timer.finishedAt))}</i>` : ''}</span>
       </button>
-      ${r.rest || !proofFor(state.proofLog, today, r.ex.id) ? '' : `<button class="done-proof" data-action="open-proof" data-id="${r.ex.id}" aria-label="See the proof for ${escapeHtml(r.ex.name)}">${ICONS.camera}</button>`}
       ${r.rest ? '' : `<button class="done-share" data-action="${proofFor(state.proofLog, today, r.ex.id) ? 'share-choice' : 'share-session'}" data-id="${r.ex.id}" aria-label="Share ${escapeHtml(r.ex.name)}">${ICONS.share}</button>`}
     </div>`;
   };
@@ -3705,9 +3635,7 @@ function viewToday() {
   } else if (scheduled.length) {
     // The day's own card hangs off the moment the day is declared over, so it
     // needs no row of its own on a screen whose whole job is what is left.
-    // Two lines became one: "Every target met. Rest up." only repeated the
-    // title, and the height it took was the height the wall sigil needed.
-    html += `<div class="all-clear compact"><b>All done today</b>
+    html += `<div class="all-clear"><b>All done today</b><span>Every target met. Rest up.</span>
       ${done.some((r) => !r.rest) ? `<button class="all-clear-share" data-action="share-day">${ICONS.share}Share this day</button>` : ''}</div>`;
   }
 
@@ -3726,9 +3654,7 @@ function viewToday() {
   if (onBreak.length) {
     html += `<p class="break-nudge resting">🌙 Resting today: ${onBreak.map((e) => escapeHtml(e.name)).join(', ')}</p>`;
   } else if (scheduled.length) {
-    // Retires like the rest of them — it kept its own class only because it is
-    // centred and sits between the cards rather than above them.
-    html += tipHtml('break-nudge', 'Not training one today? Open it and take a break — the streak holds.', 'break-nudge');
+    html += `<p class="break-nudge">Not training one today? Open it and take a break — the streak holds.</p>`;
   }
 
   html += habitsSectionHtml();

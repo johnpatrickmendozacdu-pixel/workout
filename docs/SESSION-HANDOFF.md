@@ -53,8 +53,8 @@ Worker's pure helpers only — **not `main.js`, not `googleSync.js`**.
 
 ## State right now — READ THIS FIRST
 
-- `main` = **`fb828b0`**, pushed. **Not byte-verified live yet** — Johnny still
-  needs Force update now.
+- `main` = **`383c49f`**, pushed, deployed and **byte-verified live** (js
+  `index-CToQky0I.js`, css `index-BjTTilX1.css`).
 - **430 tests pass** (`npm test`). Same coverage as ever: the pure domain layer
   and the Worker's pure helpers. Not `main.js`, not `sound.js`, not
   `googleSync.js`.
@@ -79,12 +79,11 @@ before wiring it anywhere.
 
 **Immediately, in order:**
 
-1. **Johnny QAs the layout pass on his phone.** He called the 32vh version
-   "super ugly"; the reserve is back to **12vh** and a full Today fits on one
-   screen again. The sigil now sits behind the top card, showing through its
-   0.80 fill. If he wants the sigil clear again, the remaining option is to
-   move the PICTURE — but shifting the arena means rescaling `.arena-stage`
-   (cover has zero slack at 375x812), and every flame/lava/ring % rides on it.
+1. **Johnny QAs the last change on his phone.** Content now starts below the
+   wall sigil, which costs a scroll on a full Today. If he does not want the
+   scroll, the alternative is to move the PICTURE instead of the content —
+   shift the arena down so the sigil sits in the empty floor band — but that
+   pushes the fire and the ring lower and the ring ends up behind the nav.
 2. **Decide on `emblems`.** Pushed, not merged. If it lands, Social and Guide
    want their own emblems before it ships.
 3. **Still never verified on a real iPhone:** whether Spotify keeps playing
@@ -99,12 +98,7 @@ before wiring it anywhere.
   weakest motion on screen. The fix discussed: easing, lateral drift, two depth
   layers.
 - **Section labels could go when there is only one section** ("DONE", "HEALTH
-  HABIT" above a single group each). Raised, not done — still the noisiest
-  thing left on Today.
-- **The hard offset shadow (`4px 4px 0`) reads as misregistration** now that
-  cards are translucent and sit on a photograph. It is core to night
-  brutalist, so it was left alone. Worth a look if the screen still reads
-  cheap.
+  HABIT" above a single group each). Raised, not done.
 - **A bell notice for everything since the sound release** — the screen change
   went out, but the burning arena, the translucent cards, the retiring tips and
   the layout work have not. **Adding an entry to `src/notices.js` IS what sends
@@ -302,17 +296,10 @@ strength together.
   stored value's default, because the first render happens before the log loads.
 - **Guide folds by phase.** Every other view ended around 59% of the height;
   Guide ended at 100%. Three rows at rest now, 36.8%.
-- **Content starts below the wall sigil** — tried at `padding-top:32vh`, and
-  **reverted to 12vh on 2026-08-19** after Johnny called it ugly. The sigil
-  occupies 18.6%..41.2%, so clearing it entirely costs 41% of the screen and
-  pushes the health habit off the bottom of a Today that used to fit whole.
-  **The overlap was never the problem the measurement said it was**: cards
-  carry an 0.80 fill, so the sigil reads as showing THROUGH the top card.
-  What WAS a problem is loose text — the done row and the tips both landed on
-  the gate flames once the content moved up, and both now take the card fill.
-- **`All done today` must not render while anything needs proof.** Two
-  accent-framed boxes in a row, the second contradicting the first. The guard
-  is `!awaiting.length` on that branch in `viewToday`.
+- **Content starts below the wall sigil** (`#view-container{padding-top:32vh}`).
+  The sigil occupies 18.6%..41.2% and the view started at 9.1% — they were
+  competing for the same band, so no amount of compacting could ever clear it.
+  **Cost: a full Today now scrolls to reach the health habit.**
 
 ### Judged on the wrong screen for hours
 

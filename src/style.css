@@ -2294,10 +2294,10 @@
   /* Option 2: a big ring, and the embers restricted to it — they start inside
      the ellipse and nowhere else, so the ring is visibly what is throwing them.
      See the #embers override further down. */
-  /* The ring sits in the middle of the floor rather than spanning the room.
-     At 108% wide it ran off both edges, so what you saw was an arc crossing the
-     screen rather than a circle on the ground. 72% wide and centred makes it a
-     ring you can see all of.
+  /* The ring covers the whole floor and runs off both edges on purpose — the
+     floor is bigger than the screen, so a ring that fits inside the screen
+     reads as a small circle sitting on it rather than as the ground burning.
+     It is dead centre: -4% + 108% = 104%, so the midpoint is exactly 50%.
 
      The numbers are tied to each other: the plate carries the sheet's 238:120,
      so 72% of the stage width is 16.7% of its height, and the ellipse's centre
@@ -2307,7 +2307,7 @@
      puts the ring's centre at 73%, which is the line Johnny drew across the
      floor. It has been 88.5% (under the nav) and 78% (still too low) on the way
      here — move this number, not the one you wish the ring had. */
-  html.opt2 .floor-plate{ left:14%; width:72%; top:61.5%; }
+  html.opt2 .floor-plate{ left:-4%; width:108%; top:55.8%; }
 
   html.idle .floor-ring i{ animation-play-state:paused; }
   @media (prefers-reduced-motion: reduce){
@@ -2619,28 +2619,28 @@
      The height is unchanged because the ring did not move vertically, only
      inward; the spread below is what had to follow it. */
   html.opt2 #embers i{ bottom:27%; }
-  html.opt2 #embers i:nth-child(1){left:39.3%;}
-  html.opt2 #embers i:nth-child(2){left:46.0%;}
-  html.opt2 #embers i:nth-child(3){left:52.0%;}
-  html.opt2 #embers i:nth-child(4){left:58.0%;}
-  html.opt2 #embers i:nth-child(5){left:36.0%;}
-  html.opt2 #embers i:nth-child(6){left:63.3%;}
-  html.opt2 #embers i:nth-child(7){left:42.7%;}
-  html.opt2 #embers i:nth-child(8){left:49.3%;}
-  html.opt2 #embers i:nth-child(9){left:55.3%;}
-  html.opt2 #embers i:nth-child(10){left:60.7%;}
-  html.opt2 #embers i:nth-child(11){left:38.0%;}
-  html.opt2 #embers i:nth-child(12){left:47.3%;}
-  html.opt2 #embers i:nth-child(13){left:54.0%;}
-  html.opt2 #embers i:nth-child(14){left:59.3%;}
-  html.opt2 #embers i:nth-child(15){left:40.7%;}
-  html.opt2 #embers i:nth-child(16){left:50.7%;}
-  html.opt2 #embers i:nth-child(17){left:56.7%;}
-  html.opt2 #embers i:nth-child(18){left:44.7%;}
-  html.opt2 #embers i:nth-child(19){left:62.0%;}
-  html.opt2 #embers i:nth-child(20){left:37.3%;}
-  html.opt2 #embers i:nth-child(21){left:53.3%;}
-  html.opt2 #embers i:nth-child(22){left:48.0%;}
+  html.opt2 #embers i:nth-child(1){left:34%;}
+  html.opt2 #embers i:nth-child(2){left:44%;}
+  html.opt2 #embers i:nth-child(3){left:53%;}
+  html.opt2 #embers i:nth-child(4){left:62%;}
+  html.opt2 #embers i:nth-child(5){left:29%;}
+  html.opt2 #embers i:nth-child(6){left:70%;}
+  html.opt2 #embers i:nth-child(7){left:39%;}
+  html.opt2 #embers i:nth-child(8){left:49%;}
+  html.opt2 #embers i:nth-child(9){left:58%;}
+  html.opt2 #embers i:nth-child(10){left:66%;}
+  html.opt2 #embers i:nth-child(11){left:32%;}
+  html.opt2 #embers i:nth-child(12){left:46%;}
+  html.opt2 #embers i:nth-child(13){left:56%;}
+  html.opt2 #embers i:nth-child(14){left:64%;}
+  html.opt2 #embers i:nth-child(15){left:36%;}
+  html.opt2 #embers i:nth-child(16){left:51%;}
+  html.opt2 #embers i:nth-child(17){left:60%;}
+  html.opt2 #embers i:nth-child(18){left:42%;}
+  html.opt2 #embers i:nth-child(19){left:68%;}
+  html.opt2 #embers i:nth-child(20){left:31%;}
+  html.opt2 #embers i:nth-child(21){left:55%;}
+  html.opt2 #embers i:nth-child(22){left:47%;}
 
   html.idle #embers i{animation-play-state:paused;}
 

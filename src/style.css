@@ -2297,7 +2297,14 @@
   /* The ring covers the whole floor and runs off both edges on purpose — the
      floor is bigger than the screen, so a ring that fits inside the screen
      reads as a small circle sitting on it rather than as the ground burning.
-     It is dead centre: -4% + 108% = 104%, so the midpoint is exactly 50%.
+     It is dead centre: -45% + 190% = 145%, so the midpoint is exactly 50%.
+
+     190%, not 108%, and the reason is the CURVATURE at the screen edge rather
+     than the size. Measured as the fall from mid-screen to the edge: 108% drops
+     6.2 points, which turns down inside the frame and reads as a dome that
+     closed early. 190% drops 2.3, so the arc leaves the screen still climbing
+     and the eye finishes the circle outside it. Past about 190% it stops
+     improving — 220% only buys another 0.3.
 
      The numbers are tied to each other: the plate carries the sheet's 238:120,
      so 72% of the stage width is 16.7% of its height, and the ellipse's centre
@@ -2307,7 +2314,7 @@
      puts the ring's centre at 73%, which is the line Johnny drew across the
      floor. It has been 88.5% (under the nav) and 78% (still too low) on the way
      here — move this number, not the one you wish the ring had. */
-  html.opt2 .floor-plate{ left:-4%; width:108%; top:67.5%; }
+  html.opt2 .floor-plate{ left:-45%; width:190%; top:60.1%; }
 
   html.idle .floor-ring i{ animation-play-state:paused; }
   @media (prefers-reduced-motion: reduce){
@@ -2615,10 +2622,12 @@
      shorter distance, so they read as thrown up by the circle instead of
      drifting past it. Written as a block so it can be deleted in one piece if
      option 1 wins. */
-  /* Out of the ring's centre — 84.7% down the stage, so 15.3% up from the bottom.
+  /* Out of the arc you can actually SEE — it crests at 77%, so 21% up from the
+     bottom. The ellipse's true centre is off the bottom of the screen now, and
+     embers pinned to it would start behind the nav bar.
      The height is unchanged because the ring did not move vertically, only
      inward; the spread below is what had to follow it. */
-  html.opt2 #embers i{ bottom:15.3%; }
+  html.opt2 #embers i{ bottom:21%; }
   html.opt2 #embers i:nth-child(1){left:34%;}
   html.opt2 #embers i:nth-child(2){left:44%;}
   html.opt2 #embers i:nth-child(3){left:53%;}

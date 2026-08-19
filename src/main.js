@@ -3422,13 +3422,17 @@ function weighInCardHtml() {
     return `<div class="section-label">Health habit</div>
       <button class="habit-done" data-action="open-weigh-in">
         <span class="habit-done-tick">${ICONS.check}</span>
-        <span class="habit-done-text">Weighed in today · <b>${formatWeight(todayEntry.w, 'kg')}</b></span>
+        <span class="habit-done-text">Weigh in · <b>${formatWeight(todayEntry.w, 'kg')}</b></span>
         <span class="habit-done-edit">Edit</span>
       </button>`;
   }
   return `<div class="section-label">Health habit</div>
     <div class="habit-card">
-      <div class="habit-text"><b>Daily weigh-in</b><span>A few seconds each morning. Your weekly average is on Progress.</span></div>
+      <!-- The second line is a tip, and tips retire; this one never did because
+           it was baked into the card. It says what the ? sheet and the Guide
+           both already say, and it was the tallest thing on a row that exists
+           to hold one number. -->
+      <div class="habit-text"><b>Weigh in</b></div>
       <button class="habit-btn" data-action="open-weigh-in">Log weight</button>
     </div>
     ${tipHtml('weigh-in', 'Tracked apart from exercises — weighing in never touches a streak. Log daily; Progress shows the weekly-average trend.')}`;
@@ -3640,11 +3644,11 @@ function viewToday() {
     // Ended early is closed out, not won: it keeps the quiet row but takes a
     // flag instead of the tick, and shows the shortfall honestly.
     const short = r.endedEarly && r.hasTarget && r.total < r.target;
-    // The row is a container rather than one button, because it now carries two
-    // actions — open it, or share it. A rest day has nothing to put on a card,
-    // so it keeps the row it always had and no share.
+    // Two trailing controls became one. The camera and the share glyph were
+    // both "do something with this finished exercise", and share-choice already
+    // offers the card and the proof together — so the row keeps its left edge
+    // clear and the arena shows through where the camera used to sit.
     return `<div class="done-row${short ? ' ended-early' : ''}">
-      ${proofFor(state.proofLog, today, r.ex.id) ? `<button class="done-proof" data-action="open-proof" data-id="${r.ex.id}" aria-label="View proof for ${escapeHtml(r.ex.name)}">${ICONS.camera}</button>` : ''}
       <button class="done-open" data-action="open-logger" data-id="${r.ex.id}">
         <span class="done-tick">${r.rest ? '🌙' : (short ? ICONS.flag : ICONS.check)}</span>
         <span class="done-name">${escapeHtml(r.ex.name)}</span>
@@ -3671,7 +3675,9 @@ function viewToday() {
   } else if (scheduled.length) {
     // The day's own card hangs off the moment the day is declared over, so it
     // needs no row of its own on a screen whose whole job is what is left.
-    html += `<div class="all-clear"><b>All done today</b><span>Every target met. Rest up.</span>
+    // Two lines became one: "Every target met. Rest up." only repeated the
+    // title, and the height it took was the height the wall sigil needed.
+    html += `<div class="all-clear compact"><b>All done today</b>
       ${done.some((r) => !r.rest) ? `<button class="all-clear-share" data-action="share-day">${ICONS.share}Share this day</button>` : ''}</div>`;
   }
 

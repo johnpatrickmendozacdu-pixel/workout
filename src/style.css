@@ -1446,6 +1446,8 @@
   .done-tick svg{width:17px; height:17px;}
   .done-name{flex:1; min-width:0; font-size:14.5px; font-weight:600;
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  /* Reps and the finishing time set as one quiet string so the row reads as a
+     line rather than a table, and the background shows between the columns. */
   .done-num{font-family:var(--font-mono); font-size:12.5px; color:var(--text-faint);}
 
   /* ---------- crew ----------
@@ -2187,6 +2189,24 @@
   /* The same four stops the canvas used to carry, now ABOVE the fire — the
      flames are part of the picture and get dimmed with it, rather than
      burning through the layer that makes text readable. */
+  /* Shorter versions of the two blocks that were costing the most height for
+     the least information: the all-done card lost its second line, and the
+     weigh-in row is a line rather than a card. Both were pushing the wall
+     sigil off the screen. */
+  .all-clear.compact{ padding:14px 16px; gap:10px; }
+  .all-clear.compact b{ font-size:17px; }
+  .habit-done{ padding:9px 12px; min-height:0; }
+  /* One row, one number: the prompt is now a label and a button side by side
+     rather than a paragraph with a button under it. */
+  .habit-card{ padding:10px 12px; min-height:0; align-items:center; }
+  .habit-text b{ font-size:15px; }
+  .habit-done-text{ font-size:13.5px; }
+
+  /* Lifted by ~18 points across every stop on 2026-08-19. These were tuned
+     around loose text — the hint lines that used to sit straight on the
+     picture — and those retire after five opens now, so the cover they needed
+     is cover the arena was paying for and nobody was using. The cards carry
+     their own 0.80 fill, so text legibility never depended on this. */
   .arena-scrim{
     position:absolute; inset:0; pointer-events:none;
     /* The last stop used to lift to 0.40 because the artwork's floor was dark
@@ -2206,12 +2226,12 @@
        the same stops, four points lighter, plus the text-shadow that was
        always the real guard. */
     background:linear-gradient(180deg,
-      rgba(10,12,11,0.52) 0%,
-      rgba(10,12,11,0.54) 22%,
-      rgba(10,12,11,0.54) 40%,
-      rgba(10,12,11,0.58) 60%,
-      rgba(10,12,11,0.59) 82%,
-      rgba(10,12,11,0.54) 100%);
+      rgba(10,12,11,0.34) 0%,
+      rgba(10,12,11,0.36) 22%,
+      rgba(10,12,11,0.36) 40%,
+      rgba(10,12,11,0.40) 60%,
+      rgba(10,12,11,0.41) 82%,
+      rgba(10,12,11,0.36) 100%);
   }
 
   .fire-band, .fire-brazier{

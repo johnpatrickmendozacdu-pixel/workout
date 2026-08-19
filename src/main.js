@@ -3205,28 +3205,57 @@ function renderView() {
  * It reads GUIDE_SECTIONS and nothing else. No app state, no derived numbers,
  * so it cannot go stale against your data and there is nothing here to break.
  */
+/**
+ * Folded by phase, not laid out flat.
+ *
+ * Fourteen step rows filled the screen and kept going — Guide was the only
+ * screen in the app that covered the arena from the topbar to the nav, and it
+ * is the one screen with no cards to see past. Measured: every other view ends
+ * around 59% of the height, Guide ended at 100%.
+ *
+ * So the phases carry the fold. Four rows at rest; open one and its steps
+ * appear; open a step and its notes appear. It reuses the same toggle-group
+ * machinery Plan's schedule groups run on, so there is no second accordion in
+ * the codebase — only a second thing folded by it.
+ */
 function guideBodyHtml() {
-  let lastPhase = null;
-  const sections = GUIDE_SECTIONS.map((sec, i) => {
-    const open = groupOpen('guide', sec.id, GUIDE_SECTIONS.length);
-    // The phase label is emitted on change rather than stored as a nesting
-    // level, so the step numbers stay one flat run from 1 to 12.
-    const label = sec.phase !== lastPhase
-      ? `<div class="section-label">${escapeHtml(sec.phase)}</div>` : '';
-    lastPhase = sec.phase;
-    const head = `<button class="guide-row ${open ? 'open' : ''}" data-action="toggle-group" data-view="guide" data-key="${sec.id}" data-open="${open}" aria-expanded="${open}">
-        <span class="guide-step">${i + 1}</span>
-        <span class="guide-title">${escapeHtml(sec.title)}</span>
+  const phases = [];
+  GUIDE_SECTIONS.forEach((sec, i) => {
+    const last = phases[phases.length - 1];
+    if (!last || last.phase !== sec.phase) phases.push({ phase: sec.phase, steps: [{ sec, i }] });
+    else last.steps.push({ sec, i });
+  });
+
+  const body = phases.map((ph) => {
+    const key = `phase:${ph.phase}`;
+    const open = groupOpen('guide', key, phases.length);
+    const first = ph.steps[0].i + 1;
+    const last = ph.steps[ph.steps.length - 1].i + 1;
+    const head = `<button class="group-head" data-action="toggle-group" data-view="guide" data-key="${escapeHtml(key)}" data-open="${open}" aria-expanded="${open}">
+        <span class="group-head-label">${escapeHtml(ph.phase)}</span>
+        <span class="group-head-meta">${open ? '' : `Steps ${first}–${last}`}</span>
         <span class="group-chev ${open ? 'open' : ''}">${ICONS.chevron}</span>
       </button>`;
-    if (!open) return label + head;
-    const notes = sec.notes.map((n) => `<li>${escapeHtml(n)}</li>`).join('');
-    return `${label}${head}<div class="guide-body">
-        <p class="guide-lead">${escapeHtml(sec.lead)}</p>
-        <ul class="guide-notes">${notes}</ul>
-      </div>`;
+    if (!open) return head;
+
+    const steps = ph.steps.map(({ sec, i }) => {
+      const so = groupOpen('guide', sec.id, GUIDE_SECTIONS.length);
+      const row = `<button class="guide-row ${so ? 'open' : ''}" data-action="toggle-group" data-view="guide" data-key="${sec.id}" data-open="${so}" aria-expanded="${so}">
+          <span class="guide-step">${i + 1}</span>
+          <span class="guide-title">${escapeHtml(sec.title)}</span>
+          <span class="group-chev ${so ? 'open' : ''}">${ICONS.chevron}</span>
+        </button>`;
+      if (!so) return row;
+      const notes = sec.notes.map((n) => `<li>${escapeHtml(n)}</li>`).join('');
+      return `${row}<div class="guide-body">
+          <p class="guide-lead">${escapeHtml(sec.lead)}</p>
+          <ul class="guide-notes">${notes}</ul>
+        </div>`;
+    }).join('');
+    return head + steps;
   }).join('');
-  return `<p class="guide-intro">${escapeHtml(GUIDE_INTRO)}</p>${sections}`;
+
+  return `<p class="guide-intro">${escapeHtml(GUIDE_INTRO)}</p>${body}`;
 }
 
 /**

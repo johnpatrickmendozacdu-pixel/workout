@@ -2312,7 +2312,14 @@
      is stretched and every number below drifts with it; with it, the mark can be
      placed from the measured ellipse and stay placed at any size. */
   .floor-plate{ position:absolute; left:6%; width:88%; top:72%; aspect-ratio:238/120; pointer-events:none; }
-  .floor-ring{ position:absolute; inset:0; overflow:hidden; pointer-events:none; opacity:0.8; }
+  /* Screened and dimmed, so it is light ON the floor rather than a picture of a
+     ring laid over it. Painted with alpha at 0.8 it replaced the stone it
+     covered and read as a decal: measured, it lifted that patch of floor from
+     7.6 to 17.4, more than doubling it. Screen lets the tiles show through the
+     glow the way real light does, and 0.5 puts the lift at about +6 instead of
+     +10 — visible, not a spotlight. */
+  .floor-ring{ position:absolute; inset:0; overflow:hidden; pointer-events:none;
+    opacity:0.5; mix-blend-mode:screen; }
   .floor-ring i{
     display:block; width:1000%; height:100%;
     background:url('/floor-ring.webp') 0 0 / 100% 100% no-repeat;

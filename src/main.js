@@ -3673,16 +3673,17 @@ function viewToday() {
     // Ended early is closed out, not won: it keeps the quiet row but takes a
     // flag instead of the tick, and shows the shortfall honestly.
     const short = r.endedEarly && r.hasTarget && r.total < r.target;
-    // Two trailing controls became one. The camera and the share glyph were
-    // both "do something with this finished exercise", and share-choice already
-    // offers the card and the proof together — so the row keeps its left edge
-    // clear and the arena shows through where the camera used to sit.
+    // The camera sits NEXT TO the share glyph rather than at the far left where
+    // it used to be: two controls at opposite ends of a row read as two
+    // unrelated things and cost the arena the whole left margin. Paired at the
+    // end they read as one set of controls for one finished exercise.
     return `<div class="done-row${short ? ' ended-early' : ''}">
       <button class="done-open" data-action="open-logger" data-id="${r.ex.id}">
         <span class="done-tick">${r.rest ? '🌙' : (short ? ICONS.flag : ICONS.check)}</span>
         <span class="done-name">${escapeHtml(r.ex.name)}</span>
         <span class="done-num">${r.rest ? 'Rest' : (r.setsMode ? `${r.scored} set${r.scored === 1 ? '' : 's'} · ${r.total} ${escapeHtml(r.ex.unit)}` : (short ? `${r.scored} of ${r.target}` : `${r.total} ${escapeHtml(r.ex.unit)}`))}${r.timer && r.timer.finishedAt ? `<i class="done-at">${escapeHtml(formatClock(r.timer.finishedAt))}</i>` : ''}</span>
       </button>
+      ${r.rest || !proofFor(state.proofLog, today, r.ex.id) ? '' : `<button class="done-proof" data-action="open-proof" data-id="${r.ex.id}" aria-label="See the proof for ${escapeHtml(r.ex.name)}">${ICONS.camera}</button>`}
       ${r.rest ? '' : `<button class="done-share" data-action="${proofFor(state.proofLog, today, r.ex.id) ? 'share-choice' : 'share-session'}" data-id="${r.ex.id}" aria-label="Share ${escapeHtml(r.ex.name)}">${ICONS.share}</button>`}
     </div>`;
   };

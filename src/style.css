@@ -2981,16 +2981,17 @@
     background:none; border:1px solid var(--accent); color:var(--accent);
   }
   .proof-view svg{width:14px; height:14px;}
+  /* Paired with the share glyph at the end of the row, not stranded at the
+     other edge. 34px inside the share button's own 44px box keeps the two
+     snug — one control set, not two — and there were two of these rules
+     fighting each other before, of which only the second ever applied. */
   .done-proof{
-    flex:0 0 auto; width:36px; height:36px; margin-right:8px;
+    flex:0 0 auto; width:34px; height:34px; margin:0 -2px 0 0;
     display:flex; align-items:center; justify-content:center;
     background:none; border:1px solid var(--accent); color:var(--accent);
   }
-
-  .done-proof{
-    flex:0 0 auto; width:34px; height:34px; display:flex; align-items:center; justify-content:center;
-    background:none; border:1px solid var(--accent); color:var(--accent); margin-right:8px;
-  }
+  .done-proof svg{ width:14px; height:14px; }
+  .done-proof:active{ transform:scale(0.9); }
   .proof-view{
     flex:0 0 auto; width:30px; height:30px; padding:0; display:flex; align-items:center; justify-content:center;
     background:none; border:1px solid var(--accent); color:var(--accent); margin:0 8px;

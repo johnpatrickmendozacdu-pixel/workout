@@ -20,7 +20,6 @@ import {
   migrateOverrides,
   calcTotal,
   progressValue,
-  targetMet,
   targetUnit,
   proofRequiredOn,
   proofFor,
@@ -95,11 +94,6 @@ const REP_PAD = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 15, 20, 25, 30, 50];
 /* ============================= STATE ============================= */
 const state = {
   view: db.prefs.get('view', 'today'),
-  /** Which screens are currently tucked. Per screen, not global: tucking Today
-   *  to look at the arena should not also empty Plan. Deliberately NOT
-   *  persisted — a screen you cleared yesterday must not greet you empty
-   *  tomorrow with no memory of having done it. It lasts the session. */
-  tucked: new Set(),
   exercises: [],
   setsLog: {},
   timersLog: {},
@@ -2843,23 +2837,6 @@ const NAV_ITEMS = [
   { view: 'guide', label: 'Guide', icon: 'book' },
 ];
 
-/**
- * The figure standing in the ring. Tapping it pulls the screen down into the
- * fire; tapping it again brings it back.
- *
- * It lives outside #view-container so the swap cannot take its own control
- * away with it, and it is hidden on Guide, which has nothing to tuck.
- */
-function renderTuckControl() {
-  const el = document.getElementById('tuck');
-  if (!el) return;
-  const on = state.tucked.has(state.view);
-  el.hidden = !canTuck();
-  el.classList.toggle('tucked', on);
-  el.setAttribute('aria-pressed', String(on));
-  el.setAttribute('aria-label', on ? 'Show the screen' : 'Clear the screen');
-}
-
 function renderNav() {
   const el = document.getElementById('bottom-nav');
   if (!el) return;
@@ -2896,7 +2873,6 @@ function rerender() {
   renderTopbar();
   renderBanner();
   renderView();
-  renderTuckControl();
   renderModal();
 }
 
@@ -3195,79 +3171,13 @@ function renderTopbar() {
  */
 let lastRenderedView = null;
 
-/**
- * What is left standing when a screen is tucked.
- *
- * Never nothing. A blank screen cannot tell you whether there is nothing to do
- * or whether everything is hidden, so every tucked screen keeps one line of
- * state and, where the screen has one, its single screen-level action.
- *
- * The rule for what survives: SCREEN-level actions stay, ITEM-level actions go
- * down with the items. Share this day belongs to the day, so it stays; sharing
- * one exercise belongs to that exercise, so you untuck to reach it.
- */
-function tuckSummaryHtml() {
-  const today = todayISO();
-  const line = (text, btn = '') =>
-    `<div class="tuck-summary">
-       <p>${escapeHtml(text)}</p>${btn}
-       <button class="tuck-open" data-action="toggle-tuck">Show the screen</button>
-     </div>`;
-
-  if (state.view === 'today') {
-    const scheduled = state.exercises
-      .filter((e) => e.active && !e.archived && isScheduledOn(e, today));
-    // A running clock outranks everything: hiding one is how a session is lost.
-    const day = state.timersLog[today] || {};
-    const runningId = Object.keys(day).find((id) => day[id] && day[id].status === 'running');
-    if (runningId) {
-      const ex = state.exercises.find((e) => e.id === runningId);
-      if (ex) return line(`${ex.name} — clock running`);
-    }
-    if (!scheduled.length) return line('Nothing scheduled today');
-    const left = scheduled.filter((e) =>
-      !targetMet(e, getSetsFor(e.id, today), getEffectiveTarget(e, today)));
-    if (!left.length) {
-      return line(`All done today · ${scheduled.length} exercise${scheduled.length === 1 ? '' : 's'}`,
-        `<button class="primary-btn wide" data-action="share-day">Share this day</button>`);
-    }
-    return line(`${left.length} to go · ${left.map((e) => e.name).join(', ')}`);
-  }
-
-  if (state.view === 'plan') {
-    const n = state.exercises.filter((e) => e.active && !e.archived).length;
-    return line(`${n} exercise${n === 1 ? '' : 's'} in your plan`,
-      `<button class="primary-btn wide" data-action="open-add">Add</button>`);
-  }
-
-  if (state.view === 'progress') {
-    const best = Math.max(0, ...state.exercises
-      .filter((e) => e.active && !e.archived)
-      .map((e) => exerciseStats(e, state.setsLog, state.timersLog, null, state.streakOverrides).streak || 0));
-    return line(best ? `${best} day streak, going` : 'No streak yet');
-  }
-
-  if (state.view === 'social') {
-    const crew = activeCrew();
-    if (!crew) return line('No crew yet');
-    const trained = (crew.members || []).filter((m) => m.trainedToday).length;
-    return line(`${crew.name} · ${trained} trained today`);
-  }
-  return line('');
-}
-
-/** Guide is all content — tucking it would leave a blank page, and its own
- *  tidy state is the steps collapsed, which it already does. */
-const canTuck = () => state.view !== 'guide';
-
 function renderView() {
   const el = document.getElementById('view-container');
   if (!el) return;
   const arriving = state.view !== lastRenderedView;
   lastRenderedView = state.view;
   el.classList.remove('view-enter');
-  if (canTuck() && state.tucked.has(state.view)) el.innerHTML = tuckSummaryHtml();
-  else if (state.view === 'today') el.innerHTML = viewToday();
+  if (state.view === 'today') el.innerHTML = viewToday();
   else if (state.view === 'plan') el.innerHTML = viewPlan();
   else if (state.view === 'guide') el.innerHTML = guideBodyHtml();
   else if (state.view === 'social') el.innerHTML = viewSocial();
@@ -6398,7 +6308,7 @@ document.addEventListener('click', async (e) => {
       state.expandedDay = null;
       // The browser animates the swap itself. Without the API the callback
       // still runs and the screen changes exactly as before.
-      fx.withTransition(() => { renderNav(); renderTopbar(); renderView(); renderBanner(); renderTuckControl(); });
+      fx.withTransition(() => { renderNav(); renderTopbar(); renderView(); renderBanner(); });
       // The room announces itself. Today has no line — it is where you already
       // are, and a greeting on arrival covers it.
       sound.speak({ plan: 'plan', progress: 'progress', social: 'social', guide: 'guide' }[state.view]);
@@ -6550,21 +6460,6 @@ document.addEventListener('click', async (e) => {
       renderModal();
       renderTopbar();
       break;
-    case 'toggle-tuck': {
-      if (!canTuck()) break;
-      const on = state.tucked.has(state.view);
-      // The absorb is the view transition we already have, with different
-      // keyframes for the duration — html.tucking is what picks them.
-      document.documentElement.classList.add(on ? 'untucking' : 'tucking');
-      fx.withTransition(() => {
-        if (on) state.tucked.delete(state.view); else state.tucked.add(state.view);
-        renderView();
-        renderTuckControl();
-      });
-      setTimeout(() => document.documentElement.classList.remove('tucking', 'untucking'), 700);
-      break;
-    }
-
     case 'open-sound':
       state.modal = { type: 'sound' };
       renderModal();

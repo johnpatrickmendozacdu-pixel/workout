@@ -2714,6 +2714,66 @@
   .view-enter > *:nth-child(7){animation-delay:156ms;}
   .view-enter > *:nth-child(n+8){animation-delay:180ms;}
 
+  /* ---------- the figure in the ring ----------
+     A silhouette standing on the floor with an ember at the heart. It is the
+     handle for the whole screen: tap it and the cards fall into the fire.
+
+     It stands INSIDE the ring — the ring's crest is at 77% and the nav starts
+     at 90.5%, so the figure occupies the floor between them. Outside
+     #view-container on purpose: a control that swaps itself away cannot bring
+     the screen back. */
+  #tuck{
+    position:fixed; left:50%; bottom:11.5%; translate:-50% 0;
+    width:52px; height:78px; padding:0; border:0; background:none;
+    z-index:6; cursor:pointer; -webkit-tap-highlight-color:transparent;
+  }
+  #tuck[hidden]{ display:none; }
+  #tuck .figure, #tuck .ember{ position:absolute; inset:0; }
+  #tuck .figure{ background:url('/figure.webp') center/contain no-repeat; }
+  #tuck .ember{
+    background:url('/figure-ember.webp') center/contain no-repeat;
+    mix-blend-mode:screen; animation:heart 2.6s ease-in-out infinite;
+  }
+  /* The ember is the only part that moves while it waits — a heartbeat, slow
+     enough to read as alive rather than as a notification. */
+  @keyframes heart{ 0%,100%{ opacity:.55; } 50%{ opacity:1; } }
+  #tuck.tucked .ember{ animation-duration:1.5s; }
+  #tuck:active{ scale:0.94; }
+  @media (prefers-reduced-motion: reduce){ #tuck .ember{ animation:none; opacity:.8; } }
+
+  /* What stands in for a tucked screen: one line, and at most one action. */
+  .tuck-summary{
+    display:flex; flex-direction:column; gap:10px; align-items:center;
+    text-align:center; padding:18px 16px 0;
+  }
+  .tuck-summary p{ margin:0; font-size:14px; color:var(--text-dim); }
+  .tuck-summary .primary-btn{ max-width:320px; }
+  .tuck-open{
+    appearance:none; background:none; border:0; cursor:pointer;
+    font:inherit; font-size:12.5px; letter-spacing:.06em; text-transform:uppercase;
+    color:var(--text-faint); padding:6px 10px;
+  }
+
+  /* The absorb. The screen does not fade — it falls into the ring and shrinks
+     toward the figure, which is where the fire is. Reuses the view transition
+     already in place; html.tucking only swaps which keyframes run. */
+  html.tucking::view-transition-old(screen){
+    animation:absorb .42s cubic-bezier(.55,0,.85,.3) both;
+  }
+  html.tucking::view-transition-new(screen){
+    animation:vt-in .3s var(--ease-out) both;
+  }
+  html.untucking::view-transition-old(screen){ animation:vt-out .2s ease-in both; }
+  html.untucking::view-transition-new(screen){
+    animation:rise .44s var(--ease-out) both;
+  }
+  @keyframes absorb{
+    to{ opacity:0; transform:translateY(26%) scale(.72); filter:blur(2px); }
+  }
+  @keyframes rise{
+    from{ opacity:0; transform:translateY(26%) scale(.72); filter:blur(2px); }
+  }
+
   /* ---------- the screen change ----------
      The browser snapshots the outgoing and incoming screens and animates
      between them on the compositor. No library, no per-frame JavaScript, and

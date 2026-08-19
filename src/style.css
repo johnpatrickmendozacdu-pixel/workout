@@ -6,9 +6,29 @@
     --paper:#0A0C0B;
     --bg:#0A0C0B;
     --bg-elevated:#141917;
-    --bg-card:#141917;
+    /* Translucent, so the arena runs UNDERNEATH the cards instead of stopping
+       at every card edge. The screen was not cluttered because it holds too
+       much — it was cluttered because 44 surfaces painted a solid wall over the
+       picture, and the background only survived in the gaps between them.
+
+       0.80 is a floor, not a taste: at the brightest the scrimmed arena ever
+       gets behind a card, RGB(146,181,174), this keeps body text at 10.3:1 and
+       the muted text at 5.1:1, both above the 4.5:1 readability bar. 0.74 puts
+       the muted text under it, so it is the last stop before something becomes
+       hard to read on a fire.
+
+       Sheets are NOT affected — they use --bg-elevated and stay solid, because
+       a sheet is a task you are doing, not scenery you are looking past. */
+    --bg-card:rgba(20,25,23,0.80);
     --bg-card-hover:#1B211F;
-    --surface:#141917;
+    /* The brutalist panels — Today's cards, the exercise card, the timer
+       buttons. Same 0.80 as --bg-card and for the same reason: these are the
+       biggest surfaces on the screen, so they are most of the wall.
+       --surface-solid is for the handful of places see-through is wrong: a
+       chart dot's outline exists to punch a hole in the line behind it, and an
+       avatar is a picture, not scenery. */
+    --surface:rgba(20,25,23,0.80);
+    --surface-solid:#141917;
     --silver:#C3C9C4;
     --silver-deep:#7C857F;
     --ink:#D8DEDA;             /* rule and primary text — light on black */
@@ -1773,8 +1793,8 @@
   .traj svg{width:100%; height:auto; display:block; overflow:visible;}
   .traj-line{fill:none; stroke:var(--silver); stroke-width:2; stroke-linejoin:round; stroke-linecap:round;}
   .traj-target{fill:none; stroke:#3A423F; stroke-width:2; stroke-dasharray:5 4;}
-  .traj-dot.hit{fill:var(--accent); stroke:var(--surface); stroke-width:2;}
-  .traj-dot.short{fill:var(--surface); stroke:var(--silver); stroke-width:2;}
+  .traj-dot.hit{fill:var(--accent); stroke:var(--surface-solid); stroke-width:2;}
+  .traj-dot.short{fill:var(--surface-solid); stroke:var(--silver); stroke-width:2;}
   .traj-label{
     fill:var(--text); font-family:var(--font-mono); font-size:11px; font-weight:700;
   }
@@ -1815,12 +1835,12 @@
      Square, like everything else here: a circular crop would be the only
      rounded thing in a zero-radius design. */
   .avatar-photo{width:100%; height:100%; object-fit:cover; display:block;}
-  .avatar-chip.has-photo{padding:0; overflow:hidden; background:var(--surface);}
+  .avatar-chip.has-photo{padding:0; overflow:hidden; background:var(--surface-solid);}
   .profile-photo-block{margin-bottom:16px; text-align:center;}
   /* square, like every other surface here — the circle was the one rounded
      thing left in a zero-radius design */
   .profile-avatar-big{border-radius:0; margin-bottom:0;}
-  .profile-avatar-big.has-photo{padding:0; overflow:hidden; background:var(--surface); border:2px solid var(--ink);}
+  .profile-avatar-big.has-photo{padding:0; overflow:hidden; background:var(--surface-solid); border:2px solid var(--ink);}
   .profile-avatar-big.has-photo img{width:100%; height:100%; object-fit:cover; display:block;}
   .profile-photo-actions{display:flex; gap:8px; justify-content:center; margin-top:10px;}
   .photo-btn{
@@ -1955,7 +1975,7 @@
 /* ---- Weekly weight chart (reuses trajectory look) ---- */
 .traj-chart{width:100%;height:auto;display:block;margin:6px 0 4px;}
 .traj-chart .traj-dot{fill:var(--silver);}
-.traj-chart .traj-dot-current{fill:var(--accent);stroke:var(--surface);stroke-width:2;}
+.traj-chart .traj-dot-current{fill:var(--accent);stroke:var(--surface-solid);stroke-width:2;}
 
 /* A one-off has no schedule to choose, so the field states the fact instead of
    offering a control that would only ever have one answer. */

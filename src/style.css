@@ -2307,7 +2307,7 @@
      puts the ring's centre at 73%, which is the line Johnny drew across the
      floor. It has been 88.5% (under the nav) and 78% (still too low) on the way
      here — move this number, not the one you wish the ring had. */
-  html.opt2 .floor-plate{ left:-4%; width:108%; top:55.8%; }
+  html.opt2 .floor-plate{ left:-4%; width:108%; top:67.5%; }
 
   html.idle .floor-ring i{ animation-play-state:paused; }
   @media (prefers-reduced-motion: reduce){
@@ -2615,10 +2615,10 @@
      shorter distance, so they read as thrown up by the circle instead of
      drifting past it. Written as a block so it can be deleted in one piece if
      option 1 wins. */
-  /* Out of the ring's centre — 73% down the stage, so 27% up from the bottom.
+  /* Out of the ring's centre — 84.7% down the stage, so 15.3% up from the bottom.
      The height is unchanged because the ring did not move vertically, only
      inward; the spread below is what had to follow it. */
-  html.opt2 #embers i{ bottom:27%; }
+  html.opt2 #embers i{ bottom:15.3%; }
   html.opt2 #embers i:nth-child(1){left:34%;}
   html.opt2 #embers i:nth-child(2){left:44%;}
   html.opt2 #embers i:nth-child(3){left:53%;}

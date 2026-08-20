@@ -2895,6 +2895,29 @@
 
   html.idle .avatar-chip.has-photo::before,
   html.idle .profile-avatar-big.has-photo::before{ animation-play-state:paused; }
+
+  /* Building the proof collage draws a 1080x1920 frame thirty times a second
+     for as long as the clip runs. Until 2026-08-19 the arena behind it was a
+     still picture and the build had the phone to itself; since the fire was lit
+     it is three lava layers, seven masked sprite sheets, the sigil, the ring
+     and twenty-two embers, all full-screen at device resolution, competing for
+     the same chip. The collage got choppy in exactly that window.
+
+     Same freeze `idle` performs, on its own class so it never argues with the
+     visibility handler that owns `idle`. Nothing is visible during a build —
+     the sheet covers the screen — so this costs the picture nothing. */
+  html.building #arena i,
+  html.building .firelight,
+  html.building #firelight,
+  html.building .arena-lava,
+  html.building .arena-lava i,
+  html.building .arena-flame i,
+  html.building .arena-sigil,
+  html.building .floor-ring i,
+  html.building #embers i,
+  html.building .streak-pill svg,
+  html.building .avatar-chip.has-photo::before,
+  html.building .profile-avatar-big.has-photo::before{ animation-play-state:paused; }
   @media (prefers-reduced-motion: reduce){
     .avatar-chip.has-photo::before{ animation:none; opacity:0.92; }
     .profile-avatar-big.has-photo::before{ animation:none; opacity:0.92; }

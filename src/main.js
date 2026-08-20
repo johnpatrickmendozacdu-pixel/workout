@@ -2798,6 +2798,8 @@ async function buildProofVideoCollage(exId, opts) {
     const expectedMs = Number.isFinite(vid.duration) && vid.duration > 0
       ? vid.duration * 1000 : collageSafetyMs();
 
+    // Give the build the phone back — see the html.building block in style.css.
+    document.documentElement.classList.add('building');
     releaseScreen = await holdScreenAwake();
     rec.start();
     const startedAt = Date.now();
@@ -2838,6 +2840,7 @@ async function buildProofVideoCollage(exId, opts) {
   } catch (e) {
     return null;
   } finally {
+    document.documentElement.classList.remove('building');
     if (stopEarly) stopEarly();
     if (releaseScreen) releaseScreen();
     // An ImageBitmap holds memory the garbage collector does not chase.
@@ -2862,13 +2865,13 @@ async function buildCollageFor(exId, onProgress) {
   if (hasProofVideo(d, exId)) {
     showToast('Building your video — it runs the whole clip through, so give it about as long as the clip.');
     const made = await buildProofVideoCollage(exId, onProgress ? { onProgress } : undefined);
-    // Below two thirds of the 30 we ask for, the judder is visible. The FIRST
-    // version of this line blamed the screen going to sleep, and it was
-    // reported against a phone whose screen never slept — the loop can simply
-    // miss its deadline while the encoder is busy, and no wake lock helps that.
-    // Say what is true and name the one thing that does help.
+    // Below two thirds of the 30 we ask for, the judder is visible. This line
+    // has now named a cause twice and been wrong twice — first the screen
+    // sleeping, then the phone being too slow, on a phone that had already made
+    // a clean one. It reports the symptom and stops guessing: what it is FOR is
+    // making sure a choppy file is never handed over in silence again.
     if (made && made.fps < 20) {
-      showToast('That came out a bit choppy — your phone couldn’t draw and encode fast enough at once. A shorter clip records more smoothly.');
+      showToast('That one came out choppy — the video is still saved. A shorter clip usually records cleanly.');
     }
     if (made) return made;
     showToast("Your phone couldn't make the video card — here is the photo one.");

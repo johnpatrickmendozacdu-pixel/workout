@@ -179,9 +179,11 @@
   .empty-card h3{margin:0 0 6px; font-size:17px;}
   .empty-card p{margin:0 0 18px; color:var(--text-dim); font-size:14px; line-height:1.5;}
 
-  /* Alone on the screen, and only then: nothing logged, nothing planned, no
-     habit, signed in or not. A first arrival, where the arena has to do the
-     selling and a 265px panel sat straight over the wall sigil.
+  /* Alone on the screen, and only then. The test is PER SCREEN, not per
+     account: an empty Today gets it while a Plan with exercises in it does not,
+     on the same phone in the same second. `:only-child` is exactly that test —
+     the empty card is the whole of what this view drew — and it is why a Today
+     that also holds a health habit is left alone: that screen is not empty.
 
      No panel. Measured at 667px, the arena leaves exactly two gaps with no
      effect in them — 47px and 20px — and embers drift across the whole screen,
@@ -190,21 +192,20 @@
      asked: the words sit ON the arena, fire runs behind every letter, and the
      instruction survives intact. `:only-child` beats the plain class on
      specificity, so it wins wherever it applies and nowhere else. */
-  #view-container.first-run .empty-card:only-child{
+  .empty-card:only-child{
     background:none; border:none; padding:0; margin:0;
     display:flex; flex-direction:column; align-items:center; text-align:center; gap:10px;
     text-shadow:0 2px 10px rgba(6,8,7,0.95), 0 0 3px rgba(6,8,7,0.9);
   }
-  #view-container.first-run .empty-card:only-child .glyph{display:none;}
-  #view-container.first-run .empty-card:only-child p{
+  .empty-card:only-child .glyph{display:none;}
+  .empty-card:only-child p{
     display:block; margin:0; max-width:19em;
     color:var(--text); font-size:13.5px; line-height:1.5;
   }
-  #view-container.first-run .empty-card:only-child h3{margin:0; font-size:19px; line-height:1.2; font-weight:800;}
+  .empty-card:only-child h3{margin:0; font-size:19px; line-height:1.2; font-weight:800;}
   /* Reads as 36px, taps at 44: the border grows the hit area and the negative
      margin gives the space straight back. Same trick the proof camera uses. */
-  #view-container.first-run .empty-card:only-child .primary-btn,
-  #view-container.first-run .empty-card:only-child .secondary-btn{
+  .empty-card:only-child .primary-btn, .empty-card:only-child .secondary-btn{
     flex:0 0 auto; padding:0 15px; min-height:44px; font-size:13px;
     border-top:4px solid transparent; border-bottom:4px solid transparent;
     background-clip:padding-box; margin:-4px 0;
@@ -213,7 +214,7 @@
      ends at 39.3% of the screen on a 667 and 41.3% on an 812 — it moves,
      because the arena is sized to cover — so 43vh clears it on both and needs
      no media query. Only a view whose ENTIRE content is that block. */
-  #view-container.first-run:has(> .empty-card:only-child){ padding-top:43vh; }
+  #view-container:has(> .empty-card:only-child){ padding-top:43vh; }
   .primary-btn{
     background:var(--accent); color:var(--accent-ink); border:none; border-radius:999px;
     padding:12px 22px; font-weight:700; font-size:14.5px;
@@ -2824,7 +2825,7 @@
   .modal-sheet, .ex-card, .plan-row, .empty-card, .habit-day-card,
   .habit-block, .day-row, .break-row, .timer-block{text-shadow:none;}
   /* ...but not the alone-on-screen one, whose shadow IS its legibility. */
-  #view-container.first-run .empty-card:only-child{ text-shadow:0 2px 10px rgba(6,8,7,0.95), 0 0 3px rgba(6,8,7,0.9); }
+  .empty-card:only-child{ text-shadow:0 2px 10px rgba(6,8,7,0.95), 0 0 3px rgba(6,8,7,0.9); }
 
   /* ---------- the fire breathes ----------
      Sits over the flame band of the photo and ADDS light (screen blend), so the

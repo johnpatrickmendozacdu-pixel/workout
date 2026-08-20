@@ -1938,17 +1938,35 @@ function drawShareFooter(g, S, pad, avatar, standing, roleIcon, classIcon, overP
   }
 
   // Right column — role above class, art then word, both right-aligned.
+  // The crown was 34px of line art sitting bare on whatever the clip happened
+  // to show. It is the one mark on the card that says rank, so it gets the size
+  // to be seen and the same plate the category icon gets.
+  const ICON = overPicture ? 46 : 34;
   const badge = (icon, label, baseline) => {
     if (!label) return;
     g.textAlign = 'right';
     g.fillStyle = D; g.font = "700 22px 'JetBrains Mono', ui-monospace, monospace";
     ink(label.toUpperCase(), S - pad, baseline, 22);
     const w = g.measureText(label.toUpperCase()).width;
-    if (icon) g.drawImage(icon, S - pad - w - 44, baseline - 27, 34, 34);
+    if (icon) {
+      const ix = S - pad - w - ICON - 14, iy = baseline - ICON + 7;
+      if (overPicture) {
+        g.save();
+        g.beginPath();
+        if (g.roundRect) g.roundRect(ix - 7, iy - 7, ICON + 14, ICON + 14, 12);
+        else g.rect(ix - 7, iy - 7, ICON + 14, ICON + 14);
+        g.fillStyle = 'rgba(6,8,7,0.58)'; g.fill();
+        g.lineWidth = 2; g.strokeStyle = 'rgba(62,224,159,0.55)'; g.stroke();
+        g.restore();
+      }
+      g.drawImage(icon, ix, iy, ICON, ICON);
+    }
     g.textAlign = 'left';
   };
+  // 46 apart suits two bare 34px marks. Plated at 46px they are 60 tall and the
+  // two tins collide, so over a picture the second badge drops to clear it.
   badge(roleIcon, (roleInfo(standing.role) || {}).label, nameY);
-  badge(classIcon, (classInfo(standing.klass) || {}).label, nameY + 46);
+  badge(classIcon, (classInfo(standing.klass) || {}).label, nameY + (overPicture ? 66 : 46));
 
   drawWatermark(y);
 }
@@ -2004,7 +2022,7 @@ async function buildShareImage(ex, s) {
   let name = ex.name;
   while (g.measureText(name).width > S - nameX - pad && name.length > 4) name = name.slice(0, -1);
   if (name !== ex.name) name += '…';
-  ink(name, nameX, SAFE_TOP - 20, 52);
+  g.fillText(name, nameX, SAFE_TOP - 20);
 
   const cat = categoryOf(ex);
   if (cat) {
@@ -2192,7 +2210,7 @@ async function buildSessionImage(ex, session) {
 
   const pad = 76;
   const icon = await shareLoadIcon(ex);
-  if (icon) g.drawImage(icon, pad, SAFE_TOP - 78, 118, 118);
+  // the icon is drawn with its plate below, once overPicture is known
 
   g.textBaseline = 'alphabetic';
   // A clip and a photo are the same problem: something real is behind the words.
@@ -2236,16 +2254,36 @@ async function buildSessionImage(ex, session) {
   // wash out. On the opaque card nothing moves.
   const DIM2 = overPicture ? '#D8E0DB' : DIM;
   const FAINT2 = overPicture ? '#C4CEC9' : FAINT;
+  /* The category icons are white line art with a green mark. Over a dark card
+     they read; over a bright ceiling they are white on white and simply are
+     not there — reported against the dip bar, invisible in its own collage.
+     A plate gives every icon a ground whatever is behind it, and the green
+     hairline is what makes it look placed rather than pasted on. */
+  if (icon) {
+    if (overPicture) {
+      g.save();
+      g.beginPath();
+      if (g.roundRect) g.roundRect(pad - 12, SAFE_TOP - 90, 142, 142, 22);
+      else g.rect(pad - 12, SAFE_TOP - 90, 142, 142);
+      g.fillStyle = 'rgba(6,8,7,0.58)'; g.fill();
+      g.lineWidth = 2; g.strokeStyle = 'rgba(62,224,159,0.55)'; g.stroke();
+      g.restore();
+    }
+    g.drawImage(icon, pad, SAFE_TOP - 78, 118, 118);
+  }
   shadowOn();
   g.fillStyle = TEXT; g.font = "700 52px Manrope, system-ui, sans-serif";
   const nameX = icon ? pad + 146 : pad;
   let name = ex.name;
   while (g.measureText(name).width > S - nameX - pad && name.length > 4) name = name.slice(0, -1);
   if (name !== ex.name) name += '…';
-  g.fillText(name, nameX, SAFE_TOP - 20);
+  ink(name, nameX, SAFE_TOP - 20, 52);
 
   const cat = categoryOf(ex);
-  g.fillStyle = FAINT; g.font = "600 26px 'JetBrains Mono', ui-monospace, monospace";
+  // Green over a picture. Grey small caps on a photograph read as a caption
+  // somebody forgot to style, and this line is where a viewer looks second.
+  g.fillStyle = overPicture ? ACCENT : FAINT;
+  g.font = "700 27px 'JetBrains Mono', ui-monospace, monospace";
   // The finishing clock joins the metadata line rather than the figures. It
   // answers WHEN, which is what the date beside it answers; the TIME tile below
   // answers what it TOOK. Set as a fourth tile the two would sit side by side
@@ -2305,8 +2343,9 @@ async function buildSessionImage(ex, session) {
   tiles.forEach(([label, value], i) => {
     const x = pad + i * colW;
     shadowOn();
-    g.fillStyle = FAINT2; g.font = "600 24px 'JetBrains Mono', ui-monospace, monospace";
-    ink(label, x, 1340, 24);
+    g.fillStyle = overPicture ? ACCENT : FAINT;
+    g.font = "700 26px 'JetBrains Mono', ui-monospace, monospace";
+    ink(label, x, 1340, 26);
     g.fillStyle = TEXT;
     let size = 62;
     g.font = `700 ${size}px 'Martian Mono', ui-monospace, monospace`;

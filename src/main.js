@@ -2597,12 +2597,72 @@ const collageSafetyMs = () => (PROOF_VIDEO_MAX_SEC + 5) * 1000;
 // MP4 first, because it is the only container every story sheet accepts. This
 // picks a preference order; it never gates the button. The verdict is
 // playableVideoBlob, on the file that comes out.
+/* The level matters. `avc1.42E01E` is Baseline LEVEL 3.0, whose ceiling is
+   1620 macroblocks — about 720x576. A 1080x1920 card is 8160, five times over,
+   so that string asks for something H.264 does not allow. Chrome quietly
+   rewrites it (measured: it hands back avc1.420028, level 4.0) and no other
+   browser promises to. Level 4.0 is asked for FIRST and the old string is kept
+   under it, so a phone that only knows 3.0 still records rather than falling
+   all the way to WebM, which saves to the roll but Instagram refuses. */
 const RECORDER_TYPES = [
+  'video/mp4;codecs=avc1.42E028',
   'video/mp4;codecs=avc1.42E01E',
   'video/mp4',
   'video/webm;codecs=vp9',
   'video/webm',
 ];
+
+/* 40 MB is the most the share file may weigh. It is not a quality target — the
+   10 Mbps rate is — it is the point past which a long clip stops being a file a
+   phone can hold in memory and hand to a share sheet. */
+const SHARE_MAX_BYTES = 40 * 1024 * 1024;
+
+/* Screen sleep is what actually ruined the video. Building runs in real time,
+   so a 23s clip holds the phone for 23s — and the moment the screen dims, the
+   page is hidden and setInterval is throttled to about 1Hz. Those seconds go in
+   at 1fps. Measured on the reported file: 13.71fps against a target of 30.
+
+   The lock is entirely optional. Where it does not exist, or is refused (low
+   battery, or the page is not visible when we ask), the build runs exactly as
+   it always did — this can only ever help. It is released the moment the build
+   ends, and re-taken if the phone comes back to us mid-build, because the
+   browser drops the lock on its own whenever the page hides. */
+async function holdScreenAwake() {
+  if (!navigator.wakeLock || !navigator.wakeLock.request) return () => {};
+  let lock = null;
+  // `taking` matters: lock is only assigned once the request RESOLVES, so two
+  // visibility flips in quick succession both see !lock, both request, and the
+  // second assignment orphans the first — a lock nothing can release, holding
+  // the screen awake after the build is over. A battery bug, not a video one.
+  let taking = false;
+  // `dead` closes the last hole: the build can finish while a re-take fired by
+  // visibilitychange is still in flight. Release then sees no lock and frees
+  // nothing, the request resolves a moment later, and the phone is left holding
+  // a lock with no owner. A request that lands after the end releases itself.
+  let dead = false;
+  const drop = (l) => { try { const p = l.release(); if (p && p.catch) p.catch(() => {}); } catch (e) { /* gone */ } };
+  const take = async () => {
+    if (taking || lock || dead) return;
+    taking = true;
+    try {
+      const got = await navigator.wakeLock.request('screen');
+      if (dead) drop(got); else lock = got;
+    } catch (e) { /* refused: the build runs exactly as it always did */ }
+    finally { taking = false; }
+  };
+  const back = () => { if (document.visibilityState === 'visible') take(); };
+  await take();
+  document.addEventListener('visibilitychange', back);
+  return () => {
+    dead = true;
+    document.removeEventListener('visibilitychange', back);
+    // release() returns a PROMISE. A sync try/catch does not catch its
+    // rejection, and an unclaimed rejection is the same fault just fixed in
+    // fx.js. Releasing a lock the browser already dropped is normal, not news.
+    if (lock) drop(lock);
+    lock = null;
+  };
+}
 
 /**
  * The same card, with the clip as its moving ground.
@@ -2621,7 +2681,10 @@ const RECORDER_TYPES = [
 async function buildProofVideoCollage(exId, opts) {
   const W = (opts && opts.width) || SHARE_W;
   const H = (opts && opts.height) || SHARE_H;
-  const bitsPerSec = (opts && opts.bitsPerSec) || 4000000;
+  // 10 Mbps, not 4. Only the crew copy has a byte budget, and it passes its own
+  // rate in; the file that goes to the share sheet has no cap at all, so the
+  // only thing 4 Mbps bought was a softer picture for Instagram to re-encode.
+  const bitsPerSec = (opts && opts.bitsPerSec) || 10000000;
   const ex = state.exercises.find((e) => e.id === exId);
   const d = todayISO();
   const raw = ex && await loadProofVideo(d, exId);
@@ -2643,6 +2706,7 @@ async function buildProofVideoCollage(exId, opts) {
   vid.loop = false;
 
   let stopEarly = null;
+  let releaseScreen = null;
   try {
     const card = await buildSessionImage(ex, {
       total: progressValue(ex, arr), target,
@@ -2658,11 +2722,33 @@ async function buildProofVideoCollage(exId, opts) {
       overlayOnly: true,
     });
 
-    await new Promise((res, rej) => {
+    // Neither of these settles if the decoder stalls — a damaged clip, or iOS
+    // declining to hand back a frame — and nothing else here is watching. The
+    // modal would then sit on "Building your video" for as long as the app is
+    // open, with no error and no way forward. A local blob that has not loaded
+    // in fifteen seconds is not going to, and a throw here is already handled:
+    // it falls out to the photo card, which is the honest answer.
+    const withTimeout = (promise, ms, what) => Promise.race([
+      promise,
+      new Promise((res, rej) => setTimeout(() => rej(new Error(what)), ms)),
+    ]);
+
+    await withTimeout(new Promise((res, rej) => {
       vid.onloadeddata = res;
       vid.onerror = () => rej(new Error('decode-failed'));
       vid.src = url;
-    });
+    }), 15000, 'decode-stalled');
+
+    // A rate alone is unbounded in one direction: 10 Mbps across the full
+    // 60-second clip is a 75 MB blob, and every chunk of it sits in memory on
+    // the phone until the share sheet takes it. The rate is the ceiling for a
+    // short clip; SHARE_MAX_BYTES is the ceiling for a long one, and whichever
+    // is lower wins. A caller that passed its own rate (the crew copy) keeps
+    // it — it has a tighter budget of its own and already measures the result.
+    let rate = bitsPerSec;
+    if (!(opts && opts.bitsPerSec) && Number.isFinite(vid.duration) && vid.duration > 1) {
+      rate = Math.max(2000000, Math.min(bitsPerSec, Math.floor((SHARE_MAX_BYTES * 8) / vid.duration)));
+    }
 
     const c = document.createElement('canvas');
     c.width = W; c.height = H;
@@ -2671,7 +2757,7 @@ async function buildProofVideoCollage(exId, opts) {
     const mime = RECORDER_TYPES.find((t) => {
       try { return MediaRecorder.isTypeSupported(t); } catch (e) { return false; }
     });
-    const rec = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: bitsPerSec } : {});
+    const rec = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: rate } : {});
     const chunks = [];
     rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
     const finished = new Promise((res) => { rec.onstop = res; });
@@ -2687,16 +2773,31 @@ async function buildProofVideoCollage(exId, opts) {
     // A timer keeps firing while hidden (throttled, so choppier), which is a
     // worse video and not a broken one.
     let ticker = 0;
+    // Counted, because a frame rate is the one thing about this file we cannot
+    // read back off it afterwards and the user cannot be asked to eyeball.
+    let drawn = 0;
     const draw = () => {
       g.drawImage(vid, vx, vy, vw, vh);
       g.drawImage(card, 0, 0, W, H);
+      drawn++;
     };
 
+    releaseScreen = await holdScreenAwake();
     rec.start();
-    await vid.play();
+    const startedAt = Date.now();
+    // Stamped where the DRAWING stops, never where the function returns: the
+    // encoder flush and playableVideoBlob's decode both sit after this, and
+    // counting their seconds against a frame count that stopped rising would
+    // report a clean 30fps build as choppy.
+    let stoppedAt = 0;
+    await withTimeout(vid.play(), 10000, 'play-stalled');
     draw();
     ticker = setInterval(draw, 1000 / 30);
-    stopEarly = () => { clearInterval(ticker); try { rec.stop(); } catch (e) { /* already stopped */ } };
+    stopEarly = () => {
+      clearInterval(ticker);
+      if (!stoppedAt) stoppedAt = Date.now();
+      try { rec.stop(); } catch (e) { /* already stopped */ }
+    };
     // The clip ending is what stops it. The timeout is only a backstop for a
     // duration that never arrives or a playback that stalls — never the thing
     // that decides the length, which is how the eight-second cap used to cut a
@@ -2717,11 +2818,13 @@ async function buildProofVideoCollage(exId, opts) {
     // Half of what was asked for, floored at half a second: enough slack for a
     // throttled tab, tight enough that a one-frame file can never pass.
     if (!await playableVideoBlob(blob, Math.max(0.5, (wantMs / 1000) * 0.5))) return null;
-    return { blob, mime: blob.type };
+    const secs = Math.max(0.001, ((stoppedAt || Date.now()) - startedAt) / 1000);
+    return { blob, mime: blob.type, fps: drawn / secs };
   } catch (e) {
     return null;
   } finally {
     if (stopEarly) stopEarly();
+    if (releaseScreen) releaseScreen();
     vid.pause();
     vid.src = '';
     URL.revokeObjectURL(url);
@@ -2742,6 +2845,13 @@ async function buildCollageFor(exId) {
   if (hasProofVideo(d, exId)) {
     showToast('Building your video — it runs the whole clip through, so give it about as long as the clip.');
     const made = await buildProofVideoCollage(exId);
+    // Below two thirds of the 30 we ask for, the judder is visible. It means
+    // the phone put us in the background mid-build — the screen going to sleep
+    // is the usual reason, and the wake lock is not offered by every browser.
+    // Handing over a choppy file without a word is how this went unreported.
+    if (made && made.fps < 20) {
+      showToast('That came out choppy — your screen slept while it built. Tap again with the screen awake for a clean one.');
+    }
     if (made) return made;
     showToast("Your phone couldn't make the video card — here is the photo one.");
   } else {

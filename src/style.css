@@ -167,7 +167,10 @@
   }
   .total-edit-input.large{font-size:28px; width:90px; text-align:center; padding:4px 8px;}
 
-  /* ---------- empty state ---------- */
+  /* ---------- empty state ----------
+     The original panel, unchanged, for any empty card that SHARES its screen —
+     a Today with a health habit and no exercises still has a plan, and its card
+     must look and sit exactly where it always did. */
   .empty-card{
     background:var(--bg-card); border:1px dashed var(--border-strong); border-radius:var(--radius-lg);
     padding:36px 24px; text-align:center; margin-top:20px;
@@ -175,6 +178,42 @@
   .empty-card .glyph{font-size:32px; margin-bottom:10px;}
   .empty-card h3{margin:0 0 6px; font-size:17px;}
   .empty-card p{margin:0 0 18px; color:var(--text-dim); font-size:14px; line-height:1.5;}
+
+  /* Alone on the screen, and only then: nothing logged, nothing planned, no
+     habit, signed in or not. A first arrival, where the arena has to do the
+     selling and a 265px panel sat straight over the wall sigil.
+
+     No panel. Measured at 667px, the arena leaves exactly two gaps with no
+     effect in them — 47px and 20px — and embers drift across the whole screen,
+     so there is no rectangle here where a box covers nothing. A box was the
+     wrong shape for the problem. Take it away and the question stops being
+     asked: the words sit ON the arena, fire runs behind every letter, and the
+     instruction survives intact. `:only-child` beats the plain class on
+     specificity, so it wins wherever it applies and nowhere else. */
+  #view-container.first-run .empty-card:only-child{
+    background:none; border:none; padding:0; margin:0;
+    display:flex; flex-direction:column; align-items:center; text-align:center; gap:10px;
+    text-shadow:0 2px 10px rgba(6,8,7,0.95), 0 0 3px rgba(6,8,7,0.9);
+  }
+  #view-container.first-run .empty-card:only-child .glyph{display:none;}
+  #view-container.first-run .empty-card:only-child p{
+    display:block; margin:0; max-width:19em;
+    color:var(--text); font-size:13.5px; line-height:1.5;
+  }
+  #view-container.first-run .empty-card:only-child h3{margin:0; font-size:19px; line-height:1.2; font-weight:800;}
+  /* Reads as 36px, taps at 44: the border grows the hit area and the negative
+     margin gives the space straight back. Same trick the proof camera uses. */
+  #view-container.first-run .empty-card:only-child .primary-btn,
+  #view-container.first-run .empty-card:only-child .secondary-btn{
+    flex:0 0 auto; padding:0 15px; min-height:44px; font-size:13px;
+    border-top:4px solid transparent; border-bottom:4px solid transparent;
+    background-clip:padding-box; margin:-4px 0;
+  }
+  /* Below the sigil, which is the one thing that must not be touched. The sigil
+     ends at 39.3% of the screen on a 667 and 41.3% on an 812 — it moves,
+     because the arena is sized to cover — so 43vh clears it on both and needs
+     no media query. Only a view whose ENTIRE content is that block. */
+  #view-container.first-run:has(> .empty-card:only-child){ padding-top:43vh; }
   .primary-btn{
     background:var(--accent); color:var(--accent-ink); border:none; border-radius:999px;
     padding:12px 22px; font-weight:700; font-size:14.5px;
@@ -2784,6 +2823,8 @@
   body{text-shadow:0 1px 3px rgba(0,0,0,0.85);}
   .modal-sheet, .ex-card, .plan-row, .empty-card, .habit-day-card,
   .habit-block, .day-row, .break-row, .timer-block{text-shadow:none;}
+  /* ...but not the alone-on-screen one, whose shadow IS its legibility. */
+  #view-container.first-run .empty-card:only-child{ text-shadow:0 2px 10px rgba(6,8,7,0.95), 0 0 3px rgba(6,8,7,0.9); }
 
   /* ---------- the fire breathes ----------
      Sits over the flame band of the photo and ADDS light (screen blend), so the

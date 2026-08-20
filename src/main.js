@@ -3451,6 +3451,16 @@ function renderView() {
   const arriving = state.view !== lastRenderedView;
   lastRenderedView = state.view;
   el.classList.remove('view-enter');
+  /* The empty-state treatment — no panel, the words on the arena, the block
+     dropped below the sigil — belongs to a FIRST ARRIVAL and to nobody else.
+     CSS alone cannot tell the difference: `.empty-card:only-child` is true of
+     Social-with-no-crew for someone who has trained for a year, and that person
+     is not new. This is the whole condition, in one place, where it can be read:
+     nothing logged and nothing planned, signed in or not. Anyone with a single
+     exercise or one health habit keeps the card exactly as it always was. */
+  const brandNew = !state.exercises.some((e) => e.active !== false)
+    && !state.habits.some((h) => h.active);
+  el.classList.toggle('first-run', brandNew);
   if (state.view === 'today') el.innerHTML = viewToday();
   else if (state.view === 'plan') el.innerHTML = viewPlan();
   else if (state.view === 'guide') el.innerHTML = guideBodyHtml();

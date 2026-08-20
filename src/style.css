@@ -2958,6 +2958,21 @@
   .ex-card.needs-proof{border-color:var(--accent);}
   .ex-card.needs-proof .ex-sub{color:var(--accent); font-size:12.5px;}
   .proof-btn{white-space:nowrap; padding:10px 14px; font-size:13px; min-height:44px;}
+  /* Progress while the collage builds. A build runs as long as the clip, and
+     a sheet that says only "Building" for twenty seconds reads as a hang. */
+  .build-bar{
+    height:8px; margin-top:12px; background:var(--bg); border:1px solid var(--border);
+    overflow:hidden;
+  }
+  .build-bar i{
+    display:block; height:100%; width:0; background:var(--accent);
+    transition:width .2s linear;
+  }
+  .build-pct{
+    margin-top:6px; font-family:var(--font-mono); font-size:12px; color:var(--text-dim);
+    text-align:right;
+  }
+
   .proof-rule{
     border:1px solid var(--accent); background:rgba(62,224,159,0.07);
     padding:14px; margin-bottom:14px;

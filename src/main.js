@@ -2612,11 +2612,6 @@ const RECORDER_TYPES = [
   'video/webm',
 ];
 
-/* 40 MB is the most the share file may weigh. It is not a quality target — the
-   10 Mbps rate is — it is the point past which a long clip stops being a file a
-   phone can hold in memory and hand to a share sheet. */
-const SHARE_MAX_BYTES = 40 * 1024 * 1024;
-
 /* Screen sleep is what actually ruined the video. Building runs in real time,
    so a 23s clip holds the phone for 23s — and the moment the screen dims, the
    page is hidden and setInterval is throttled to about 1Hz. Those seconds go in
@@ -2681,10 +2676,11 @@ async function holdScreenAwake() {
 async function buildProofVideoCollage(exId, opts) {
   const W = (opts && opts.width) || SHARE_W;
   const H = (opts && opts.height) || SHARE_H;
-  // 10 Mbps, not 4. Only the crew copy has a byte budget, and it passes its own
-  // rate in; the file that goes to the share sheet has no cap at all, so the
-  // only thing 4 Mbps bought was a softer picture for Instagram to re-encode.
-  const bitsPerSec = (opts && opts.bitsPerSec) || 10000000;
+  // Back to 4 Mbps. 10 was a guess: the measured fault was frame rate, never
+  // bitrate, and raising it gave the phone's encoder more work per frame in the
+  // one loop that was already missing its deadline — after which the build
+  // failed outright. A guess that broke something does not get a second run.
+  const bitsPerSec = (opts && opts.bitsPerSec) || 4000000;
   const ex = state.exercises.find((e) => e.id === exId);
   const d = todayISO();
   const raw = ex && await loadProofVideo(d, exId);
@@ -2707,8 +2703,11 @@ async function buildProofVideoCollage(exId, opts) {
 
   let stopEarly = null;
   let releaseScreen = null;
+  let card = null;
+  let overlay = null;
+  const onProgress = opts && opts.onProgress;
   try {
-    const card = await buildSessionImage(ex, {
+    card = await buildSessionImage(ex, {
       total: progressValue(ex, arr), target,
       timeMode: isTimeMode(ex),
       sets: arr.length,
@@ -2739,17 +2738,6 @@ async function buildProofVideoCollage(exId, opts) {
       vid.src = url;
     }), 15000, 'decode-stalled');
 
-    // A rate alone is unbounded in one direction: 10 Mbps across the full
-    // 60-second clip is a 75 MB blob, and every chunk of it sits in memory on
-    // the phone until the share sheet takes it. The rate is the ceiling for a
-    // short clip; SHARE_MAX_BYTES is the ceiling for a long one, and whichever
-    // is lower wins. A caller that passed its own rate (the crew copy) keeps
-    // it — it has a tighter budget of its own and already measures the result.
-    let rate = bitsPerSec;
-    if (!(opts && opts.bitsPerSec) && Number.isFinite(vid.duration) && vid.duration > 1) {
-      rate = Math.max(2000000, Math.min(bitsPerSec, Math.floor((SHARE_MAX_BYTES * 8) / vid.duration)));
-    }
-
     const c = document.createElement('canvas');
     c.width = W; c.height = H;
     const g = c.getContext('2d');
@@ -2757,10 +2745,19 @@ async function buildProofVideoCollage(exId, opts) {
     const mime = RECORDER_TYPES.find((t) => {
       try { return MediaRecorder.isTypeSupported(t); } catch (e) { return false; }
     });
-    const rec = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: rate } : {});
+    const rec = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: bitsPerSec } : {});
     const chunks = [];
     rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
     const finished = new Promise((res) => { rec.onstop = res; });
+
+    // The card never changes across the whole build, yet it was re-read from a
+    // 1080x1920 canvas on every one of the 30 frames a second. An ImageBitmap
+    // is decoded once and blits straight through, which is the only lever here
+    // that raises the frame rate rather than describing it. Where the browser
+    // has no createImageBitmap the canvas is drawn exactly as before.
+    overlay = card;
+    try { if (window.createImageBitmap) overlay = await createImageBitmap(card); }
+    catch (e) { overlay = card; }
 
     const sc = Math.max(W / vid.videoWidth, H / vid.videoHeight);
     const vw = vid.videoWidth * sc, vh = vid.videoHeight * sc;
@@ -2776,11 +2773,30 @@ async function buildProofVideoCollage(exId, opts) {
     // Counted, because a frame rate is the one thing about this file we cannot
     // read back off it afterwards and the user cannot be asked to eyeball.
     let drawn = 0;
+    let lastPct = -1;
     const draw = () => {
       g.drawImage(vid, vx, vy, vw, vh);
-      g.drawImage(card, 0, 0, W, H);
+      g.drawImage(overlay, 0, 0, W, H);
       drawn++;
+      if (onProgress) {
+        // Two clocks, and the further along of the two wins. currentTime is the
+        // honest one — it is literally how much of the clip has been drawn —
+        // but it stalls whenever playback does, and a bar that stops at 38%
+        // and then jumps to done reads as a hang. Wall time cannot stall.
+        // Held under 100 so the only thing that writes 100 is finishing.
+        const byClip = Number.isFinite(vid.duration) && vid.duration > 0
+          ? vid.currentTime / vid.duration : 0;
+        const byClock = expectedMs > 0 ? (Date.now() - startedAt) / expectedMs : 0;
+        const pct = Math.max(0, Math.min(99, Math.round(Math.max(byClip, byClock) * 100)));
+        if (pct !== lastPct) { lastPct = pct; onProgress(pct); }
+      }
     };
+
+    // What the bar measures against. The same number the stop logic uses, read
+    // before the loop starts rather than after it, because the bar needs it on
+    // its very first tick.
+    const expectedMs = Number.isFinite(vid.duration) && vid.duration > 0
+      ? vid.duration * 1000 : collageSafetyMs();
 
     releaseScreen = await holdScreenAwake();
     rec.start();
@@ -2803,9 +2819,7 @@ async function buildProofVideoCollage(exId, opts) {
     // that decides the length, which is how the eight-second cap used to cut a
     // long proof short.
     const safetyMs = collageSafetyMs();
-    const wantMs = Number.isFinite(vid.duration) && vid.duration > 0
-      ? vid.duration * 1000
-      : safetyMs;
+    const wantMs = expectedMs;
     await new Promise((res) => {
       const t = setTimeout(res, Math.min(wantMs + 1500, safetyMs));
       vid.onended = () => { clearTimeout(t); res(); };
@@ -2818,6 +2832,7 @@ async function buildProofVideoCollage(exId, opts) {
     // Half of what was asked for, floored at half a second: enough slack for a
     // throttled tab, tight enough that a one-frame file can never pass.
     if (!await playableVideoBlob(blob, Math.max(0.5, (wantMs / 1000) * 0.5))) return null;
+    if (onProgress) onProgress(100);
     const secs = Math.max(0.001, ((stoppedAt || Date.now()) - startedAt) / 1000);
     return { blob, mime: blob.type, fps: drawn / secs };
   } catch (e) {
@@ -2825,6 +2840,8 @@ async function buildProofVideoCollage(exId, opts) {
   } finally {
     if (stopEarly) stopEarly();
     if (releaseScreen) releaseScreen();
+    // An ImageBitmap holds memory the garbage collector does not chase.
+    try { if (overlay && overlay !== card && overlay.close) overlay.close(); } catch (e) { /* fine */ }
     vid.pause();
     vid.src = '';
     URL.revokeObjectURL(url);
@@ -2840,17 +2857,18 @@ async function buildProofVideoCollage(exId, opts) {
  * that exists on your phone and not your crewmate's is the disharmony this
  * whole design exists to avoid.
  */
-async function buildCollageFor(exId) {
+async function buildCollageFor(exId, onProgress) {
   const d = todayISO();
   if (hasProofVideo(d, exId)) {
     showToast('Building your video — it runs the whole clip through, so give it about as long as the clip.');
-    const made = await buildProofVideoCollage(exId);
-    // Below two thirds of the 30 we ask for, the judder is visible. It means
-    // the phone put us in the background mid-build — the screen going to sleep
-    // is the usual reason, and the wake lock is not offered by every browser.
-    // Handing over a choppy file without a word is how this went unreported.
+    const made = await buildProofVideoCollage(exId, onProgress ? { onProgress } : undefined);
+    // Below two thirds of the 30 we ask for, the judder is visible. The FIRST
+    // version of this line blamed the screen going to sleep, and it was
+    // reported against a phone whose screen never slept — the loop can simply
+    // miss its deadline while the encoder is busy, and no wake lock helps that.
+    // Say what is true and name the one thing that does help.
     if (made && made.fps < 20) {
-      showToast('That came out choppy — your screen slept while it built. Tap again with the screen awake for a clean one.');
+      showToast('That came out a bit choppy — your phone couldn’t draw and encode fast enough at once. A shorter clip records more smoothly.');
     }
     if (made) return made;
     showToast("Your phone couldn't make the video card — here is the photo one.");
@@ -5018,7 +5036,11 @@ function modalShareReady() {
         <button class="sheet-close" data-action="close-modal">${ICONS.close}</button>
       </div>
       ${m.building
-        ? `<div class="field"><div class="hint">Drawing your card over the clip, start to finish. It takes about as long as the clip itself — keep this open.</div></div>`
+        ? `<div class="field">
+             <div class="hint">Drawing your card over the clip, start to finish. It takes about as long as the clip itself — keep this open.</div>
+             <div class="build-bar"><i id="build-fill" style="width:0%"></i></div>
+             <div class="build-pct" id="build-pct">0%</div>
+           </div>`
         : m.built
           ? `<div class="field"><div class="hint">${escapeHtml(ex.name)}, story-sized with your clip behind the numbers.</div></div>
              <button class="primary-btn wide" data-action="share-built">Share it</button>`
@@ -6846,7 +6868,16 @@ document.addEventListener('click', async (e) => {
       }
       state.modal = { type: 'shareReady', exId: exId3, building: true, built: null };
       renderModal();
-      const made = await buildCollageFor(exId3);
+      // The two nodes are written directly. renderModal() rebuilds the sheet,
+      // and doing that a hundred times would cost the build the very frames
+      // the bar is reporting on.
+      const onProgress = (pct) => {
+        const fill = document.getElementById('build-fill');
+        const label = document.getElementById('build-pct');
+        if (fill) fill.style.width = `${pct}%`;
+        if (label) label.textContent = `${pct}%`;
+      };
+      const made = await buildCollageFor(exId3, onProgress);
       if (!state.modal || state.modal.type !== 'shareReady' || state.modal.exId !== exId3) break;
       state.modal.building = false;
       state.modal.built = made && made.blob ? made : null;

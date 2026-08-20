@@ -2922,13 +2922,16 @@ async function buildProofVideoCollage(exId, opts) {
     document.documentElement.classList.add('building');
     releaseScreen = await holdScreenAwake();
     rec.start();
-    const startedAt = Date.now();
     // Stamped where the DRAWING stops, never where the function returns: the
     // encoder flush and playableVideoBlob's decode both sit after this, and
     // counting their seconds against a frame count that stopped rising would
     // report a clean 30fps build as choppy.
     let stoppedAt = 0;
+    // And stamped where drawing STARTS, not before play() is awaited. Waiting
+    // for playback to begin is dead time with no frames drawn in it, and
+    // counting it made a healthy build look slower than it was.
     await withTimeout(vid.play(), 10000, 'play-stalled');
+    const startedAt = Date.now();
     draw();
     ticker = setInterval(draw, 1000 / 30);
     stopEarly = () => {
@@ -2990,8 +2993,15 @@ async function buildCollageFor(exId, onProgress) {
     // sleeping, then the phone being too slow, on a phone that had already made
     // a clean one. It reports the symptom and stops guessing: what it is FOR is
     // making sure a choppy file is never handed over in silence again.
-    if (made && made.fps < 20) {
-      showToast('That one came out choppy — the video is still saved. A shorter clip usually records cleanly.');
+    // 20 was a number I invented, and it was wrong. The clip Johnny called
+    // "definitely better" measured 16.84 — this line was firing on video he was
+    // happy with, which is worse than useless: a warning that cries on good
+    // work teaches you to ignore it on bad. 12 is where the picture genuinely
+    // stops carrying motion, and it is what a page throttled to about 1Hz for
+    // part of a build actually lands at. The rate rides along so the next
+    // report is a number instead of another guess from me.
+    if (made && made.fps < 12) {
+      showToast(`That one came out choppy (${Math.round(made.fps)} frames a second). It is still saved — a shorter clip usually records cleanly.`);
     }
     if (made) return made;
     showToast("Your phone couldn't make the video card — here is the photo one.");

@@ -1850,10 +1850,26 @@ function shareLoadCrewIcon(kind, key) {
   });
 }
 
-function drawShareFooter(g, S, pad, avatar, standing, roleIcon, classIcon) {
+function drawShareFooter(g, S, pad, avatar, standing, roleIcon, classIcon, overPicture) {
   const name = (state.profile && state.profile.username || '').trim();
   const y = SAFE_BOTTOM;
   const DIM = '#9AA5A0', FAINT = '#6E7975', ACCENT = '#3EE07F', TEXT = '#EEF2EF';
+  /* The foot signs the card, and on a clip it was the last thing left bare —
+     over a white or a green frame the address faded to nothing. Same outline
+     the card above uses, and the greys lift for the same reason: these tones
+     were picked against a fixed near-black card. On the opaque cards
+     overPicture is false and not a pixel of this moves. */
+  const F = overPicture ? '#BFC9C4' : FAINT;
+  const D = overPicture ? '#D8E0DB' : DIM;
+  const ink = (t, x, b, size) => {
+    if (overPicture) {
+      g.lineWidth = Math.max(3, Math.min(10, size * 0.09));
+      g.strokeStyle = 'rgba(6,8,7,0.62)';
+      g.lineJoin = 'round'; g.miterLimit = 2;
+      g.strokeText(t, x, b);
+    }
+    g.fillText(t, x, b);
+  };
 
   /**
    * The foot is a small grid, not a stack of lines.
@@ -1867,9 +1883,9 @@ function drawShareFooter(g, S, pad, avatar, standing, roleIcon, classIcon) {
   const drawWatermark = (baseline) => {
     g.textAlign = 'left';
     g.fillStyle = ACCENT; g.font = "800 30px Manrope, system-ui, sans-serif";
-    g.fillText('Sets', pad, baseline);
-    g.fillStyle = FAINT; g.font = "500 22px 'JetBrains Mono', ui-monospace, monospace";
-    g.fillText('sets-workout.vercel.app', pad + 74, baseline);
+    ink('Sets', pad, baseline, 30);
+    g.fillStyle = F; g.font = "500 22px 'JetBrains Mono', ui-monospace, monospace";
+    ink('sets-workout.vercel.app', pad + 74, baseline, 22);
   };
 
   const drawFace = (cx, cy, size) => {
@@ -1906,27 +1922,27 @@ function drawShareFooter(g, S, pad, avatar, standing, roleIcon, classIcon) {
   const textX = avatar ? pad + 68 : pad;
   g.textAlign = 'left';
   g.fillStyle = TEXT; g.font = "700 30px Manrope, system-ui, sans-serif";
-  g.fillText(name || 'Sets', textX, nameY);
+  ink(name || 'Sets', textX, nameY, 30);
 
   g.fillStyle = ACCENT; g.font = "700 24px 'JetBrains Mono', ui-monospace, monospace";
-  g.fillText(standing.name.toUpperCase(), pad, nameY + 46);
+  ink(standing.name.toUpperCase(), pad, nameY + 46, 24);
 
   if (standing.motto) {
-    g.fillStyle = FAINT; g.font = "600 20px 'JetBrains Mono', ui-monospace, monospace";
-    g.fillText('CREW MOTTO', pad, nameY + 94);
-    g.fillStyle = DIM; g.font = "500 24px Manrope, system-ui, sans-serif";
+    g.fillStyle = F; g.font = "600 20px 'JetBrains Mono', ui-monospace, monospace";
+    ink('CREW MOTTO', pad, nameY + 94, 20);
+    g.fillStyle = D; g.font = "500 24px Manrope, system-ui, sans-serif";
     let motto = standing.motto;
     while (g.measureText(motto).width > S - pad * 2 - 160 && motto.length > 6) motto = motto.slice(0, -1);
     if (motto !== standing.motto) motto += '…';
-    g.fillText(motto, pad + 160, nameY + 94);
+    ink(motto, pad + 160, nameY + 94, 24);
   }
 
   // Right column — role above class, art then word, both right-aligned.
   const badge = (icon, label, baseline) => {
     if (!label) return;
     g.textAlign = 'right';
-    g.fillStyle = DIM; g.font = "700 22px 'JetBrains Mono', ui-monospace, monospace";
-    g.fillText(label.toUpperCase(), S - pad, baseline);
+    g.fillStyle = D; g.font = "700 22px 'JetBrains Mono', ui-monospace, monospace";
+    ink(label.toUpperCase(), S - pad, baseline, 22);
     const w = g.measureText(label.toUpperCase()).width;
     if (icon) g.drawImage(icon, S - pad - w - 44, baseline - 27, 34, 34);
     g.textAlign = 'left';
@@ -1988,7 +2004,7 @@ async function buildShareImage(ex, s) {
   let name = ex.name;
   while (g.measureText(name).width > S - nameX - pad && name.length > 4) name = name.slice(0, -1);
   if (name !== ex.name) name += '…';
-  g.fillText(name, nameX, SAFE_TOP - 20);
+  ink(name, nameX, SAFE_TOP - 20, 52);
 
   const cat = categoryOf(ex);
   if (cat) {
@@ -2128,12 +2144,28 @@ async function buildSessionImage(ex, session) {
   const INK = '#0A0C0B', TEXT = '#EEF2EF', DIM = '#9AA5A0', FAINT = '#6E7975', ACCENT = '#3EE07F';
   // Light over the picture, heavy under the text: the scrim has to let you see
   // the proof at the top and still let you read the number below it.
+  /* 0.86 at the halfway mark and 0.95 at the foot put a near-solid sheet over
+     the bottom two thirds of somebody's workout. It read as cheap because it
+     IS cheap: the picture was being thrown away to make text legible, when the
+     text can carry its own cover. Every string on this card is now drawn with a
+     shadow when there is a picture behind it, which is a dark halo exactly
+     where a letter needs one and nowhere else — so the scrim only has to keep
+     the ground from going white, not hide it.
+
+     The stops follow the layout, not a taste: heavier where text sits (the name
+     band at the top, the figures from 45% down, the footer), lightest through
+     14%..42%, which is the band that holds no text at all and, in a clip filmed
+     at arm's length, holds the person. */
   const paintScrim = () => {
     const scrim = g.createLinearGradient(0, 0, 0, SHARE_H);
-    scrim.addColorStop(0, 'rgba(10,12,11,0.55)');
-    scrim.addColorStop(0.30, 'rgba(10,12,11,0.38)');
-    scrim.addColorStop(0.46, 'rgba(10,12,11,0.86)');
-    scrim.addColorStop(1, 'rgba(10,12,11,0.95)');
+    scrim.addColorStop(0,    'rgba(10,12,11,0.46)');
+    scrim.addColorStop(0.13, 'rgba(10,12,11,0.16)');
+    scrim.addColorStop(0.26, 'rgba(10,12,11,0.06)');
+    scrim.addColorStop(0.46, 'rgba(10,12,11,0.07)');
+    scrim.addColorStop(0.56, 'rgba(10,12,11,0.18)');
+    scrim.addColorStop(0.68, 'rgba(10,12,11,0.26)');
+    scrim.addColorStop(0.86, 'rgba(10,12,11,0.52)');
+    scrim.addColorStop(1,    'rgba(10,12,11,0.74)');
     g.fillStyle = scrim;
     g.fillRect(0, 0, S, SHARE_H);
   };
@@ -2163,7 +2195,48 @@ async function buildSessionImage(ex, session) {
   if (icon) g.drawImage(icon, pad, SAFE_TOP - 78, 118, 118);
 
   g.textBaseline = 'alphabetic';
-  if (session.photo) { g.shadowColor = 'rgba(0,0,0,0.85)'; g.shadowBlur = 18; }
+  // A clip and a photo are the same problem: something real is behind the words.
+  // The shadow was already here for the photo card and only ever wrapped the
+  // name — every other string leaned on the scrim, which is why the scrim had
+  // to be almost solid. It is a halo around glyphs, so it costs the picture
+  // nothing anywhere a glyph is not.
+  const overPicture = !!(session.photo || session.overlayOnly);
+  const shadowOn = () => {
+    if (!overPicture) return;
+    g.shadowColor = 'rgba(0,0,0,0.92)'; g.shadowBlur = 30; g.shadowOffsetY = 2;
+  };
+  const shadowOff = () => { g.shadowColor = 'transparent'; g.shadowBlur = 0; g.shadowOffsetY = 0; };
+  /* A blur halo alone cannot save mid-luminance type. "Target met" is accent
+     green, whose luminance sits close to a light grey, so against a bright
+     frame the fill itself has nowhere to go however wide the halo gets —
+     measured on a near-white clip, it was the first thing to disappear. An
+     outline works where a halo does not: it puts a hard dark edge between the
+     glyph and whatever is behind it, which is why every subtitle ever burned
+     into film has one. With it the sheet can stay light and the picture can
+     stay a picture, which is the whole point. Scaled to the type, so 24px
+     labels get a hairline and a 210px number gets a real edge. */
+  const ink = (t, x, y, size) => {
+    if (overPicture) {
+      // Capped. At 9% a 210px number wears a 19px ring and reads as a sticker
+      // rather than as type on a picture; 10px is enough to separate anything.
+      g.lineWidth = Math.max(3, Math.min(10, size * 0.09));
+      g.strokeStyle = 'rgba(6,8,7,0.62)';
+      g.lineJoin = 'round';
+      g.miterLimit = 2;
+      g.strokeText(t, x, y);
+    }
+    g.fillText(t, x, y);
+  };
+  // Tested against the worst ground there is, a near-white clip: the headline,
+  // the big number and the figures all held, and every GREY died — "/ 100" and
+  // the TIME / SETS / STREAK labels went to nothing. Those greys were chosen
+  // against a fixed near-black card, and over a picture they are a guess about
+  // a background we do not control. Over a picture the secondary tones lift and
+  // the hierarchy is carried by size and weight, which a bright frame cannot
+  // wash out. On the opaque card nothing moves.
+  const DIM2 = overPicture ? '#D8E0DB' : DIM;
+  const FAINT2 = overPicture ? '#C4CEC9' : FAINT;
+  shadowOn();
   g.fillStyle = TEXT; g.font = "700 52px Manrope, system-ui, sans-serif";
   const nameX = icon ? pad + 146 : pad;
   let name = ex.name;
@@ -2178,8 +2251,8 @@ async function buildSessionImage(ex, session) {
   // answers what it TOOK. Set as a fourth tile the two would sit side by side
   // under near-identical labels, and a card that has to be studied has failed.
   // filter(Boolean) already drops it on an exercise finished without a clock.
-  g.fillText([cat ? cat.label.toUpperCase() : null, session.dateLabel.toUpperCase(),
-    session.finishedClock ? session.finishedClock.toUpperCase() : null].filter(Boolean).join(' · '), nameX, SAFE_TOP + 22);
+  ink([cat ? cat.label.toUpperCase() : null, session.dateLabel.toUpperCase(),
+    session.finishedClock ? session.finishedClock.toUpperCase() : null].filter(Boolean).join(' · '), nameX, SAFE_TOP + 22, 26);
   g.shadowColor = 'transparent'; g.shadowBlur = 0;
 
   // The day's number is the headline here, the way the streak is on the other
@@ -2199,16 +2272,18 @@ async function buildSessionImage(ex, session) {
     bigSize -= 6;
     g.font = `700 ${bigSize}px 'Martian Mono', ui-monospace, monospace`;
   }
+  shadowOn();
   g.fillStyle = ACCENT;
-  g.fillText(big, pad, 860);
+  ink(big, pad, 860, bigSize);
   const bigW = g.measureText(big).width;
   if (targetStr) {
-    g.fillStyle = DIM; g.font = "600 48px Manrope, system-ui, sans-serif";
-    g.fillText(targetStr, pad + bigW + 28, 860);
+    g.fillStyle = DIM2; g.font = "600 48px Manrope, system-ui, sans-serif";
+    ink(targetStr, pad + bigW + 28, 860, 48);
   }
-  g.fillStyle = session.short ? DIM : ACCENT;
+  g.fillStyle = session.short ? DIM2 : ACCENT;
   g.font = "700 38px Manrope, system-ui, sans-serif";
-  g.fillText(session.headline, pad, 946);
+  ink(session.headline, pad, 946, 38);
+  shadowOff();
 
   // The meter: one bar, the same proportion the card on Today was showing.
   const barY = 1010, barW = S - pad * 2, barH = 22;
@@ -2229,8 +2304,9 @@ async function buildSessionImage(ex, session) {
   const colW = (S - pad * 2) / (tiles.length || 1);
   tiles.forEach(([label, value], i) => {
     const x = pad + i * colW;
-    g.fillStyle = FAINT; g.font = "600 24px 'JetBrains Mono', ui-monospace, monospace";
-    g.fillText(label, x, 1340);
+    shadowOn();
+    g.fillStyle = FAINT2; g.font = "600 24px 'JetBrains Mono', ui-monospace, monospace";
+    ink(label, x, 1340, 24);
     g.fillStyle = TEXT;
     let size = 62;
     g.font = `700 ${size}px 'Martian Mono', ui-monospace, monospace`;
@@ -2238,13 +2314,18 @@ async function buildSessionImage(ex, session) {
       size -= 2;
       g.font = `700 ${size}px 'Martian Mono', ui-monospace, monospace`;
     }
-    g.fillText(value, x, 1414);
+    ink(value, x, 1414, size);
+    shadowOff();
   });
 
   const standing = shareCrewStanding();
+  // The footer signs the card in small print and was the last thing drawing
+  // bare over the clip. It keeps its own colours; it only wants the halo.
+  shadowOn();
   drawShareFooter(g, S, pad, await shareLoadAvatar(), standing,
     await shareLoadCrewIcon('role', standing && standing.role),
-    await shareLoadCrewIcon('class', standing && standing.klass));
+    await shareLoadCrewIcon('class', standing && standing.klass), overPicture);
+  shadowOff();
 
   return session.overlayOnly ? c : new Promise((resolve) => c.toBlob(resolve, 'image/png'));
 }

@@ -9,7 +9,7 @@ rather than leaving someone to re-guess crop boxes and colour thresholds.
     python3 tools/slice-icons.py
 
 Writes:
-    public/icons/ex/*.png     the ten exercise categories, 128px
+    public/icons/ex/*.png     the exercise categories, 128px
     public/icons/crew/*.png   crew roles and classes, 128px
     public/icons/icon-*.png   the app icon, from the Sets mark
 
@@ -37,6 +37,19 @@ CATEGORIES = [
     ('chest', 0, 0), ('back', 1, 0), ('arms', 2, 0), ('legs', 3, 0),
     ('abs', 0, 1), ('dip-bar', 1, 1), ('pull-up-bar', 2, 1), ('cardio', 3, 1),
     ('skateboard', 1, 2), ('badminton', 2, 2),
+]
+
+# ---- categories that arrived as their own file ----------------------------
+# The grid above holds the ten drawn together. Anything added later comes as a
+# single image, and it goes through the SAME tail — emphasise, trim, square,
+# 128, quantise — so a category added on its own is indistinguishable from one
+# cut out of the sheet. These already ship with a transparent ground, so they
+# skip the border flood the grid cells need and nothing else changes.
+# name, file, and the border-flood tolerance — None where the source already
+# ships transparent. The first pickleball art was a crossed pair that turned to
+# mush at 128px; this one is a single paddle, which survives the size.
+CATEGORY_SINGLES = [
+    ('pickleball', 'New Pickleball Icon.png', 48),
 ]
 
 # ---- crew roles and classes ----------------------------------------------
@@ -169,6 +182,13 @@ def main():
         if name in ENCLOSED:
             cell = dark_key(cell, 34)
         total += write_icon(cell, f'{OUT_DIR}/{name}.png', lift_body=name in LIFT_BODY)
+        print(f'{name:16} {os.path.getsize(f"{OUT_DIR}/{name}.png")/1024:5.1f} KB')
+
+    for name, path, tol in CATEGORY_SINGLES:
+        cell = Image.open(path).convert('RGBA')
+        if tol:
+            cell = key_out(cell, tol)
+        total += write_icon(cell, f'{OUT_DIR}/{name}.png')
         print(f'{name:16} {os.path.getsize(f"{OUT_DIR}/{name}.png")/1024:5.1f} KB')
 
     crew = Image.open(CREW_SRC).convert('RGBA')

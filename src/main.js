@@ -2821,25 +2821,29 @@ function affordablePlan(vid, overlay, W, H) {
     const vx = (w - vw) / 2, vy = (h - vh) / 2;
     const once = () => { g.drawImage(vid, vx, vy, vw, vh); g.drawImage(overlay, 0, 0, w, h); };
     once(); once();                                  // warm the texture upload
-    const t = [];
-    for (let i = 0; i < 5; i++) {
-      const a = performance.now();
-      once();
-      g.getImageData(0, 0, 1, 1);                    // make the GPU finish
-      t.push(performance.now() - a);
-    }
-    t.sort((x, y) => x - y);
-    return t[2];
+    // Throughput, not latency. Syncing after EVERY frame — which is what this
+    // did — stalls a pipeline that never stalls in the real loop, and charges
+    // each frame for the drain. It read high, which is why phones that could
+    // hold 1080 were being sent to 720 and the picture went soft. Draw the run,
+    // sync once at the end, divide.
+    const a = performance.now();
+    const N = 8;
+    for (let i = 0; i < N; i++) once();
+    g.getImageData(0, 0, 1, 1);                      // one drain, for the whole run
+    return (performance.now() - a) / N;
   };
   try {
     let cost = costAt(W, H);
     // 1.7x headroom: the encoder is chewing the same canvas on the same thread,
     // so the drawing may have only a little over half the frame to itself.
     let fps = Math.floor(1000 / (cost * 1.7));
-    // Past the point where full size cannot even hold 20, half the pixels buys
-    // more than the sharpness does. A smooth 720 beats a stuttering 1080, and
-    // every story sheet re-encodes what it is given anyway.
-    if (fps < 20 && !(W <= 720)) {
+    // Frame rate is spent BEFORE sharpness, not after. This card is mostly type
+    // — a number, a headline, three figures — and type is what resolution buys;
+    // the motion behind it is somebody doing dips, which survives fifteen
+    // frames a second perfectly well. Dropping to 720 first was backwards, and
+    // it is what made the picture go soft. Half the pixels is the last resort,
+    // taken only when full size cannot hold even twelve.
+    if (fps < 12 && !(W <= 720)) {
       const c2 = costAt(720, 1280);
       const f2 = Math.floor(1000 / (c2 * 1.7));
       if (f2 > fps) { W = 720; H = 1280; cost = c2; fps = f2; }

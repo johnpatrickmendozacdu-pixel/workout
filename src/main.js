@@ -2793,9 +2793,70 @@ async function holdScreenAwake() {
  * Instagram rejects. The upgrade, if it ever actually bites, is WebCodecs
  * VideoEncoder with a vendored MP4 muxer. Not worth a second encoder today.
  */
+/**
+ * What this phone can actually sustain — measured, then asked for.
+ *
+ * The loop demanded 30fps and hoped. A phone that can only manage six does not
+ * politely produce a smooth six: it produces six frames scattered across
+ * thirty slots, which is the judder that has been reported over and over. And
+ * because the number was hardcoded, every "fix" was a guess about somebody
+ * else's hardware, which is why this kept coming back.
+ *
+ * A frame is two blits — the clip, then the card over it — and the clip may be
+ * anything the camera shot, up to 4K, which is where the real cost hides. So
+ * draw a few real ones, time them, and let the measurement choose BOTH the size
+ * and the rate. Asking for fifteen and hitting fifteen looks better than asking
+ * for thirty and hitting six, because the motion is even.
+ *
+ * Anything that throws returns the old fixed plan, which is exactly the
+ * behaviour before this existed.
+ */
+function affordablePlan(vid, overlay, W, H) {
+  const costAt = (w, h) => {
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const g = c.getContext('2d');
+    const sc = Math.max(w / vid.videoWidth, h / vid.videoHeight);
+    const vw = vid.videoWidth * sc, vh = vid.videoHeight * sc;
+    const vx = (w - vw) / 2, vy = (h - vh) / 2;
+    const once = () => { g.drawImage(vid, vx, vy, vw, vh); g.drawImage(overlay, 0, 0, w, h); };
+    once(); once();                                  // warm the texture upload
+    const t = [];
+    for (let i = 0; i < 5; i++) {
+      const a = performance.now();
+      once();
+      g.getImageData(0, 0, 1, 1);                    // make the GPU finish
+      t.push(performance.now() - a);
+    }
+    t.sort((x, y) => x - y);
+    return t[2];
+  };
+  try {
+    let cost = costAt(W, H);
+    // 1.7x headroom: the encoder is chewing the same canvas on the same thread,
+    // so the drawing may have only a little over half the frame to itself.
+    let fps = Math.floor(1000 / (cost * 1.7));
+    // Past the point where full size cannot even hold 20, half the pixels buys
+    // more than the sharpness does. A smooth 720 beats a stuttering 1080, and
+    // every story sheet re-encodes what it is given anyway.
+    if (fps < 20 && !(W <= 720)) {
+      const c2 = costAt(720, 1280);
+      const f2 = Math.floor(1000 / (c2 * 1.7));
+      if (f2 > fps) { W = 720; H = 1280; cost = c2; fps = f2; }
+    }
+    // Never above 30, never below 12: under twelve the picture stops carrying
+    // motion at all and the still card is the better story.
+    fps = Math.max(12, Math.min(30, fps));
+    return { W, H, fps, costMs: cost };
+  } catch (e) {
+    return { W, H, fps: 30, costMs: null };
+  }
+}
+
 async function buildProofVideoCollage(exId, opts) {
-  const W = (opts && opts.width) || SHARE_W;
-  const H = (opts && opts.height) || SHARE_H;
+  let W = (opts && opts.width) || SHARE_W;
+  let H = (opts && opts.height) || SHARE_H;
+  let fps = 30;
   // Back to 4 Mbps. 10 was a guess: the measured fault was frame rate, never
   // bitrate, and raising it gave the phone's encoder more work per frame in the
   // one loop that was already missing its deadline — after which the build
@@ -2858,10 +2919,19 @@ async function buildProofVideoCollage(exId, opts) {
       vid.src = url;
     }), 15000, 'decode-stalled');
 
+    // BEFORE the canvas exists: its size is fixed the moment a stream is
+    // captured from it, so a size decided afterwards is a size ignored. The
+    // crew copy names its own 480x854 and keeps it; only the rate is measured.
+    const plan = affordablePlan(vid, overlay, W, H);
+    if (!(opts && opts.width)) { W = plan.W; H = plan.H; }
+    fps = plan.fps;
+
     const c = document.createElement('canvas');
     c.width = W; c.height = H;
     const g = c.getContext('2d');
-    const stream = c.captureStream(30);
+    // Captured at the rate we intend to hit, not at an aspiration: a stream
+    // told 30 while it is fed 6 spaces those six across thirty slots.
+    const stream = c.captureStream(fps);
     const mime = RECORDER_TYPES.find((t) => {
       try { return MediaRecorder.isTypeSupported(t); } catch (e) { return false; }
     });
@@ -2933,7 +3003,7 @@ async function buildProofVideoCollage(exId, opts) {
     await withTimeout(vid.play(), 10000, 'play-stalled');
     const startedAt = Date.now();
     draw();
-    ticker = setInterval(draw, 1000 / 30);
+    ticker = setInterval(draw, 1000 / fps);
     stopEarly = () => {
       clearInterval(ticker);
       if (!stoppedAt) stoppedAt = Date.now();
@@ -2959,7 +3029,7 @@ async function buildProofVideoCollage(exId, opts) {
     if (!await playableVideoBlob(blob, Math.max(0.5, (wantMs / 1000) * 0.5))) return null;
     if (onProgress) onProgress(100);
     const secs = Math.max(0.001, ((stoppedAt || Date.now()) - startedAt) / 1000);
-    return { blob, mime: blob.type, fps: drawn / secs };
+    return { blob, mime: blob.type, fps: drawn / secs, planned: fps };
   } catch (e) {
     return null;
   } finally {
@@ -3000,8 +3070,14 @@ async function buildCollageFor(exId, onProgress) {
     // stops carrying motion, and it is what a page throttled to about 1Hz for
     // part of a build actually lands at. The rate rides along so the next
     // report is a number instead of another guess from me.
-    if (made && made.fps < 12) {
-      showToast(`That one came out choppy (${Math.round(made.fps)} frames a second). It is still saved — a shorter clip usually records cleanly.`);
+    // Only when the phone missed a rate IT chose. Before, this fired whenever a
+    // fixed 30 was not met, which on a slower handset is always — the warning
+    // was reporting the aspiration, not a fault. Now the plan is measured, so
+    // falling well short of it means something genuinely went wrong mid-build,
+    // and that is worth saying. Both numbers ride along: never debug this blind
+    // again, which is what made it so miserable to chase.
+    if (made && made.planned && made.fps < made.planned * 0.7) {
+      showToast(`That one came out choppy — ${Math.round(made.fps)} frames a second where your phone should manage ${made.planned}. It is still saved.`);
     }
     if (made) return made;
     showToast("Your phone couldn't make the video card — here is the photo one.");

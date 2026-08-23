@@ -2793,74 +2793,9 @@ async function holdScreenAwake() {
  * Instagram rejects. The upgrade, if it ever actually bites, is WebCodecs
  * VideoEncoder with a vendored MP4 muxer. Not worth a second encoder today.
  */
-/**
- * What this phone can actually sustain — measured, then asked for.
- *
- * The loop demanded 30fps and hoped. A phone that can only manage six does not
- * politely produce a smooth six: it produces six frames scattered across
- * thirty slots, which is the judder that has been reported over and over. And
- * because the number was hardcoded, every "fix" was a guess about somebody
- * else's hardware, which is why this kept coming back.
- *
- * A frame is two blits — the clip, then the card over it — and the clip may be
- * anything the camera shot, up to 4K, which is where the real cost hides. So
- * draw a few real ones, time them, and let the measurement choose BOTH the size
- * and the rate. Asking for fifteen and hitting fifteen looks better than asking
- * for thirty and hitting six, because the motion is even.
- *
- * Anything that throws returns the old fixed plan, which is exactly the
- * behaviour before this existed.
- */
-function affordablePlan(vid, overlay, W, H) {
-  const costAt = (w, h) => {
-    const c = document.createElement('canvas');
-    c.width = w; c.height = h;
-    const g = c.getContext('2d');
-    const sc = Math.max(w / vid.videoWidth, h / vid.videoHeight);
-    const vw = vid.videoWidth * sc, vh = vid.videoHeight * sc;
-    const vx = (w - vw) / 2, vy = (h - vh) / 2;
-    const once = () => { g.drawImage(vid, vx, vy, vw, vh); g.drawImage(overlay, 0, 0, w, h); };
-    once(); once();                                  // warm the texture upload
-    // Throughput, not latency. Syncing after EVERY frame — which is what this
-    // did — stalls a pipeline that never stalls in the real loop, and charges
-    // each frame for the drain. It read high, which is why phones that could
-    // hold 1080 were being sent to 720 and the picture went soft. Draw the run,
-    // sync once at the end, divide.
-    const a = performance.now();
-    const N = 8;
-    for (let i = 0; i < N; i++) once();
-    g.getImageData(0, 0, 1, 1);                      // one drain, for the whole run
-    return (performance.now() - a) / N;
-  };
-  try {
-    let cost = costAt(W, H);
-    // 1.7x headroom: the encoder is chewing the same canvas on the same thread,
-    // so the drawing may have only a little over half the frame to itself.
-    let fps = Math.floor(1000 / (cost * 1.7));
-    // Frame rate is spent BEFORE sharpness, not after. This card is mostly type
-    // — a number, a headline, three figures — and type is what resolution buys;
-    // the motion behind it is somebody doing dips, which survives fifteen
-    // frames a second perfectly well. Dropping to 720 first was backwards, and
-    // it is what made the picture go soft. Half the pixels is the last resort,
-    // taken only when full size cannot hold even twelve.
-    if (fps < 12 && !(W <= 720)) {
-      const c2 = costAt(720, 1280);
-      const f2 = Math.floor(1000 / (c2 * 1.7));
-      if (f2 > fps) { W = 720; H = 1280; cost = c2; fps = f2; }
-    }
-    // Never above 30, never below 12: under twelve the picture stops carrying
-    // motion at all and the still card is the better story.
-    fps = Math.max(12, Math.min(30, fps));
-    return { W, H, fps, costMs: cost };
-  } catch (e) {
-    return { W, H, fps: 30, costMs: null };
-  }
-}
-
 async function buildProofVideoCollage(exId, opts) {
-  let W = (opts && opts.width) || SHARE_W;
-  let H = (opts && opts.height) || SHARE_H;
-  let fps = 30;
+  const W = (opts && opts.width) || SHARE_W;
+  const H = (opts && opts.height) || SHARE_H;
   // Back to 4 Mbps. 10 was a guess: the measured fault was frame rate, never
   // bitrate, and raising it gave the phone's encoder more work per frame in the
   // one loop that was already missing its deadline — after which the build
@@ -2923,19 +2858,10 @@ async function buildProofVideoCollage(exId, opts) {
       vid.src = url;
     }), 15000, 'decode-stalled');
 
-    // BEFORE the canvas exists: its size is fixed the moment a stream is
-    // captured from it, so a size decided afterwards is a size ignored. The
-    // crew copy names its own 480x854 and keeps it; only the rate is measured.
-    const plan = affordablePlan(vid, overlay, W, H);
-    if (!(opts && opts.width)) { W = plan.W; H = plan.H; }
-    fps = plan.fps;
-
     const c = document.createElement('canvas');
     c.width = W; c.height = H;
     const g = c.getContext('2d');
-    // Captured at the rate we intend to hit, not at an aspiration: a stream
-    // told 30 while it is fed 6 spaces those six across thirty slots.
-    const stream = c.captureStream(fps);
+    const stream = c.captureStream(30);
     const mime = RECORDER_TYPES.find((t) => {
       try { return MediaRecorder.isTypeSupported(t); } catch (e) { return false; }
     });
@@ -2964,14 +2890,31 @@ async function buildProofVideoCollage(exId, opts) {
     // A timer keeps firing while hidden (throttled, so choppier), which is a
     // worse video and not a broken one.
     let ticker = 0;
-    // Counted, because a frame rate is the one thing about this file we cannot
-    // read back off it afterwards and the user cannot be asked to eyeball.
-    let drawn = 0;
+    // No adaptive sizing and no adaptive rate, on purpose. 1080x1920 at 30 is
+    // what this feature shipped with and what it is judged on, and three
+    // attempts at being clever about slower phones each cost the picture more
+    // than the judder ever did. Full size, full rate, every time.
     let lastPct = -1;
+    /* A throw in here used to be forever.
+     *
+     * This runs on a timer, so it is outside the try/catch that wraps the
+     * build — an exception does not stop it, it just happens again in 33ms, and
+     * again, for as long as the app is open. Observed: "The image source is
+     * detached", thrown thirty times a second, because a finished build closed
+     * the ImageBitmap this still points at. A runaway timer throwing on every
+     * tick is a main thread with nothing left to give, which is what the NEXT
+     * collage then gets measured doing — the eight frames a second that kept
+     * coming back, and got worse the more clips were made in one sitting.
+     *
+     * It was never a slow phone. It was this. */
     const draw = () => {
-      g.drawImage(vid, vx, vy, vw, vh);
-      g.drawImage(overlay, 0, 0, W, H);
-      drawn++;
+      try {
+        g.drawImage(vid, vx, vy, vw, vh);
+        g.drawImage(overlay, 0, 0, W, H);
+      } catch (e) {
+        clearInterval(ticker);
+        return;
+      }
       if (onProgress) {
         // Two clocks, and the further along of the two wins. currentTime is the
         // honest one — it is literally how much of the clip has been drawn —
@@ -2996,21 +2939,14 @@ async function buildProofVideoCollage(exId, opts) {
     document.documentElement.classList.add('building');
     releaseScreen = await holdScreenAwake();
     rec.start();
-    // Stamped where the DRAWING stops, never where the function returns: the
-    // encoder flush and playableVideoBlob's decode both sit after this, and
-    // counting their seconds against a frame count that stopped rising would
-    // report a clean 30fps build as choppy.
-    let stoppedAt = 0;
-    // And stamped where drawing STARTS, not before play() is awaited. Waiting
-    // for playback to begin is dead time with no frames drawn in it, and
-    // counting it made a healthy build look slower than it was.
+    // Stamped where drawing STARTS, not before play() is awaited: waiting for
+    // playback to begin is dead time, and the progress bar reads this.
     await withTimeout(vid.play(), 10000, 'play-stalled');
     const startedAt = Date.now();
     draw();
-    ticker = setInterval(draw, 1000 / fps);
+    ticker = setInterval(draw, 1000 / 30);
     stopEarly = () => {
       clearInterval(ticker);
-      if (!stoppedAt) stoppedAt = Date.now();
       try { rec.stop(); } catch (e) { /* already stopped */ }
     };
     // The clip ending is what stops it. The timeout is only a backstop for a
@@ -3032,16 +2968,13 @@ async function buildProofVideoCollage(exId, opts) {
     // throttled tab, tight enough that a one-frame file can never pass.
     if (!await playableVideoBlob(blob, Math.max(0.5, (wantMs / 1000) * 0.5))) return null;
     if (onProgress) onProgress(100);
-    const secs = Math.max(0.001, ((stoppedAt || Date.now()) - startedAt) / 1000);
-    return { blob, mime: blob.type, fps: drawn / secs, planned: fps };
+    return { blob, mime: blob.type };
   } catch (e) {
     return null;
   } finally {
     document.documentElement.classList.remove('building');
     if (stopEarly) stopEarly();
     if (releaseScreen) releaseScreen();
-    // An ImageBitmap holds memory the garbage collector does not chase.
-    try { if (overlay && overlay !== card && overlay.close) overlay.close(); } catch (e) { /* fine */ }
     vid.pause();
     vid.src = '';
     URL.revokeObjectURL(url);
@@ -3080,9 +3013,6 @@ async function buildCollageFor(exId, onProgress) {
     // falling well short of it means something genuinely went wrong mid-build,
     // and that is worth saying. Both numbers ride along: never debug this blind
     // again, which is what made it so miserable to chase.
-    if (made && made.planned && made.fps < made.planned * 0.7) {
-      showToast(`That one came out choppy — ${Math.round(made.fps)} frames a second where your phone should manage ${made.planned}. It is still saved.`);
-    }
     if (made) return made;
     showToast("Your phone couldn't make the video card — here is the photo one.");
   } else {

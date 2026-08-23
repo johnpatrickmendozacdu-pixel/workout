@@ -54,22 +54,70 @@ Worker's pure helpers only — **not `main.js`, not `googleSync.js`**.
 
 ## State right now — READ THIS FIRST
 
-- `main` = **`b96214e`**, pushed, deployed and **byte-verified live** — the js
-  (`index-CsxTD0_c.js`), the css (`index-4qjW48un.css`) and `sfx-add-habit.mp3`
-  all hash identical to a local build of that commit.
-- **The three commits before it were never unpushed by choice.** A 215 MB
-  `forge what fate has foreseen, the mortal must become more.dmg` was committed
-  inside `a69ddbd`, GitHub rejects any push carrying a file over 100 MB, and the
-  whole push failed for it. The dmg was stripped from those three commits with
-  `filter-branch`, so **their SHAs changed** (`a69ddbd`→`2a66ff5`,
-  `cb8e031`→`4c4d2e4`). `*.dmg` is now in `.gitignore`. The file is still on
-  disk, untouched.
+- `main` = **`5f5ef77`**, pushed, deployed and byte-verified live.
 - **430 tests pass** (`npm test`). Same coverage as ever: the pure domain layer
   and the Worker's pure helpers. Not `main.js`, not `sound.js`, not
   `googleSync.js`.
-- **Worker = build `2026-08-17.12`**, deployed and confirmed by curl, carrying
-  `story-delete` and `story-video`. Both pastes are done; nothing is pending
-  there.
+- **Worker = build `2026-08-17.12`**, untouched.
+
+### The proof collage: do not make it adaptive again
+
+Three separate attempts to be clever about slower phones — a wake lock, a
+raised bitrate, a predicted canvas size, then a frame rate that adapted
+mid-build — and **every one of them cost the picture more than the judder ever
+did.** It records at a fixed **1080x1920, 30fps, 4 Mbps**, for every phone,
+every time. That is what it shipped with and what it is judged on.
+
+The "came out choppy" warning is **deleted**. It fired daily, it measured an
+aspiration rather than a fault, and its only real effect was making a working
+collage look broken. Do not reintroduce it.
+
+Two real bugs came out of that episode and both are worth remembering:
+
+- **A draw on a timer that throws runs forever.** It sits outside the try/catch
+  that wraps the build, so an exception does not stop it — it simply happens
+  again 33ms later, for as long as the app is open. Caught live as "The image
+  source is detached", thirty times a second, because a finished build had
+  closed an ImageBitmap the timer still pointed at. A runaway timer is a main
+  thread with nothing left for the NEXT build, which is what made the fault
+  look like it kept coming back and worsening across a sitting. `draw()` now
+  clears its own interval on failure, and nothing calls `ImageBitmap.close()`.
+- **Read the swallowed exception before theorising.** Days went into guessing at
+  screen sleep, bitrate and background animation. One `console.error` in the
+  catch named the cause in a single run.
+
+### The empty state is per SCREEN, not per account
+
+An empty Today gets the arena treatment while a Plan full of exercises does
+not, on the same phone in the same second. The test is `.empty-card:only-child`
+— the empty card is the whole of what that view drew. A Today that also holds a
+health habit is therefore left alone, correctly: that screen is not empty. An
+earlier version gated it on the whole account being new; that was too strict
+and was reverted.
+
+The panel is gone on those screens: heading, sentence and button sit directly on
+the arena with a shadow behind the letters. Measured at 667px, the effects leave
+only a 47px and a 20px gap and the embers cross everything, so there is no
+rectangle where a box covers nothing — the box was the wrong shape for the
+problem.
+
+### Categories are eleven
+
+Pickleball was added 2026-08-22. Its art is a single paddle, not the crossed
+pair first tried, which turned to mush at the 44px the picker draws. It goes
+through `tools/slice-icons.py` like every other icon — there is a singles table
+for art that arrives as its own file rather than on the sheet.
+
+**Re-running that tool also rewrites the app icons and the favicon**, which come
+from `tools/greens.py`. Restore them before committing or the installed icon
+changes on every home screen.
+
+### Pushing
+
+Auth is a GitHub personal access token in the macOS keychain over HTTPS, scopes
+`repo` and `workflow` (the repo has `.github/workflows/`). Regenerated with **no
+expiry** on 2026-08-24. SSH would remove the dependency entirely — keys never
+expire — and was offered and declined.
 
 ## Nothing is wired and silent any more
 

@@ -4,6 +4,37 @@ Paste this into a new session to continue.
 
 ---
 
+## STOP. READ THIS BEFORE ANYTHING ELSE.
+
+**Your first and only task is to read this entire document and master it. Do
+not implement anything. Do not edit a file. Do not run a build. Do not open the
+app. Do not propose a change.**
+
+Read it end to end, then say what you have understood and wait. Johnny will
+tell you what to work on. He has asked for this explicitly, and he has asked
+because the expensive mistakes in this project have all come from acting before
+understanding — a fix aimed at a symptom, a replace that matched the wrong copy
+of duplicated code, a "clever" improvement that cost the picture more than the
+bug did.
+
+When he does give you work, these are not suggestions:
+
+1. **Never merge, never commit to `main`, never push without his explicit
+   say-so.** `main` auto-deploys to Vercel and reaches family and friends. Build
+   it, show him, wait. See "Never ship without approval".
+2. **Verify by using, never by calling a handler.** Screenshot at 375px, check
+   tap targets clear 44px, exercise state changes without reloading. A green
+   build and green tests prove very little here.
+3. **Read the swallowed exception before theorising.** Days went into guessing
+   at the proof collage — screen sleep, bitrate, background animation — when one
+   `console.error` in the catch named the cause in a single run.
+4. **Answer short, in plain words.** No jargon, no essays, no tables unless
+   asked.
+5. **Ponytail.** The laziest thing that works. Three attempts at being clever
+   about slower phones each made the product worse than the bug they chased.
+
+---
+
 ## The app
 
 **Sets**, a workout set tracker. Vanilla JS + Vite PWA, no framework, no runtime
@@ -54,7 +85,7 @@ Worker's pure helpers only — **not `main.js`, not `googleSync.js`**.
 
 ## State right now — READ THIS FIRST
 
-- `main` = **`5f5ef77`**, pushed, deployed and byte-verified live.
+- `main` = **`77313f5`**, pushed and deployed.
 - **430 tests pass** (`npm test`). Same coverage as ever: the pure domain layer
   and the Worker's pure helpers. Not `main.js`, not `sound.js`, not
   `googleSync.js`.
@@ -133,11 +164,27 @@ before wiring it anywhere.
 
 ## Next up
 
-**Immediately, in order:**
+**Nothing is queued.** The last session ended with everything shipped and
+verified. Wait for Johnny.
 
-1. **Johnny listens on his phone.** Three things only a real iPhone can answer:
-   does Spotify keep playing underneath (ambient), does the silent switch mute
-   everything, and is the 460ms click too long when tapping the keypad fast.
+If he asks what is outstanding, these are the honest candidates — none of them
+started, none of them agreed:
+
+1. **Decide on `emblems`.** Pushed, not merged. If it lands, Social and Guide
+   want their own emblems before it ships.
+2. **Never verified on a real iPhone:** whether Spotify keeps playing under the
+   voice lines, whether the silent switch mutes everything, whether the 460ms
+   click is too long on fast keypad taps.
+3. **The arena art still resembles Mortal Kombat** — the weapon rack and the
+   arched lava gates. Johnny raised it, asked for concept art, and rejected
+   every attempt made here: there is no image generation available in this
+   environment, and hand-compositing with PIL looked worse than doing nothing.
+   If it comes up again, the honest answer is new source art made elsewhere,
+   and the constraint is that the lava line, the three gate spouts, the wall
+   flame edges and the empty floor band must keep their positions or every
+   effect has to be re-measured.
+4. **Progress's empty state was deliberately left alone.** It is a single faint
+   line with no button, sitting where it covers nothing.
 
 **Raised and not built:**
 
